@@ -6,6 +6,7 @@ const std = @import("std");
 const geom = @import("geom.zig");
 const sdf = @import("sdf.zig");
 const raster = @import("raster.zig");
+const stairs = @import("stairs.zig");
 const text = @import("text.zig");
 const ann_mod = @import("annotation.zig");
 const color = @import("color.zig");
@@ -51,9 +52,8 @@ const Shadow = struct {
 
 pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform, opts: Options) !void {
     switch (ann) {
-        .arrow => |a| {
-            const s = arrowShape(a, xf);
-            drawWithShadow(cv, clip, s, a.color, Shadow.of(a.width * xf.scale));
+        .arrow => |a| switch (arrowShape(a, xf)) {
+            inline else => |s| drawWithShadow(cv, clip, s, a.color, Shadow.of(a.width * xf.scale)),
         },
         .rect => |b| {
             const s = boxShape(b, xf);
@@ -102,10 +102,19 @@ pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []cons
     var n: usize = 0;
     switch (ann) {
         .arrow => |a| {
-            const s = arrowShape(a, xf);
             const m = Shadow.of(a.width * xf.scale).margin();
-            buf[0] = s.b.bounds().expand(m).toRect(); // head
-            n = 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, buf[1..]);
+            switch (arrowShape(a, xf)) {
+                .straight => |s| {
+                    buf[0] = s.b.bounds().expand(m).toRect(); // head
+                    n = 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, buf[1..]);
+                },
+                // Axis-aligned segments and corners: their boxes are tight.
+                .stairs => |s| {
+                    buf[0] = s.b.bounds().expand(m).toRect();
+                    for (s.a.pieces(m), 1..) |b, i| buf[i] = b.toRect();
+                    n = 8;
+                },
+            }
         },
         .rect => |r| {
             const b = boxShape(r, xf);
@@ -264,36 +273,71 @@ fn sortedBounds(a: Vec2, b: Vec2) Bounds {
 
 // ---- arrow -------------------------------------------------------------
 
-pub const ArrowShape = sdf.Union(sdf.Capsule, sdf.Subtract(sdf.Triangle, sdf.Triangle));
+const Head = sdf.Subtract(sdf.Triangle, sdf.Triangle);
+
+/// A straight arrow, or a stairs arrow (stairs.zig): a stroke and a head.
+pub const ArrowShape = union(ann_mod.ArrowStyle) {
+    straight: sdf.Union(sdf.Capsule, Head),
+    stairs: sdf.Union(stairs.Path, Head),
+
+    pub fn dist(s: ArrowShape, p: Vec2) f32 {
+        return switch (s) {
+            inline else => |x| x.dist(p),
+        };
+    }
+    pub fn bounds(s: ArrowShape) Bounds {
+        return switch (s) {
+            inline else => |x| x.bounds(),
+        };
+    }
+};
 
 /// Head length in image units for a stroke width in image units.
 fn headLength(width: f32) f32 {
     return 3 * width + 4 * @sqrt(width);
 }
 
+/// Head of length `len` with its point at `h`, pointing along `dir`:
+/// a triangle minus a wedge behind the notch (swallow tail).
+fn headShape(h: Vec2, dir: Vec2, len: f32) Head {
+    const n = dir.perp();
+    const half = len * 0.58;
+    const base = h.sub(dir.scale(len));
+    const notch = h.sub(dir.scale(len * 0.8));
+    const left = base.add(n.scale(half));
+    const right = base.sub(n.scale(half));
+    return .{
+        .a = .{ .a = h, .b = left, .c = right },
+        .b = .{ .a = notch, .b = left.add(left.sub(notch)), .c = right.add(right.sub(notch)) },
+    };
+}
+
+/// The stroke ends this far (a fraction of the head length) before the
+/// point, inside the head.
+const shaft_back = 0.6;
+
 pub fn arrowShape(a: ann_mod.Arrow, xf: Xform) ArrowShape {
     const t = xf.apply(a.tail);
     const h = xf.apply(a.head);
-    const w = @max(1, a.width * xf.scale);
-    const d = h.sub(t);
-    const l = d.len();
-    const dir = d.normalize();
-    const n = dir.perp();
-    const head = @min(headLength(a.width) * xf.scale, l * 0.75);
-    const half = head * 0.58;
-    const base = h.sub(dir.scale(head));
-    const notch = h.sub(dir.scale(head * 0.8));
-    const left = base.add(n.scale(half));
-    const right = base.sub(n.scale(half));
-    const shaft_end = h.sub(dir.scale(head * 0.6));
-    return .{
-        .a = .{ .a = t, .b = if (l > head) shaft_end else t, .r = w * 0.5 },
-        // Head: triangle minus a wedge behind the notch (swallow tail).
-        .b = .{
-            .a = .{ .a = h, .b = left, .c = right },
-            .b = .{ .a = notch, .b = left.add(left.sub(notch)), .c = right.add(right.sub(notch)) },
+    const hw = @max(1, a.width * xf.scale) * 0.5;
+    const hl = headLength(a.width) * xf.scale;
+    switch (a.style) {
+        .straight => {
+            const d = h.sub(t);
+            const l = d.len();
+            const dir = d.normalize();
+            const head = @min(hl, l * 0.75);
+            const shaft_end = h.sub(dir.scale(head * shaft_back));
+            return .{ .straight = .{ .a = .{ .a = t, .b = if (l > head) shaft_end else t, .r = hw }, .b = headShape(h, dir, head) } };
         },
-    };
+        .stairs => {
+            // The head sits on the last segment and points along it.
+            const rt = stairs.Route.of(t, h);
+            const head = @min(hl, rt.run * 0.75);
+            const path = stairs.Path.init(rt, head * shaft_back, head, stairs.cornerRadius(a.width) * xf.scale, hw);
+            return .{ .stairs = .{ .a = path, .b = headShape(h, rt.u, head) } };
+        },
+    }
 }
 
 // ---- rect ----------------------------------------------------------------
@@ -446,6 +490,8 @@ test "cover holds every pixel an annotation writes" {
     const red = color.palette[0].color;
     const anns = [_]Annotation{
         .{ .arrow = .{ .tail = .{ .x = 20, .y = 250 }, .head = .{ .x = 380, .y = 40 }, .width = 8, .color = red } },
+        .{ .arrow = .{ .tail = .{ .x = 20, .y = 250 }, .head = .{ .x = 380, .y = 40 }, .width = 8, .color = red, .style = .stairs } },
+        .{ .arrow = .{ .tail = .{ .x = 300, .y = 20 }, .head = .{ .x = 100, .y = 290 }, .width = 10, .color = red, .style = .stairs } },
         .{ .rect = .{ .a = .{ .x = 30, .y = 30 }, .b = .{ .x = 350, .y = 260 }, .width = 8, .color = red } },
         .{ .callout = .{ .target = .{ .x = 20, .y = 20 }, .anchor = .{ .x = 300, .y = 250 }, .text = "Hi", .size = 20, .color = red } },
     };
@@ -477,4 +523,25 @@ test "arrow head is proportional and points at the head" {
     const b1 = s.bounds();
     const b2 = s2.bounds();
     try std.testing.expectApproxEqAbs(2 * (b1.max.y - b1.min.y), b2.max.y - b2.min.y, 0.01);
+}
+
+test "stairs arrow: the stroke follows the elbow path, the head points along the last segment" {
+    const a = ann_mod.Arrow{ .tail = .{ .x = 0, .y = 0 }, .head = .{ .x = 200, .y = 100 }, .width = 4, .color = color.black, .style = .stairs };
+    const s = arrowShape(a, .identity);
+    try std.testing.expect(s.dist(.{ .x = 50, .y = 0 }) < 0); // first segment
+    try std.testing.expect(s.dist(.{ .x = 100, .y = 50 }) < 0); // middle
+    try std.testing.expect(s.dist(.{ .x = 150, .y = 100 }) < 0); // last
+    try std.testing.expect(s.dist(.{ .x = 100, .y = 0 }) > 2); // round corner
+    try std.testing.expect(s.dist(.{ .x = 50, .y = 25 }) > 10); // the straight line: off it
+    // Head: a horizontal triangle at the head point.
+    try std.testing.expect(s.dist(.{ .x = 199, .y = 100 }) < 0);
+    try std.testing.expect(s.dist(.{ .x = 190, .y = 104 }) < 0);
+    try std.testing.expect(s.dist(.{ .x = 200, .y = 108 }) > 0);
+    // The straight style of the same arrow crosses the middle of the box.
+    var b = a;
+    b.style = .straight;
+    try std.testing.expect(arrowShape(b, .identity).dist(.{ .x = 50, .y = 25 }) < 0);
+    // Same body bounds for both: the path stays in the box of its ends.
+    const sb = s.bounds();
+    try std.testing.expect(sb.min.x >= -3 and sb.max.x <= 203 and sb.min.y >= -3 and sb.max.y <= 113);
 }

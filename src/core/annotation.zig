@@ -6,7 +6,11 @@ const Color = @import("color.zig").Color;
 
 const Vec2 = geom.Vec2;
 
-pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color };
+/// How an arrow runs from the tail to the head: a straight line, or stairs
+/// (an elbow with two round corners, see stairs.zig).
+pub const ArrowStyle = enum { straight, stairs };
+
+pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color, style: ArrowStyle = .straight };
 
 /// Rectangle outline.
 pub const Box = struct { a: Vec2, b: Vec2, width: f32, color: Color };

@@ -103,11 +103,17 @@ pub const Path = struct {
         return (Bounds{ .min = s.t.min(c1).min(c2).min(s.end), .max = s.t.max(c1).max(c2).max(s.end) }).expand(s.hw);
     }
 
-    /// Pieces that hold the stroke (before `grow`): the three segments and
-    /// the two corners, axis-aligned boxes. For tight repaints.
-    pub fn pieces(s: Path, grow: f32) [5]Bounds {
-        const pts = [_][2]Vec2{ .{ s.t, s.a[0] }, .{ s.a[0], s.b[0] }, .{ s.b[0], s.a[1] }, .{ s.a[1], s.b[1] }, .{ s.b[1], s.end } };
-        var out: [5]Bounds = undefined;
+    /// Pieces that hold the stroke (grown by `grow`): the three segments
+    /// and each corner in two halves, axis-aligned boxes. A 45 degree arc
+    /// between two axis points stays in the box of its ends. For tight repaints.
+    pub fn pieces(s: Path, grow: f32) [7]Bounds {
+        const m0 = s.k[0].add(s.u.add(s.v.scale(-1)).scale(s.r * std.math.sqrt1_2));
+        const m1 = s.k[1].add(s.v.sub(s.u).scale(s.r * std.math.sqrt1_2));
+        const pts = [_][2]Vec2{
+            .{ s.t, s.a[0] }, .{ s.a[0], m0 }, .{ m0, s.b[0] },    .{ s.b[0], s.a[1] },
+            .{ s.a[1], m1 },  .{ m1, s.b[1] }, .{ s.b[1], s.end },
+        };
+        var out: [7]Bounds = undefined;
         for (pts, 0..) |q, i| out[i] = (Bounds{ .min = q[0].min(q[1]), .max = q[0].max(q[1]) }).expand(s.hw + grow);
         return out;
     }
