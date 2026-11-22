@@ -19,9 +19,14 @@ pub const tools = [_]ToolInfo{
     .{ .tool = .pixelate, .key = 'p', .name = "pixelate", .mouse = "Drag over a secret to pixelate it." },
 };
 
-pub fn toolInfo(t: Tool) ToolInfo {
-    for (tools) |info| if (info.tool == t) return info;
+pub fn toolInfo(t: Tool) *const ToolInfo {
+    for (&tools) |*info| if (info.tool == t) return info;
     unreachable;
+}
+
+/// The tool key as a string with static lifetime.
+pub fn toolKey(t: Tool) []const u8 {
+    return (&toolInfo(t).key)[0..1];
 }
 
 pub const Action = union(enum) {

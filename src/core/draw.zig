@@ -25,9 +25,11 @@ pub const Ctx = struct {
 };
 
 pub const Options = struct {
-    /// Draw a text caret (text being typed).
-    caret: bool = false,
+    /// The shape is in progress: draw the text caret and the pixelate frame.
+    preview: bool = false,
 };
+
+const preview_frame = Color{ .r = 128, .g = 128, .b = 128, .a = 200 };
 
 const shadow_color = Color{ .r = 0, .g = 0, .b = 0, .a = 90 };
 
@@ -59,10 +61,11 @@ pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform,
             const r = sortedBounds(xf.apply(p.a), xf.apply(p.b)).toRect();
             const block: i32 = @intFromFloat(@max(2, @round(p.block * xf.scale)));
             cv.pixelate(r, block, clip);
+            if (opts.preview) raster.fill(cv, clip, sdf.RectStroke{ .min = r.toBounds().min, .max = r.toBounds().max, .w = 1 }, .{ .solid = preview_frame }, .{});
         },
-        .text => |t| try drawText(ctx, cv, clip, t, xf, opts.caret),
+        .text => |t| try drawText(ctx, cv, clip, t, xf, opts.preview),
         .number => |n| try drawNumber(ctx, cv, clip, n, xf),
-        .callout => |c| try drawCallout(ctx, cv, clip, c, xf, opts.caret),
+        .callout => |c| try drawCallout(ctx, cv, clip, c, xf, opts.preview),
     }
 }
 
@@ -77,7 +80,7 @@ pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
             const px = text.pxOf(t.size * xf.scale);
             const lay = text.measure(ctx.font, t.text, px);
             const o = xf.apply(t.pos);
-            const extra = outlineRadius(px) + 4 + (if (opts.caret) @as(f32, @floatFromInt(px)) * 0.2 else 0);
+            const extra = outlineRadius(px) + 4 + (if (opts.preview) @as(f32, @floatFromInt(px)) * 0.2 else 0);
             break :blk (Bounds{ .min = o, .max = o.add(.{ .x = lay.width, .y = lay.height }) }).expand(extra);
         },
         .number => |n| numberDisc(n, xf).bounds().expand(Shadow.of(n.size * xf.scale * 0.2).margin() + 2),

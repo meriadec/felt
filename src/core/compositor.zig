@@ -135,7 +135,7 @@ pub const Compositor = struct {
 
         // Overlay damage: old and new preview, chrome if it changed.
         const preview = ed.preview();
-        const opts = draw.Options{ .caret = true };
+        const opts = draw.Options{ .preview = true };
         const cur_preview = if (preview) |p| draw.bounds(ctx, p, xf, opts).intersect(full_rect) else Rect.empty;
         dmg.add(self.prev_preview);
         dmg.add(cur_preview);
@@ -159,8 +159,9 @@ pub const Compositor = struct {
         for (dmg.slice()) |r_raw| {
             const r = r_raw.intersect(full_rect);
             frame.copyRect(scene, r);
-            if (preview) |p| try draw.annotation(ctx, frame, r, p, xf, opts);
             try chrome.draw(ctx, frame, r, &lay);
+            // The shape in progress goes over the chrome: what you type stays visible.
+            if (preview) |p| try draw.annotation(ctx, frame, r, p, xf, opts);
         }
         return dmg;
     }

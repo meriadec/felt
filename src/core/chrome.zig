@@ -156,7 +156,7 @@ fn helpItems(st: State, out: []Item) []Item {
 
 fn statusItems(st: State, out: []Item) []Item {
     const info = keymap.toolInfo(st.tool);
-    out[0] = .{ .cap = &[_]u8{info.key}, .label = info.name, .active = true };
+    out[0] = .{ .cap = keymap.toolKey(st.tool), .label = info.name, .active = true };
     out[1] = .{ .cap = "[ ]", .label = "size", .kind = .size };
     out[2] = .{ .cap = "?", .label = "help" };
     return out[0..3];
