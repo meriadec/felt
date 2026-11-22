@@ -443,16 +443,6 @@ pub const Editor = struct {
                 },
             }
         }
-        if (k.key == .named and k.key.named == .escape) {
-            if (self.mode == .drag) {
-                self.cancel();
-                return .{ .redraw = true };
-            }
-            if (self.help_visible) {
-                self.help_visible = false;
-                return .{ .redraw = true };
-            }
-        }
         const action = keymap.lookup(k) orelse return .{};
         return self.run(action, was_armed);
     }
@@ -484,10 +474,18 @@ pub const Editor = struct {
                 try self.commitTyping();
                 return .{ .redraw = true, .command = if (action == .save) .save else .copy };
             },
+            // Esc and q: cancel the shape in progress, else close the help,
+            // else quit (a second press when there are unsaved changes).
             .quit => {
-                if (!self.dirty() or was_armed) return .{ .command = .quit };
-                self.quit_armed = true;
-                self.setToast("Unsaved changes. Esc again to quit, Ctrl+S to save, Ctrl+C to copy.", .{});
+                if (self.mode == .drag) {
+                    self.cancel();
+                } else if (self.help_visible) {
+                    self.help_visible = false;
+                } else {
+                    if (!self.dirty() or was_armed) return .{ .command = .quit };
+                    self.quit_armed = true;
+                    self.setToast("Unsaved changes. Esc or q again to quit, Ctrl+S to save, Ctrl+C to copy.", .{});
+                }
             },
             .toggle_help => self.help_visible = !self.help_visible,
             .toggle_dock => self.dock_visible = !self.dock_visible,
@@ -577,6 +575,27 @@ test "quit asks once when dirty" {
     try t.drag(10, 10, 50, 40);
     try std.testing.expectEqual(@as(?Command, null), (try t.key("esc")).command);
     try std.testing.expectEqual(Command.quit, (try t.key("esc")).command.?);
+}
+
+test "q acts like Esc: cancels a drag, closes the help, asks once, quits; a letter while typing" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 50, .y = 40 } });
+    try std.testing.expectEqual(@as(?Command, null), (try t.key("q")).command);
+    try std.testing.expect(t.ed.mode == .idle);
+    _ = try t.key("?");
+    try std.testing.expectEqual(@as(?Command, null), (try t.key("q")).command);
+    try std.testing.expect(!t.ed.help_visible);
+    _ = try t.key("t");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 5, .y = 50 } });
+    _ = try t.key("q");
+    _ = try t.key("esc");
+    try std.testing.expectEqualStrings("q", t.doc.items.items[0].text.text);
+    try std.testing.expectEqual(@as(?Command, null), (try t.key("q")).command);
+    try std.testing.expect(std.mem.indexOf(u8, t.ed.toast().?, "q again") != null);
+    try std.testing.expectEqual(Command.quit, (try t.key("q")).command.?);
 }
 
 test "tab cycles tools; tab while typing commits first" {

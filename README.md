@@ -31,7 +31,7 @@ drag; undo restores it. Draw past the image edge and the canvas grows white
 to hold the shape (the saved PNG too); undo shrinks it back. Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
 middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
-height (2x at 4K). Esc quits; with unsaved changes, press Esc twice. Ctrl+C
+height (2x at 4K). Esc or q quits (q is a letter while you type); with unsaved changes, press it twice. Ctrl+C
 counts as saved, because xclip keeps the image in the clipboard after annotate
 exits.
 

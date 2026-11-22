@@ -94,6 +94,7 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = ch('s'), .ctrl = true }, .action = .save, .label = "save" },
         .{ .chord = .{ .key = ch('c'), .ctrl = true }, .action = .copy, .label = "copy" },
         .{ .chord = .{ .key = .{ .named = .escape } }, .action = .quit, .label = "quit" },
+        .{ .chord = .{ .key = ch('q') }, .action = .quit, .label = "quit" },
         .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = ch(' ') }, .action = .toggle_dock, .label = "hide / show the dock" },
@@ -125,9 +126,10 @@ pub const extra = [_]Extra{
     .{ .input = "Drawing past the image", .effect = "The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help", .short = "pick" },
-    .{ .input = "Esc while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
-    .{ .input = "Esc with unsaved changes", .effect = "Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, Esc again quits" },
-    .{ .input = "Esc or a click with help open", .effect = "Close the help", .short = "close help" },
+    .{ .input = "Esc or q while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
+    .{ .input = "Esc or q with unsaved changes", .effect = "Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, again quits" },
+    .{ .input = "Esc, q or a click with help open", .effect = "Close the help", .short = "close help" },
+    .{ .input = "Esc or q while typing", .effect = "Esc finishes the text; q is a letter", .short = "Esc: done, q: letter" },
     .{ .input = "Ctrl+Z while typing", .effect = "Drop the text in progress", .short = "drop text" },
     .{ .input = "Tab while typing", .effect = "Finish the text, then go to the next tool", .short = "finish, next tool" },
 };
@@ -223,6 +225,7 @@ test "lookup" {
     try std.testing.expectEqual(Action.prev_tool, lookup(.{ .key = .{ .named = .tab }, .mods = .{ .shift = true } }).?);
     try std.testing.expectEqual(Action.zoom_in, lookup(.{ .key = .{ .char = '+' }, .mods = .{ .shift = true } }).?);
     try std.testing.expectEqual(Action.zoom_out, lookup(.{ .key = .{ .char = '-' } }).?);
+    try std.testing.expectEqual(Action.quit, lookup(.{ .key = .{ .char = 'q' } }).?);
 }
 
 test "cycleTool wraps both ways in toolbar order" {

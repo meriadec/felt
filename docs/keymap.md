@@ -37,6 +37,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `Ctrl+S` | save |
 | `Ctrl+C` | copy |
 | `Esc` | quit |
+| `q` | quit |
 | `?` | help |
 | `F1` | help |
 | `Space` | hide / show the dock |
@@ -59,8 +60,9 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Drawing past the image | The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help |
-| Esc while drawing | Cancel the shape in progress |
-| Esc with unsaved changes | Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image. |
-| Esc or a click with help open | Close the help |
+| Esc or q while drawing | Cancel the shape in progress |
+| Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |
+| Esc, q or a click with help open | Close the help |
+| Esc or q while typing | Esc finishes the text; q is a letter |
 | Ctrl+Z while typing | Drop the text in progress |
 | Tab while typing | Finish the text, then go to the next tool |

@@ -1,0 +1,15 @@
+# q acts like Esc outside text: it cancels the arrow in progress, closes
+# the help, then shows the unsaved-changes toast. While typing, q is a
+# letter ("quiet").
+size 900 500
+key t
+click 300 150
+type quiet
+key esc
+key a
+down 300 300
+move 400 200
+key q
+key ?
+key q
+key q

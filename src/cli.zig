@@ -4,7 +4,7 @@ const std = @import("std");
 pub const usage =
     \\Usage: annotate [options] <image>
     \\
-    \\Opens <image> full screen for annotation (X11). Esc quits, Ctrl+S saves,
+    \\Opens <image> full screen for annotation (X11). Esc or q quits, Ctrl+S saves,
     \\Ctrl+C copies, ? shows the keys. Key map: docs/keymap.md.
     \\
     \\Options:
