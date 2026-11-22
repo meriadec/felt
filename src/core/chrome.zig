@@ -126,7 +126,9 @@ fn placeItem(ctx: Ctx, l: *Layout, m: Metrics, st: State, it: Item, x: f32, cy: 
         .key => l.push(.{ .text = .{ .pos = .{ .x = bx, .y = cy - m.pxf * 0.55 }, .s = it.label, .px = m.px, .color = if (it.active) color.white else label_fg } }),
         .colors => for (color.palette, 0..) |p, i| {
             const c = Vec2.init(bx + m.swatch_r, cy);
-            if (i == st.color_idx) l.push(.{ .disc = .{ .c = c, .r = m.swatch_r + 2.5, .color = color.white } });
+            // White ring = active; gray ring keeps dark swatches visible on the panel.
+            const ring = if (i == st.color_idx) color.white else Color.rgb(0x6a6a70);
+            l.push(.{ .disc = .{ .c = c, .r = m.swatch_r + (if (i == st.color_idx) @as(f32, 2.5) else 1.2), .color = ring } });
             l.push(.{ .disc = .{ .c = c, .r = m.swatch_r, .color = p.color } });
             bx += m.swatch_r * 2 + m.pxf * 0.25;
         },
