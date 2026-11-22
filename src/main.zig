@@ -67,4 +67,5 @@ test {
     std.testing.refAllDecls(@This());
     _ = @import("backend/script.zig");
     _ = @import("app.zig");
+    _ = @import("golden.zig");
 }

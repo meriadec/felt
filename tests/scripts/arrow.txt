@@ -1,0 +1,8 @@
+# Arrows: default size, a bigger one in blue, a short one.
+size 900 500
+key a
+drag 300 400 180 175
+key 5 ]
+drag 700 120 560 300
+key 1 [ [
+drag 500 420 540 380
