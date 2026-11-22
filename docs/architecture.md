@@ -42,11 +42,11 @@ image files. Build: `coreModule` in build.zig.
 | `extent.zig` | Canvas of the document: the kept rectangle grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
 | `input.zig` | Backend-neutral events and key chords |
-| `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md |
+| `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md; a tool key pressed again (`ToolInfo.again`) |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
-| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks) |
+| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it |
 | `topbar.zig` | Top bar geometry and hit test: Undo and Redo buttons (only these: save and copy stay on keys) |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops) |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
@@ -92,6 +92,17 @@ image files. Build: `coreModule` in build.zig.
   repaints the old and new bounds of any annotation that differs, the bands
   the canvas gained or lost, and grows each repaint rect to hold any
   pixelate it touches (a pixelate averages the pixels under it).
+- Arrow styles: each arrow stores its `style` (straight, stairs). The
+  editor's `arrow_style` is the style of new arrows. `a` with the arrow
+  tool active, or the switch above the dock (only with the arrow tool),
+  sets it, with a toast; an arrow in progress follows. It stays for the
+  session, across tool switches (it is not saved). A stairs arrow
+  (stairs.zig) is an elbow connector: along the dominant axis to the
+  midpoint, along the other axis, along the dominant axis into the head.
+  Its two corners are quarter circles of `cornerRadius(width)`, clamped so
+  the middle segment and the head keep room; a rise under the stroke width
+  draws straight. Hit tests, bounds, clips and move repaints follow the
+  real path (`draw.arrowShape`, `draw.cover`).
 - Move and crops: an annotation made before a crop stays under that crop.
   Its clip stays cut by the crop, it never grows the canvas, and the pointer
   grabs it only where it shows. A move position that would hide its body

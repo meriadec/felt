@@ -25,37 +25,46 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
-## Numbers (2026-11, after the move tool, the top bar and the flat chrome)
+## Numbers (2026-11, after the stairs arrows)
 
 `zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs;
-"was" is the run before these changes (commit "docs: log the friction of the
-growing canvas work"):
+"was" is the run before the stairs arrows (commit "feat!: remove the
+highlight tool"):
 
 | Metric | Value |
 |---|---|
 | decode PNG (min) | 7.0 ms (stb: 9.0 ms) |
-| first frame render (min) | 5.8 ms (was 5.6) |
-| startup total (min) | 13.0 ms (was 12.6) |
-| frame, drag arrow | avg 0.24 ms, p95 0.47 ms (was 0.50 / 1.0: sdf union skips the head far from it) |
-| frame, drag pixelate | avg 0.32 ms, p95 0.70 ms |
-| frame, type a character | avg 0.14 ms |
-| frame, move drag (long arrow, 31 annotations) | avg 0.55 ms, p95 0.61 ms, damage 5.2% of screen (new) |
-| undo, scene rebuild with 31 annotations | 2.2 ms (was 4.0) |
-| export render / PNG encode | 4.7 ms / 11.3 ms |
-| frame, drag crop (outside dimmed) | avg 0.34 ms, p95 0.39 ms |
+| first frame render (min) | 5.7 ms (was 5.6) |
+| startup total (min) | 12.9 ms (was 13.0) |
+| frame, drag arrow | avg 0.24 ms, p95 0.45 ms |
+| frame, drag stairs arrow | avg 0.32 ms, p95 0.63 ms (new) |
+| frame, drag pixelate | avg 0.32 ms, p95 0.67 ms |
+| frame, type a character | avg 0.13 ms |
+| frame, move drag (long arrow, 31 annotations) | avg 0.47 ms, p95 0.49 ms, damage 5.2% (was 0.54 / 0.59: merge rule below) |
+| frame, move drag (long stairs arrow, 32 annotations) | avg 0.59 ms, p95 0.78 ms, damage 2.2% (new; 1.28 / 1.85 before the stairs perf commits) |
+| undo, scene rebuild with 31 annotations | 2.2 ms |
+| export render / PNG encode | 3.6 ms / 10.8 ms |
+| frame, drag crop (outside dimmed) | avg 0.32 ms, p95 0.35 ms |
 | crop release (refit + scene rebuild) | 2.8 ms |
-| zoom out (`-`), scene rebuild at 2/3 | 5.1 ms |
-| frame, drag that grows the canvas | avg 0.15 ms, p95 0.28 ms (was 0.32 / 0.63) |
-| frame, pan (middle drag, 31 annotations) | avg 0.60 ms, p95 0.97 ms |
-| Ctrl+wheel zoom (downscale + rebuild) | avg 2.6 ms, p95 3.2 ms |
+| zoom out (`-`), scene rebuild at 2/3 | 4.9 ms |
+| frame, drag that grows the canvas | avg 0.15 ms, p95 0.28 ms |
+| frame, pan (middle drag, 31 annotations) | avg 0.60 ms, p95 0.82 ms (was 0.56: the arrow style switch is drawn in each full frame) |
+| Ctrl+wheel zoom (downscale + rebuild) | avg 2.6 ms, p95 3.3 ms |
 
 `zig build bench -- --size 3840x2160` (same image, 4K screen, UI scale 2),
-min of 2 runs: drag arrow avg 0.78 ms p95 1.72 ms (was 1.53 / 3.37), drag
-pixelate avg 0.90 ms p95 2.1 ms, type a character avg 0.43 ms, move drag
-avg 1.56 ms p95 1.73 ms (damage 6.4%; 8.2 ms before the slab repaint below),
-undo 8.4 ms (was 10.3), export 5.6 / 14.2 ms, drag crop avg 0.81 ms, crop
-release 7.2 ms, drag that grows the canvas avg 0.45 ms p95 0.89 ms, pan avg
-3.9 ms p95 4.7 ms, zoom 7.6-9.1 ms.
+min of 3 runs: drag arrow avg 0.76 ms p95 1.65 ms, drag stairs arrow avg
+1.07 ms p95 2.29 ms, drag pixelate avg 0.90 ms p95 2.06 ms, type a
+character avg 0.42 ms, move drag avg 1.30 ms p95 1.35 ms (was 1.46 /
+1.55), move drag of a stairs arrow avg 1.58 ms p95 2.11 ms (damage 1.9%;
+3.56 / 5.0 before the stairs perf commits: over the 4 ms budget), undo 7.5
+ms, export 5.4 / 13.3 ms, drag crop avg 0.76 ms, crop release 7.2 ms, drag
+that grows the canvas avg 0.43 ms p95 0.85 ms, pan avg 3.8 ms p95 4.7 ms
+(was 3.7), zoom 7.6-9.4 ms.
+
+The stairs move drag at 4K went 3.56 -> 2.96 ms (axis-aligned segment
+distance, no division) -> 3.1 ms (4 repaint boxes, not 8; 1080p 1.07 ->
+0.88) -> 1.58 ms (merge rule: a box moved by a pixel in x and y was
+painted twice, as two overlapping rects).
 
 The move drag went 8.2 -> 5.0 ms (sdf union) -> 4.4 ms (no outline while
 moving) -> 1.6 ms (slab repaint) at 4K.
@@ -94,8 +103,10 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   bands it adds or removes; a commit fills them in the scene and appends.
 - A move repaints the scene only under the old and the new place, and
   for thin shapes (arrow, callout pointer, rect outline) only slabs along
-  them (`draw.cover`, on a fixed grid); a slab at the old and the new place
-  merges into one when that adds no pixel (`Fix` in compositor.zig). A
+  them (`draw.cover`, on a fixed grid); a stairs arrow only the boxes of
+  its three axis-aligned segments and its head. Two repaint rects merge
+  when their union is no bigger than both apart (`Fix` in compositor.zig):
+  a slab at the old and the new place, a box moved by a pixel. A
   repaint rect that touches a pixelate grows to hold all of it.
 - `sdf.Union` skips its second shape where the distance to that shape's
   bounds is already larger: along an arrow shaft, the head is not computed.
