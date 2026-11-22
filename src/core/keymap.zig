@@ -71,6 +71,8 @@ pub const Action = union(enum) {
     zoom_fit,
     /// Move the image by a fraction of the screen: x, y in -1..1.
     pan: [2]i8,
+    /// Switch the canvas background (outside the image): light / dark grey.
+    canvas_bg,
 };
 
 pub const Chord = struct {
@@ -110,6 +112,7 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = ch(' ') }, .action = .toggle_dock, .label = "hide / show the panels" },
+        .{ .chord = .{ .key = ch('b') }, .action = .canvas_bg, .label = "canvas: light / dark grey" },
         .{ .chord = .{ .key = ch('=') }, .action = .zoom_in, .label = "zoom in" },
         .{ .chord = .{ .key = ch('+') }, .action = .zoom_in, .label = "zoom in" },
         .{ .chord = .{ .key = ch('-') }, .action = .zoom_out, .label = "zoom out (room to draw around)" },
@@ -135,10 +138,10 @@ pub const extra = [_]Extra{
     .{ .input = "Mouse wheel", .effect = "Bigger / smaller stroke and text", .short = "size" },
     .{ .input = "Ctrl+wheel", .effect = "Zoom in / out about the pointer", .short = "zoom" },
     .{ .input = "Middle drag", .effect = "Pan the view", .short = "pan" },
-    .{ .input = "Drawing past the image", .effect = "The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
+    .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers)", .short = "pick" },
-    .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do)", .short = "undo, redo" },
+    .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`)", .short = "undo, redo, canvas" },
     .{ .input = "Esc or q while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
     .{ .input = "Esc or q with unsaved changes", .effect = "Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, again quits" },
     .{ .input = "Esc, q or a click with help open", .effect = "Close the help", .short = "close help" },
@@ -240,6 +243,7 @@ test "lookup" {
     try std.testing.expectEqual(Action.zoom_in, lookup(.{ .key = .{ .char = '+' }, .mods = .{ .shift = true } }).?);
     try std.testing.expectEqual(Action.zoom_out, lookup(.{ .key = .{ .char = '-' } }).?);
     try std.testing.expectEqual(Action.quit, lookup(.{ .key = .{ .char = 'q' } }).?);
+    try std.testing.expectEqual(Action.canvas_bg, lookup(.{ .key = .{ .char = 'b' } }).?);
 }
 
 test "cycleTool wraps both ways in toolbar order" {

@@ -1,0 +1,36 @@
+# Canvas dark: the canvas_light scene, then `b` switches the canvas to dark
+# grey: the toggle repaints only the canvas around the image (the damage
+# check proves it equals a full repaint, the pixelate across the edge
+# included). A small wide image; an
+# arrow of each palette color (keys 1-8) runs from the image down into the
+# grown canvas, a number in white and one in dark, a text label and a
+# pixelate across the top edge. Every color must read on dark grey too.
+image tests/fixtures/strip.png
+size 900 500
+key 1
+drag 250 245 275 380
+key 2
+drag 305 245 330 380
+key 3
+drag 360 245 385 380
+key 4
+drag 415 245 440 380
+key 5
+drag 470 245 495 380
+key 6
+drag 525 245 550 380
+key 7
+drag 580 245 605 380
+key 8
+drag 635 245 660 380
+key n 7
+click 300 160
+key 8
+click 360 160
+key t 1
+click 420 150
+type Label
+key enter
+key p
+drag 480 190 560 235
+key b

@@ -17,7 +17,8 @@ const Font = @import("font.zig").Font;
 const Dock = @import("dock.zig").Dock;
 const TopBar = @import("topbar.zig").TopBar;
 const Hover = @import("chrome.zig").Hover;
-const Settings = @import("settings.zig").Settings;
+const settings = @import("settings.zig");
+const Settings = settings.Settings;
 
 const Vec2 = geom.Vec2;
 const Tool = keymap.Tool;
@@ -544,6 +545,7 @@ pub const Editor = struct {
                 if (TopBar.of(self.view.screen_w, self.view.screen_h).hit(p)) |b| switch (b) {
                     .undo => try self.undo(),
                     .redo => try self.redo(),
+                    .canvas_bg => self.setCanvasBg(self.settings.canvas_bg.other()),
                 };
             }
             return .{ .redraw = true };
@@ -710,6 +712,14 @@ pub const Editor = struct {
         self.setToast("{s}: {s}", .{ if (self.tool == .callout) "Pointer" else "Arrow", @tagName(s) });
     }
 
+    /// Set the canvas background and say it. A setting, not an undo step:
+    /// it changes no annotation and no export size, only the color around
+    /// the image, so undo keeps walking the drawing.
+    fn setCanvasBg(self: *Editor, bg: settings.CanvasBg) void {
+        self.settings.canvas_bg = bg;
+        self.setToast("Canvas: {s}", .{@tagName(bg)});
+    }
+
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
         switch (action) {
             // The active tool's key again: its `again` action, if any.
@@ -719,6 +729,7 @@ pub const Editor = struct {
                 return self.run(ag.action, was_armed);
             } else try self.setTool(t),
             .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
+            .canvas_bg => self.setCanvasBg(self.settings.canvas_bg.other()),
             .next_tool => try self.setTool(keymap.cycleTool(self.tool, 1)),
             .prev_tool => try self.setTool(keymap.cycleTool(self.tool, -1)),
             .color => |i| self.color_idx = i,

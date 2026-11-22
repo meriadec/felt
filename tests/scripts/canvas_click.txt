@@ -1,0 +1,13 @@
+# Canvas click: the top bar switch. On the strip image, an arrow and a
+# pixelate cross into the grown canvas; `ui canvas-bg dark` clicks the
+# switch (light -> dark), `ui canvas-bg dark` again does nothing (it is
+# dark already). The pointer rests on the switch: the frame shows its
+# hover and the "Canvas: dark" toast; the export is dark grey around the image.
+image tests/fixtures/strip.png
+size 900 500
+key 2
+drag 300 250 200 150
+key p
+drag 600 200 660 300
+ui canvas-bg dark
+ui canvas-bg dark

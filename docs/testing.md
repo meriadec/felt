@@ -81,7 +81,7 @@ One command per line, screen coordinates, `#` starts a comment.
 | `move ui NAME...` | Pointer onto a chrome item, no click (hover); NAME as for `ui` |
 | `drag X0 Y0 X1 Y1 [steps]` | Press, `steps` moves (default 8), release |
 | `wheel up\|down [n] [at X Y] [ctrl]` | Wheel steps at a point (size; with `ctrl`: zoom about the point) |
-| `ui tool NAME`, `ui color N`, `ui size`, `ui help`, `ui undo`, `ui redo`, `ui arrow-style [straight\|stairs]` | Click a dock or top bar item at its place for the screen size (scripts survive layout changes). `arrow-style` (alias `pointer-style`) with no name clicks the style not in use; the switch shows only with the arrow or the callout tool, over that tool's slot |
+| `ui tool NAME`, `ui color N`, `ui size`, `ui help`, `ui undo`, `ui redo`, `ui canvas-bg [light\|dark]`, `ui arrow-style [straight\|stairs]` | Click a dock or top bar item at its place for the screen size (scripts survive layout changes). `canvas-bg` with no name clicks the top bar switch (a toggle); with a name it clicks only if the canvas is not that one yet. `arrow-style` (alias `pointer-style`) with no name clicks the style not in use; the switch shows only with the arrow or the callout tool, over that tool's slot |
 | `resize W H` | Window resize |
 
 The replay renders after each event that asks for a redraw, like the X11

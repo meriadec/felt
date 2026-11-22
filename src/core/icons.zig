@@ -130,6 +130,15 @@ pub fn drawUndo(cv: *Canvas, clip: Rect, redo: bool, c: Vec2, size: f32, color: 
     pen.fill(pen.tri(.{ -0.85, -0.3 }, .{ -0.32, -0.7 }, .{ -0.32, 0.1 }), 1);
 }
 
+/// The canvas background switch: a circle with its left half filled
+/// (light and dark side by side).
+pub fn drawCanvasBg(cv: *Canvas, clip: Rect, c: Vec2, size: f32, color: Color) void {
+    const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.1) };
+    const r = 0.78 * pen.k;
+    pen.fill(sdf.ring(sdf.Disc{ .c = c, .r = r }, pen.w), 1);
+    pen.fill(sdf.Subtract(sdf.Disc, sdf.RoundRect){ .a = .{ .c = c, .r = r }, .b = pen.box(0, -2, 2, 2, 0) }, 1);
+}
+
 test "every icon draws inside its box" {
     const gpa = std.testing.allocator;
     var cv = try Canvas.init(gpa, 40, 40);
@@ -163,4 +172,15 @@ test "every icon draws inside its box" {
             try std.testing.expect(i % 40 >= 6 and i % 40 < 34 and i / 40 >= 6 and i / 40 < 34);
         };
     }
+    cv.fill(.{ .r = 0, .g = 0, .b = 0 });
+    drawCanvasBg(&cv, cv.bounds(), .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
+    var ink: usize = 0;
+    for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
+        ink += 1;
+        try std.testing.expect(i % 40 >= 6 and i % 40 < 34 and i / 40 >= 6 and i / 40 < 34);
+    };
+    try std.testing.expect(ink > 100);
+    // The left half is filled, the middle of the right half is not.
+    try std.testing.expectEqual(@as(u32, 0xffffffff), cv.at(15, 20));
+    try std.testing.expectEqual(@as(u32, 0xff000000), cv.at(25, 20));
 }

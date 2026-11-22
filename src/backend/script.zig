@@ -18,6 +18,9 @@ pub const UiTarget = union(enum) {
     redo,
     /// A slot of the arrow style switch (null: the style not in use, a toggle).
     arrow_style: ?core.annotation.ArrowStyle,
+    /// The canvas background switch of the top bar. With a name, it clicks
+    /// only if the canvas is not that one yet (null: always, a toggle).
+    canvas_bg: ?core.settings.CanvasBg,
 };
 
 pub const Step = union(enum) {
@@ -185,6 +188,10 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
         const name = it.next() orelse return .{ .arrow_style = null };
         return .{ .arrow_style = std.meta.stringToEnum(core.annotation.ArrowStyle, name) orelse return fail(err, "ui arrow-style: straight or stairs (none: the other one)") };
     }
+    if (eq(u8, what, "canvas-bg")) {
+        const name = it.next() orelse return .{ .canvas_bg = null };
+        return .{ .canvas_bg = std.meta.stringToEnum(core.settings.CanvasBg, name) orelse return fail(err, "ui canvas-bg: light or dark (none: the other one)") };
+    }
     if (eq(u8, what, "size")) return .size;
     if (eq(u8, what, "help")) return .help;
     if (eq(u8, what, "undo")) return .undo;
@@ -192,7 +199,7 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     return fail(err, ui_help);
 }
 
-const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo or arrow-style [straight|stairs] (alias pointer-style)";
+const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark] or arrow-style [straight|stairs] (alias pointer-style)";
 
 test "parse script" {
     const gpa = std.testing.allocator;
@@ -212,10 +219,14 @@ test "parse script" {
         \\ui arrow-style
         \\ui arrow-style stairs
         \\ui pointer-style straight
+        \\ui canvas-bg
+        \\ui canvas-bg dark
         \\move ui redo
     , &err);
     defer s.deinit(gpa);
     try std.testing.expectEqual(UiTarget.redo, s.events.pop().?.hover);
+    try std.testing.expectEqual(UiTarget{ .canvas_bg = .dark }, s.events.pop().?.ui);
+    try std.testing.expectEqual(UiTarget{ .canvas_bg = null }, s.events.pop().?.ui);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
     try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
     try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1 + 3 + 3), s.events.items.len);
@@ -231,4 +242,5 @@ test "parse script" {
     try std.testing.expectEqual(UiTarget{ .color = 2 }, s.events.items[s.events.items.len - 2].ui);
     try std.testing.expectError(error.BadScript, parse(gpa, "ui tool lasso", &err));
     try std.testing.expectError(error.BadScript, parse(gpa, "ui arrow-style curly", &err));
+    try std.testing.expectError(error.BadScript, parse(gpa, "ui canvas-bg white", &err));
 }

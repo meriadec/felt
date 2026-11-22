@@ -1,6 +1,6 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
 //! colors, size, help button, the arrow style switch; geometry in dock.zig), the top bar (undo,
-//! redo; geometry in topbar.zig), the help overlay with
+//! redo, canvas background; geometry in topbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
 //! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
@@ -104,6 +104,7 @@ const Op = union(enum) {
     icon: struct { tool: keymap.Tool, c: Vec2, size: f32, color: Color },
     arrow_style: struct { style: ArrowStyle, c: Vec2, size: f32, color: Color },
     undo: struct { redo: bool, c: Vec2, size: f32, color: Color },
+    canvas_bg: struct { c: Vec2, size: f32, color: Color },
 };
 
 const max_ops = 256;
@@ -216,15 +217,24 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     const s = b.s;
     l.panel(b.panel, 12 * s);
     for (b.slots, topbar.buttons) |r, btn| {
-        const enabled = if (btn == .undo) st.can_undo else st.can_redo;
+        const enabled = switch (btn) {
+            .undo => st.can_undo,
+            .redo => st.can_redo,
+            .canvas_bg => true,
+        };
         const hovered = st.hover.bar == btn;
         if (enabled and hovered) {
             const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
             l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
         }
         const ink = if (!enabled) nord.n3 else if (hovered) nord.n6 else nord.n4;
-        l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } });
+        switch (btn) {
+            .undo, .redo => l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } }),
+            .canvas_bg => l.push(.{ .canvas_bg = .{ .c = center(r), .size = 20 * s, .color = ink } }),
+        }
     }
+    const cy = center(b.panel).y;
+    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.sep - 0.5 * s, .y = cy - 12 * s }, .max = .{ .x = b.sep + 0.5 * s, .y = cy + 12 * s } }, .radius = 0, .color = nord.n3 } });
 }
 
 // ---- help overlay ------------------------------------------------------
@@ -448,6 +458,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .icon => |i| icons.draw(cv, clip, i.tool, i.c, i.size, i.color),
         .arrow_style => |i| icons.drawArrowStyle(cv, clip, i.style, i.c, i.size, i.color),
         .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
+        .canvas_bg => |i| icons.drawCanvasBg(cv, clip, i.c, i.size, i.color),
         .text => |t| {
             var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, false);
             defer mask.deinit(ctx.gpa);

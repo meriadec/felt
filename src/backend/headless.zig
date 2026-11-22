@@ -36,12 +36,12 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             if (try feed(app, ev)) break;
         },
         .ui => |t| {
-            const p = try uiPoint(app, t);
+            const p = try uiPoint(app, t) orelse continue;
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },
         .hover => |t| {
-            const p = try uiPoint(app, t);
+            const p = try uiPoint(app, t) orelse continue;
             if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
         },
     };
@@ -69,8 +69,9 @@ fn feed(app: *App, ev: core.input.Event) !bool {
     return r.quit;
 }
 
-/// Screen center of a chrome item at the current screen size and tool.
-fn uiPoint(app: *App, t: script_mod.UiTarget) !core.geom.Vec2 {
+/// Screen center of a chrome item at the current screen size and tool;
+/// null: no click needed (the canvas background is already the one named).
+fn uiPoint(app: *App, t: script_mod.UiTarget) !?core.geom.Vec2 {
     const w = app.editor.view.screen_w;
     const h = app.editor.view.screen_h;
     const d = core.dock.Dock.of(w, h, app.editor.tool);
@@ -89,6 +90,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget) !core.geom.Vec2 {
         .help => mid(d.help),
         .undo => mid(bar.slots[0]),
         .redo => mid(bar.slots[1]),
+        .canvas_bg => |want| if (want != null and want.? == app.editor.settings.canvas_bg) null else mid(bar.slots[2]),
         .arrow_style => |want| {
             if (d.switch_panel == null) {
                 std.log.err("script: ui arrow-style: the switch shows only with the arrow or the callout tool", .{});

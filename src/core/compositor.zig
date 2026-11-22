@@ -163,6 +163,8 @@ pub const Compositor = struct {
     scene_removals: u64 = 0,
     /// Canvas (image px) the scene was painted with.
     scene_canvas: Rect = Rect.empty,
+    /// Canvas background the scene was painted with.
+    scene_bg: color.Color = .{ .r = 0, .g = 0, .b = 0 },
     prev_preview: Rect = Rect.empty,
     /// Screen rectangle of the canvas with the shape in progress.
     prev_live: Rect = Rect.empty,
@@ -336,6 +338,11 @@ pub const Compositor = struct {
             full = true;
         } else {
             var fix = Fix{};
+            if (!std.meta.eql(s.bg, self.scene_bg)) {
+                // The canvas background changed: repaint the canvas outside
+                // the image (bands around it), with what is drawn there.
+                for (s.canvas_dst.minus(s.pic_dst)) |b| fix.add(b.intersect(full_rect));
+            }
             if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
                 const old_dst = v.rect(self.scene_canvas);
                 for (s.canvas_dst.minus(old_dst)) |b| fix.add(b.intersect(full_rect));
@@ -367,6 +374,8 @@ pub const Compositor = struct {
         self.scene_count = items.len;
         self.scene_removals = doc.removals;
         self.scene_canvas = ed.canvas;
+        const bg_changed = !std.meta.eql(s.bg, self.scene_bg);
+        self.scene_bg = s.bg;
 
         // Overlay damage: old and new preview, the canvas it adds,
         // chrome if it changed.
@@ -387,6 +396,7 @@ pub const Compositor = struct {
             self.prev_live = live;
         }
         const extra = live.minus(s.canvas_dst);
+        if (bg_changed) for (extra) |b| dmg.add(b.intersect(full_rect));
 
         // Crop in progress: everything outside is dimmed. Damage only the
         // bands between the old and the new rectangle.
