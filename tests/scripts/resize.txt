@@ -1,0 +1,9 @@
+# Resize: draw at 900x500, the window shrinks to 600x400 (scene rebuilt at the
+# new scale), then draw again; both rectangles must sit on the same content.
+size 900 500
+key r
+drag 85 140 455 185
+resize 600 400
+key 5
+drag 400 80 560 300
+key ?
