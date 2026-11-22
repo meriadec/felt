@@ -188,7 +188,7 @@ test "export is at original resolution with annotations mapped from screen" {
     try std.testing.expectEqual(red, out.at(360, 150));
     try std.testing.expectEqual(red, out.at(200, 260));
     try std.testing.expectEqual(@as(u32, 0xff808080), out.at(200, 150));
-    try std.testing.expectEqual(red, app.frame().at(100, 20)); // top edge on screen
+    try std.testing.expectEqual(red, app.frame().at(20, 75)); // left edge on screen, clear of the panels
 }
 
 test "crop exports the kept part at original resolution; undo restores" {

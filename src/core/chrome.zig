@@ -1,5 +1,6 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
-//! colors, size, help button; geometry in dock.zig), the help overlay with
+//! colors, size, help button; geometry in dock.zig), the top bar (undo,
+//! redo; geometry in topbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
 //! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
@@ -14,7 +15,10 @@ const color = @import("color.zig");
 const keymap = @import("keymap.zig");
 const style = @import("style.zig");
 const icons = @import("icons.zig");
-const Dock = @import("dock.zig").Dock;
+const dock = @import("dock.zig");
+const topbar = @import("topbar.zig");
+const Dock = dock.Dock;
+const TopBar = topbar.TopBar;
 const Canvas = @import("canvas.zig").Canvas;
 const Ctx = @import("draw.zig").Ctx;
 const Editor = @import("editor.zig").Editor;
@@ -30,22 +34,56 @@ pub const State = struct {
     color_idx: u8,
     size_idx: u8,
     help_visible: bool,
+    /// The dock and the top bar (Space hides both).
     dock_visible: bool = true,
     toast: ?[]const u8,
+    can_undo: bool = false,
+    can_redo: bool = false,
+    hover: Hover = .{},
 
     pub fn of(ed: *const Editor) State {
-        return .{ .tool = ed.tool, .color_idx = ed.color_idx, .size_idx = ed.size_idx, .help_visible = ed.help_visible, .dock_visible = ed.dock_visible, .toast = ed.toast() };
+        return .{
+            .tool = ed.tool,
+            .color_idx = ed.color_idx,
+            .size_idx = ed.size_idx,
+            .help_visible = ed.help_visible,
+            .dock_visible = ed.dock_visible,
+            .toast = ed.toast(),
+            .can_undo = ed.canUndo(),
+            .can_redo = ed.canRedo(),
+            .hover = ed.chromeHover(),
+        };
     }
 
     pub fn signature(s: State) u64 {
         var h = std.hash.Wyhash.init(0);
-        h.update(std.mem.asBytes(&[_]u8{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible), @intFromBool(s.dock_visible) }));
+        h.update(std.mem.asBytes(&[_]u8{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible), @intFromBool(s.dock_visible), @intFromBool(s.can_undo), @intFromBool(s.can_redo) }));
+        h.update(std.mem.asBytes(&s.hover.key()));
         h.update(s.toast orelse "\x00");
         return h.final();
     }
 };
 
+/// The chrome item under the pointer.
+pub const Hover = struct {
+    dock: ?dock.Hit = null,
+    bar: ?topbar.Button = null,
+
+    /// A small value that changes when the hovered item changes.
+    pub fn key(h: Hover) u32 {
+        const d: u32 = if (h.dock) |x| switch (x) {
+            .tool => |t| 1 + @as(u32, @intFromEnum(t)),
+            .color => |i| 64 + @as(u32, i),
+            .size => 128,
+            .help => 129,
+        } else 0;
+        const b: u32 = if (h.bar) |x| 1 + @as(u32, @intFromEnum(x)) else 0;
+        return d | b << 16;
+    }
+};
+
 const panel_bg = nord.n1;
+const hover_bg = nord.n2;
 const panel_border = nord.n2;
 const accent = nord.n8;
 
@@ -60,14 +98,18 @@ const Op = union(enum) {
     /// Text centered on `c` by its ink (badges, single glyphs).
     glyph: struct { c: Vec2, s: []const u8, px: u16, color: Color },
     icon: struct { tool: keymap.Tool, c: Vec2, size: f32, color: Color },
+    undo: struct { redo: bool, c: Vec2, size: f32, color: Color },
 };
 
 const max_ops = 256;
 
+/// Dock, top bar, help overlay, toast.
+pub const max_panels = 4;
+
 pub const Layout = struct {
     ops: [max_ops]Op = undefined,
     n: usize = 0,
-    panels: [3]Rect = undefined,
+    panels: [max_panels]Rect = undefined,
     n_panels: usize = 0,
 
     fn push(l: *Layout, op: Op) void {
@@ -108,9 +150,10 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
         const c = center(b);
-        if (active) {
+        const hovered = if (st.hover.dock) |hd| hd == .tool and hd.tool == info.tool else false;
+        if (active or hovered) {
             const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
-            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = accent } });
+            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = if (active) accent else hover_bg } });
         }
         l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) nord.n0 else nord.n4 } });
         const bc = b.max.sub(.{ .x = 8.5 * s, .y = 8.5 * s });
@@ -124,8 +167,9 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     }
 
     for (d.swatches, color.palette, 0..) |c, p, i| {
-        if (i == st.color_idx) {
-            l.push(.{ .disc_ring = .{ .c = c, .r = d.swatch_r + 3 * s, .w = 1.8 * s, .color = nord.n6 } });
+        const hovered = if (st.hover.dock) |hd| hd == .color and hd.color == i else false;
+        if (i == st.color_idx or hovered) {
+            l.push(.{ .disc_ring = .{ .c = c, .r = d.swatch_r + 3 * s, .w = 1.8 * s, .color = if (i == st.color_idx) nord.n6 else nord.n3 } });
         } else {
             l.push(.{ .disc_ring = .{ .c = c, .r = d.swatch_r + 0.5 * s, .w = s, .color = nord.n3 } });
         }
@@ -142,8 +186,26 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
     const hc = center(d.help);
     const hr = (d.help.max.y - d.help.min.y) / 2;
-    l.push(.{ .disc = .{ .c = hc, .r = hr * 0.72, .color = if (st.help_visible) accent else nord.n2 } });
+    const help_hover = if (st.hover.dock) |hd| hd == .help else false;
+    l.push(.{ .disc = .{ .c = hc, .r = hr * 0.72, .color = if (st.help_visible) accent else if (help_hover) nord.n3 else nord.n2 } });
     l.push(.{ .glyph = .{ .c = hc, .s = "?", .px = px(14 * s), .color = if (st.help_visible) nord.n0 else nord.n5 } });
+}
+
+// ---- top bar -----------------------------------------------------------
+
+fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
+    const s = b.s;
+    l.panel(b.panel, 12 * s);
+    for (b.slots, topbar.buttons) |r, btn| {
+        const enabled = if (btn == .undo) st.can_undo else st.can_redo;
+        const hovered = st.hover.bar == btn;
+        if (enabled and hovered) {
+            const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
+            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
+        }
+        const ink = if (!enabled) nord.n3 else if (hovered) nord.n6 else nord.n4;
+        l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } });
+    }
 }
 
 // ---- help overlay ------------------------------------------------------
@@ -305,7 +367,8 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
 
 // ---- toast -------------------------------------------------------------
 
-fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32) void {
+/// `top`: y of the pill top edge at scale 1 is 12, or below the top bar.
+fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f32) void {
     const W: f32 = @floatFromInt(w);
     var s = s_in;
     var size = px(13 * s);
@@ -318,7 +381,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32) void {
     const ph = 32 * s;
     const pw = tw + 32 * s;
     const x0 = @round((W - pw) / 2);
-    const y0 = @round(12 * s);
+    const y0 = @round(top orelse 12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
     l.panel(b, ph / 2);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
@@ -327,9 +390,14 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32) void {
 pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
     var l = Layout{};
     const d = Dock.of(w, h);
-    if (st.dock_visible) layoutDock(&l, st, &d);
+    const bar = TopBar.of(w, h);
+    if (st.dock_visible) {
+        layoutDock(&l, st, &d);
+        layoutTopBar(&l, st, &bar);
+    }
     if (st.help_visible) layoutOverlay(ctx, &l, &d, w, h);
-    if (st.toast) |msg| layoutToast(ctx, &l, msg, w, style.uiScale(h));
+    const s = style.uiScale(h);
+    if (st.toast) |msg| layoutToast(ctx, &l, msg, w, s, if (st.dock_visible) bar.panel.max.y + 8 * s else null);
     return l;
 }
 
@@ -352,6 +420,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .disc => |d| raster.fill(cv, clip, sdf.Disc{ .c = d.c, .r = d.r }, .{ .solid = d.color }, .{}),
         .disc_ring => |d| raster.fill(cv, clip, sdf.ring(sdf.Disc{ .c = d.c, .r = d.r }, d.w), .{ .solid = d.color }, .{}),
         .icon => |i| icons.draw(cv, clip, i.tool, i.c, i.size, i.color),
+        .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
         .text => |t| {
             var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, false);
             defer mask.deinit(ctx.gpa);

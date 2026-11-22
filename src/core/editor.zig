@@ -14,6 +14,8 @@ const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
 const Font = @import("font.zig").Font;
 const Dock = @import("dock.zig").Dock;
+const TopBar = @import("topbar.zig").TopBar;
+const Hover = @import("chrome.zig").Hover;
 
 const Vec2 = geom.Vec2;
 const Tool = keymap.Tool;
@@ -74,8 +76,10 @@ pub const Editor = struct {
     size_idx: u8 = style.default_size,
     /// The shortcut overlay (`?`/F1).
     help_visible: bool = false,
-    /// The icon dock (Space hides it to see the bottom of the image).
+    /// The icon dock and the top bar (Space hides both to see the image).
     dock_visible: bool = true,
+    /// Last pointer position on screen (hover), null before the first move.
+    pointer: ?Vec2 = null,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
     quit_armed: bool = false,
@@ -128,6 +132,32 @@ pub const Editor = struct {
 
     fn fontImg(self: *const Editor) f32 {
         return self.toImg(style.sizes[self.size_idx].font);
+    }
+
+    /// Ctrl+Z or the undo button does something.
+    pub fn canUndo(self: *const Editor) bool {
+        return self.mode != .idle or self.doc.history.items.len > 0;
+    }
+
+    pub fn canRedo(self: *const Editor) bool {
+        return self.doc.undone.items.len > 0;
+    }
+
+    /// The dock or top bar item under the pointer (none during a drag).
+    pub fn chromeHover(self: *const Editor) Hover {
+        const p = self.pointer orelse return .{};
+        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.panning != null) return .{};
+        const w = self.view.screen_w;
+        const h = self.view.screen_h;
+        return .{ .dock = Dock.of(w, h).hit(p), .bar = TopBar.of(w, h).hit(p) };
+    }
+
+    /// The point is on the dock or the top bar: a click there never draws.
+    fn onChrome(self: *const Editor, p: Vec2) bool {
+        if (!self.dock_visible) return false;
+        const w = self.view.screen_w;
+        const h = self.view.screen_h;
+        return Dock.of(w, h).contains(p) or TopBar.of(w, h).contains(p);
     }
 
     pub fn dirty(self: *const Editor) bool {
@@ -275,6 +305,8 @@ pub const Editor = struct {
                 return self.onUp(m.x, m.y, m.button);
             },
             .mouse_move => |m| {
+                const hover_before = self.chromeHover().key();
+                self.pointer = .{ .x = m.x, .y = m.y };
                 if (self.panning) |last| {
                     const dx: i32 = @intFromFloat(@round(m.x - last.x));
                     const dy: i32 = @intFromFloat(@round(m.y - last.y));
@@ -289,7 +321,7 @@ pub const Editor = struct {
                     self.mode.drag.cur = self.view.toImage(p);
                     return .{ .redraw = true };
                 }
-                return .{};
+                return .{ .redraw = self.chromeHover().key() != hover_before };
             },
             .wheel => |wh| {
                 if (wh.mods.ctrl) self.zoom(wh.delta, .{ .x = wh.x, .y = wh.y }) else self.changeSize(wh.delta);
@@ -312,17 +344,22 @@ pub const Editor = struct {
             self.help_visible = false;
             return .{ .redraw = true };
         }
-        if (self.mode != .drag and self.dock_visible) {
-            const d = Dock.of(self.view.screen_w, self.view.screen_h);
-            if (d.contains(.{ .x = x, .y = y })) {
-                if (button == .left) if (d.hit(.{ .x = x, .y = y })) |h| switch (h) {
+        const p = Vec2.init(x, y);
+        self.pointer = p;
+        if (self.mode != .drag and self.onChrome(p)) {
+            if (button == .left) {
+                if (Dock.of(self.view.screen_w, self.view.screen_h).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
                     .color => |i| self.color_idx = i,
                     .size => self.size_idx = @intCast((@as(usize, self.size_idx) + 1) % style.sizes.len),
                     .help => self.help_visible = true,
                 };
-                return .{ .redraw = true };
+                if (TopBar.of(self.view.screen_w, self.view.screen_h).hit(p)) |b| switch (b) {
+                    .undo => try self.undo(),
+                    .redo => try self.redo(),
+                };
             }
+            return .{ .redraw = true };
         }
         if (button == .right) {
             self.cancel();
@@ -455,6 +492,16 @@ pub const Editor = struct {
         self.tool = t;
     }
 
+    /// Drop the shape or text in progress, else undo the last step.
+    fn undo(self: *Editor) !void {
+        if (self.mode != .idle) self.cancel() else _ = try self.doc.undo(self.gpa);
+    }
+
+    fn redo(self: *Editor) !void {
+        self.cancel();
+        _ = try self.doc.redo(self.gpa);
+    }
+
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
         switch (action) {
             .tool => |t| try self.setTool(t),
@@ -463,13 +510,8 @@ pub const Editor = struct {
             .color => |i| self.color_idx = i,
             .size_up => self.changeSize(1),
             .size_down => self.changeSize(-1),
-            .undo => {
-                if (self.mode != .idle) self.cancel() else _ = try self.doc.undo(self.gpa);
-            },
-            .redo => {
-                self.cancel();
-                _ = try self.doc.redo(self.gpa);
-            },
+            .undo => try self.undo(),
+            .redo => try self.redo(),
             .save, .copy => {
                 try self.commitTyping();
                 return .{ .redraw = true, .command = if (action == .save) .save else .copy };
@@ -517,6 +559,9 @@ const T = struct {
     fn init(self: *T) void {
         self.font = Font.init(std.testing.allocator, @import("root.zig").font_ttf) catch unreachable;
         self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, 200, 100, 200, 100);
+        // The panels would cover most of a 200x100 screen; tests that click
+        // them show them.
+        self.ed.dock_visible = false;
     }
     fn deinit(self: *T) void {
         self.ed.deinit();
@@ -643,6 +688,7 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
+    t.ed.dock_visible = true;
     const d = Dock.of(1920, 1080);
     const tb = d.tools[2];
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
@@ -662,6 +708,34 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     // Hidden dock: a click there draws.
     _ = try t.key("space");
     try t.drag(d.panel.min.x + 2, d.panel.min.y + 2, d.panel.max.x - 2, d.panel.max.y - 2);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+}
+
+test "top bar: undo and redo by click, never draws, hover follows the pointer" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.resize(1920, 1080);
+    t.ed.dock_visible = true;
+    const b = TopBar.of(1920, 1080);
+    const undo_c = b.slots[0].min.add(b.slots[0].max).scale(0.5);
+    const redo_c = b.slots[1].min.add(b.slots[1].max).scale(0.5);
+    try std.testing.expect(!t.ed.canUndo() and !t.ed.canRedo());
+    try t.drag(300, 300, 400, 400);
+    try std.testing.expect(t.ed.canUndo());
+    // A click on a disabled button does nothing, and never draws.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = redo_c.x, .y = redo_c.y } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = redo_c.x, .y = redo_c.y } });
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = undo_c.x, .y = undo_c.y } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = undo_c.x, .y = undo_c.y } });
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+    try std.testing.expect(!t.ed.canUndo() and t.ed.canRedo());
+    const eff = try t.ed.handle(.{ .mouse_move = .{ .x = redo_c.x, .y = redo_c.y } });
+    try std.testing.expect(eff.redraw);
+    try std.testing.expectEqual(@import("topbar.zig").Button.redo, t.ed.chromeHover().bar.?);
+    try std.testing.expect(!(try t.ed.handle(.{ .mouse_move = .{ .x = redo_c.x + 1, .y = redo_c.y } })).redraw);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = redo_c.x, .y = redo_c.y } });
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
 }
 

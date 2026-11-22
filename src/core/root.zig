@@ -23,6 +23,7 @@ pub const extent = @import("extent.zig");
 pub const editor = @import("editor.zig");
 pub const icons = @import("icons.zig");
 pub const dock = @import("dock.zig");
+pub const topbar = @import("topbar.zig");
 pub const chrome = @import("chrome.zig");
 pub const compositor = @import("compositor.zig");
 pub const exporter = @import("exporter.zig");

@@ -46,7 +46,8 @@ image files. Build: `coreModule` in build.zig.
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
 | `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks) |
-| `chrome.zig` | Nord chrome: icon dock, help overlay, toast pill (layout as draw ops) |
+| `topbar.zig` | Top bar geometry and hit test: Undo and Redo buttons (only these: save and copy stay on keys) |
+| `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops) |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, white outside the image) |
 

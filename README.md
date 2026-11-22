@@ -25,8 +25,9 @@ annotate -o out.png shot.png # Ctrl+S writes out.png
 
 The image fits the screen (never upscaled). A small icon dock at the bottom
 center shows the tools (each with its key letter), the colors and the size;
-click it or use the keys. Tab and Shift+Tab cycle the tools. Space hides or
-shows the dock; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
+click it or use the keys. A small bar at the top center has Undo and Redo
+buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
+panels; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
 drag; undo restores it. Draw past the image edge and the canvas grows white
 to hold the shape (the saved PNG too); undo shrinks it back. Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,

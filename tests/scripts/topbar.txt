@@ -1,0 +1,13 @@
+# Top bar clicks: two rects, a click on the dim redo button (nothing to
+# redo: no change, no shape), undo twice by click, redo once by click, then
+# the pointer rests on redo (hover). The frame shows undo and redo enabled,
+# redo hovered; the export holds only the first rect.
+size 900 500
+key r
+drag 100 100 250 200
+drag 300 250 450 350
+click 472 42
+click 428 42
+click 428 42
+click 472 42
+move 470 40

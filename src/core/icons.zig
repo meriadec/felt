@@ -22,9 +22,11 @@ const Pen = struct {
     color: Color,
     /// Stroke width in px.
     w: f32,
+    /// -1 mirrors the icon left to right.
+    sx: f32 = 1,
 
     fn p(pen: Pen, x: f32, y: f32) Vec2 {
-        return .{ .x = pen.c.x + x * pen.k, .y = pen.c.y + y * pen.k };
+        return .{ .x = pen.c.x + x * pen.sx * pen.k, .y = pen.c.y + y * pen.k };
     }
     fn fill(pen: Pen, shape: anytype, alpha: f32) void {
         const a: u8 = @intFromFloat(@as(f32, @floatFromInt(pen.color.a)) * alpha);
@@ -34,7 +36,9 @@ const Pen = struct {
         pen.fill(sdf.Capsule{ .a = pen.p(x0, y0), .b = pen.p(x1, y1), .r = pen.w * 0.5 }, 1);
     }
     fn box(pen: Pen, x0: f32, y0: f32, x1: f32, y1: f32, radius: f32) sdf.RoundRect {
-        return .{ .min = pen.p(x0, y0), .max = pen.p(x1, y1), .radius = radius * pen.k };
+        const a = pen.p(x0, y0);
+        const b = pen.p(x1, y1);
+        return .{ .min = a.min(b), .max = a.max(b), .radius = radius * pen.k };
     }
     fn tri(pen: Pen, a: [2]f32, b: [2]f32, c: [2]f32) sdf.Triangle {
         return .{ .a = pen.p(a[0], a[1]), .b = pen.p(b[0], b[1]), .c = pen.p(c[0], c[1]) };
@@ -90,6 +94,19 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
     }
 }
 
+/// Undo (curved arrow to the left) or, with `redo`, its mirror.
+pub fn drawUndo(cv: *Canvas, clip: Rect, redo: bool, c: Vec2, size: f32, color: Color) void {
+    const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11), .sx = if (redo) -1 else 1 };
+    // U-turn: the head points left at the top, the path runs right, turns
+    // down a half circle and comes back left at the bottom.
+    const o = pen.p(0.18, 0.12);
+    const left_half = pen.box(-2, -2, 0.18, 2, 0);
+    pen.fill(sdf.Subtract(sdf.Ring(sdf.Disc), sdf.RoundRect){ .a = sdf.ring(sdf.Disc{ .c = o, .r = 0.42 * pen.k }, pen.w), .b = left_half }, 1);
+    pen.line(-0.35, -0.3, 0.18, -0.3);
+    pen.line(0.18, 0.54, -0.45, 0.54);
+    pen.fill(pen.tri(.{ -0.85, -0.3 }, .{ -0.32, -0.7 }, .{ -0.32, 0.1 }), 1);
+}
+
 test "every icon draws inside its box" {
     const gpa = std.testing.allocator;
     var cv = try Canvas.init(gpa, 40, 40);
@@ -105,5 +122,12 @@ test "every icon draws inside its box" {
             try std.testing.expect(x >= 6 and x < 34 and y >= 6 and y < 34);
         };
         try std.testing.expect(ink > 20);
+    }
+    for ([_]bool{ false, true }) |redo| {
+        cv.fill(.{ .r = 0, .g = 0, .b = 0 });
+        drawUndo(&cv, cv.bounds(), redo, .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
+        for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
+            try std.testing.expect(i % 40 >= 6 and i % 40 < 34 and i / 40 >= 6 and i / 40 < 34);
+        };
     }
 }

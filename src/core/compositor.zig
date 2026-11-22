@@ -83,7 +83,7 @@ pub const Compositor = struct {
     /// Screen rectangle of the canvas with the shape in progress.
     prev_live: Rect = Rect.empty,
     prev_crop: ?Rect = null,
-    prev_chrome: [3]Rect = .{ Rect.empty, Rect.empty, Rect.empty },
+    prev_chrome: [chrome.max_panels]Rect = @splat(Rect.empty),
     prev_chrome_sig: u64 = 0,
     force_full: bool = true,
 
@@ -278,7 +278,7 @@ pub const Compositor = struct {
             for (chrome.rects(&lay)) |r| dmg.add(r);
             self.prev_chrome_sig = sig;
         }
-        self.prev_chrome = .{ Rect.empty, Rect.empty, Rect.empty };
+        self.prev_chrome = @splat(Rect.empty);
         for (chrome.rects(&lay), 0..) |r, i| self.prev_chrome[i] = r;
 
         if (full) {
