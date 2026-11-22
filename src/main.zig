@@ -4,8 +4,10 @@ const builtin = @import("builtin");
 const core = @import("core");
 const cli = @import("cli.zig");
 const headless = @import("backend/headless.zig");
+const x11 = @import("backend/x11.zig");
 
 pub fn main() !u8 {
+    var start = try std.time.Timer.start();
     var dbg: std.heap.DebugAllocator(.{}) = .init;
     defer if (builtin.mode == .Debug) {
         _ = dbg.deinit();
@@ -38,7 +40,13 @@ pub fn main() !u8 {
             .output_path = opts.output,
             .clipboard_out = opts.clipboard_out,
         }) catch |err| return fail(err, opts.image.?),
-        .bench, .window => {
+        .window => x11.run(gpa, .{
+            .image_path = opts.image.?,
+            .output_path = opts.output orelse opts.image.?,
+            .timing = opts.timing,
+            .smoke = opts.smoke,
+        }, &start) catch |err| return fail(err, opts.image.?),
+        .bench => {
             std.debug.print("annotate: not implemented yet\n", .{});
             return 1;
         },
@@ -51,6 +59,8 @@ fn fail(err: anyerror, image: []const u8) u8 {
         error.DecodeFailed => std.debug.print("annotate: cannot decode {s} (PNG, JPEG or BMP expected)\n", .{image}),
         error.FileNotFound => std.debug.print("annotate: file not found ({s} or a path in the options)\n", .{image}),
         error.BadScript => {}, // already printed with file:line
+        error.NoDisplay => std.debug.print("annotate: cannot open X display (DISPLAY not set?). Without a display use --headless.\n", .{}),
+        error.UnsupportedVisual => std.debug.print("annotate: X visual is not 24/32-bit TrueColor RGB\n", .{}),
         else => std.debug.print("annotate: {s}\n", .{@errorName(err)}),
     }
     return 1;

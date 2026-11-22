@@ -101,5 +101,7 @@ fn addExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
         .link_libc = true,
     });
     mod.addImport("core", coreModule(b, target, optimize));
+    mod.linkSystemLibrary("X11", .{});
+    mod.linkSystemLibrary("Xext", .{});
     return b.addExecutable(.{ .name = "annotate", .root_module = mod });
 }
