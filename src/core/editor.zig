@@ -247,7 +247,7 @@ pub const Editor = struct {
     }
 
     /// The point is on the dock or the top bar: a click there never draws.
-    fn onChrome(self: *const Editor, p: Vec2) bool {
+    pub fn onChrome(self: *const Editor, p: Vec2) bool {
         if (!self.dock_visible) return false;
         const w = self.view.screen_w;
         const h = self.view.screen_h;

@@ -78,7 +78,9 @@ One command per line, screen coordinates, `#` starts a comment.
 | `resize W H` | Window resize |
 
 The replay renders after each event that asks for a redraw, like the X11
-loop. A script that ends mid-drag or mid-typing shows the preview in the frame.
+loop. A raw left press (`click`, `down`, `drag`) on the dock, its style
+switch or the top bar fails the replay: click chrome with `ui`, so a
+layout change never turns a drawing press into a button click. A script that ends mid-drag or mid-typing shows the preview in the frame.
 
 ## Add a golden script
 

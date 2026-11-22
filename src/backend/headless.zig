@@ -31,7 +31,10 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
     errdefer app.destroy();
     _ = try app.render();
     for (script.events.items) |step| switch (step) {
-        .event => |ev| if (try feed(app, ev)) break,
+        .event => |ev| {
+            try checkOffChrome(app, ev);
+            if (try feed(app, ev)) break;
+        },
         .ui => |t| {
             const p = try uiPoint(app, t);
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
@@ -39,6 +42,20 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
         },
     };
     return app;
+}
+
+/// A raw left press of a script that would land on the dock, its style
+/// switch or the top bar is an error: chrome moves (a new slot, a switch
+/// that shows with a tool), so a script that meant to draw there would
+/// silently click a button instead. Scripts click chrome with `ui`.
+fn checkOffChrome(app: *App, ev: core.input.Event) !void {
+    if (ev != .mouse_down or ev.mouse_down.button != .left) return;
+    const ed = &app.editor;
+    if (ed.help_visible or ed.mode == .drag or ed.mode == .moving) return;
+    const p = core.geom.Vec2.init(ev.mouse_down.x, ev.mouse_down.y);
+    if (!ed.onChrome(p)) return;
+    std.log.err("script: a press at {d} {d} lands on the dock, its style switch or the top bar: click chrome with `ui ...`, or draw elsewhere", .{ p.x, p.y });
+    return error.ScriptPressOnChrome;
 }
 
 /// Handle one event, render if asked; true on quit.
