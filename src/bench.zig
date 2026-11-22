@@ -1,6 +1,7 @@
 //! Benchmark (`annotate --bench`, `zig build bench`): times decode, startup
-//! render, per-frame render while dragging and typing, undo rebuild,
-//! export and crop, on a synthetic screenshot or a given image. Budgets: docs/perf.md.
+//! render, per-frame render while dragging and typing, undo rebuild, export,
+//! crop, a drag that grows the canvas, pan and zoom, on a synthetic
+//! screenshot or a given image. Budgets: docs/perf.md.
 const std = @import("std");
 const core = @import("core");
 const App = @import("app.zig").App;
@@ -214,5 +215,57 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     t.reset();
     _ = try app.render();
     try w.print("{s:<26} {d:>7.3} ms ({d}x{d} image px kept)\n", .{ "frame: crop (refit)", ms(t.read()), app.editor.canvas.width(), app.editor.canvas.height() });
+
+    // Zoom out (room around the image), then drag an arrow from the image
+    // out past its edge: the canvas grows white, live.
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = '-' } } });
+    t.reset();
+    _ = try app.render();
+    try w.print("{s:<26} {d:>7.3} ms (scale {d:.3})\n", .{ "frame: zoom out (key -)", ms(t.read()), app.editor.view.xf.scale });
+    var grow = Stats{};
+    defer grow.deinit(gpa);
+    damage_px = 0;
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.5, .y = H * 0.5 } });
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i)) / n_moves;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.5 + 0.48 * f), .y = H * (0.5 + 0.3 * f) } });
+        t.reset();
+        const d = try app.render();
+        try grow.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.98, .y = H * 0.8 } });
+    t.reset();
+    _ = try app.render();
+    const t_grow_commit = t.read();
+    try grow.report(w, "frame: drag, grow canvas");
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen); commit {d:.3} ms, canvas {d}x{d}\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H), ms(t_grow_commit), app.editor.canvas.width(), app.editor.canvas.height() });
+
+    // Pan with the middle button, one frame per motion event.
+    var pan = Stats{};
+    defer pan.deinit(gpa);
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.5, .y = H * 0.5, .button = .middle } });
+    for (0..100) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / 100;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.5 - 0.1 * f), .y = H * (0.5 - 0.05 * f) } });
+        t.reset();
+        _ = try app.render();
+        try pan.add(gpa, t.read());
+    }
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.4, .y = H * 0.45, .button = .middle } });
+    try pan.report(w, "frame: pan (middle drag)");
+
+    // Ctrl+wheel zoom about the pointer, in and out.
+    var zoom = Stats{};
+    defer zoom.deinit(gpa);
+    for (0..6) |i| {
+        const up: i32 = if (i % 2 == 0) 1 else -1;
+        _ = try app.handle(.{ .wheel = .{ .delta = up, .x = W * 0.3, .y = H * 0.3, .mods = .{ .ctrl = true } } });
+        t.reset();
+        _ = try app.render();
+        try zoom.add(gpa, t.read());
+    }
+    try zoom.report(w, "frame: Ctrl+wheel zoom");
     try w.flush();
 }
