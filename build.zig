@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const update_goldens = b.option(bool, "update-goldens", "With `test`: rewrite tests/golden/*.png from the current output") orelse false;
     const script = b.option([]const u8, "script", "With `shot`: script name in tests/scripts (default: all)");
+    const shot_size = b.option([]const u8, "size", "With `shot`: screen size WxH, e.g. 3840x2160 (default: the script's); files get a .WxH suffix");
 
     const exe = addExe(b, target, optimize);
     b.installArtifact(exe);
@@ -44,16 +45,18 @@ pub fn build(b: *std.Build) void {
     for (names.items) |name| {
         const r = b.addRunArtifact(exe);
         r.setCwd(b.path("."));
+        const stem = if (shot_size) |sz| b.fmt("{s}.{s}", .{ name, sz }) else name;
         r.addArgs(&.{
             "--headless",
             "--script",
             b.fmt("tests/scripts/{s}.txt", .{name}),
             "--frame-out",
-            b.fmt("test-out/shots/{s}.frame.png", .{name}),
+            b.fmt("test-out/shots/{s}.frame.png", .{stem}),
             "--export-out",
-            b.fmt("test-out/shots/{s}.export.png", .{name}),
-            "tests/fixtures/screenshot.png",
+            b.fmt("test-out/shots/{s}.export.png", .{stem}),
         });
+        if (shot_size) |sz| r.addArgs(&.{ "--size", sz });
+        r.addArg("tests/fixtures/screenshot.png");
         r.step.dependOn(&mkdir.step);
         shot_step.dependOn(&r.step);
     }

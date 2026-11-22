@@ -20,8 +20,14 @@ zig build shot -Dscript=callout   # or no -Dscript for all scripts
 ```
 
 writes `test-out/shots/<name>.frame.png` (what the screen shows, chrome
-included) and `<name>.export.png` (what Ctrl+S writes). Read the PNG. To check
-anti-aliasing, zoom a crop:
+included) and `<name>.export.png` (what Ctrl+S writes). Read the PNG. The
+chrome scales with the screen height, so check it at real sizes too:
+
+```sh
+zig build shot -Dscript=help -Dsize=3840x2160   # test-out/shots/help.3840x2160.frame.png
+```
+
+To check anti-aliasing, zoom a crop:
 
 ```sh
 convert test-out/shots/arrow.export.png -crop 140x120+740+380 -filter point -resize 400% /tmp/zoom.png
