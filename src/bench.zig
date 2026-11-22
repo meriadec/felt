@@ -169,6 +169,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var buf: [4096]u8 = undefined;
     var fw = std.fs.File.stdout().writer(&buf);
     const w = &fw.interface;
+    // A failed case still shows the cases before it.
+    errdefer w.flush() catch {};
     var t = try std.time.Timer.start();
 
     // Input: encode then decode, so decode time is real.
