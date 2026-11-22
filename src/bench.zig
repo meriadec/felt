@@ -2,11 +2,13 @@
 //! render, per-frame render while dragging (arrows, a stairs callout) and
 //! typing, move drags (arrows, a callout box), auto-routing among stairs
 //! paths (drag, move, commits that re-route), undo rebuild, export, crop,
-//! a drag that grows the canvas, pan and zoom, on a synthetic
-//! screenshot or a given image. Budgets: docs/perf.md.
+//! a drag that grows the canvas, the canvas background switch, pan and
+//! zoom, on a synthetic screenshot or a given image; the config file read
+//! and write (in a temp dir, never the user's). Budgets: docs/perf.md.
 const std = @import("std");
 const core = @import("core");
 const App = @import("app.zig").App;
+const config = @import("config.zig");
 
 const Canvas = core.canvas.Canvas;
 
@@ -161,6 +163,31 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     try w.print("\n", .{});
 }
 
+/// The config file: read (startup, window mode) and atomic write (a
+/// switch), in a temp dir: the bench never touches the user's config.
+fn benchConfig(gpa: std.mem.Allocator, w: *std.Io.Writer) !void {
+    const base = std.posix.getenv("TMPDIR") orelse "/tmp";
+    const dir = try std.fmt.allocPrint(gpa, "{s}/annotate-bench-{d}", .{ base, std.os.linux.getpid() });
+    defer gpa.free(dir);
+    defer std.fs.cwd().deleteTree(dir) catch {};
+    const p = try std.fs.path.join(gpa, &.{ dir, "annotate", "config" });
+    defer gpa.free(p);
+    var rd = Stats{};
+    defer rd.deinit(gpa);
+    var wr = Stats{};
+    defer wr.deinit(gpa);
+    var t = try std.time.Timer.start();
+    for (0..startup_runs) |i| {
+        t.reset();
+        try config.save(p, .{ .canvas_bg = if (i % 2 == 0) .dark else .light });
+        try wr.add(gpa, t.lap());
+        if (config.load(p).canvas_bg != (if (i % 2 == 0) core.settings.CanvasBg.dark else .light)) return error.BenchConfigMismatch;
+        try rd.add(gpa, t.read());
+    }
+    try rd.reportMin(w, "config read (startup)");
+    try wr.reportMin(w, "config write (atomic)");
+}
+
 const n_moves = 300;
 
 fn ms(ns: u64) f64 {
@@ -217,7 +244,9 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     t.reset();
     var ref = try core.image_io.decodeStb(gpa, png);
     defer ref.deinit(gpa);
-    try w.print("{s:<26} {d:>7.3} ms ({s})\n\n", .{ "decode PNG, stb reference", ms(t.read()), if (std.mem.eql(u32, ref.pixels, app.image.pixels)) "same pixels" else "PIXELS DIFFER" });
+    try w.print("{s:<26} {d:>7.3} ms ({s})\n", .{ "decode PNG, stb reference", ms(t.read()), if (std.mem.eql(u32, ref.pixels, app.image.pixels)) "same pixels" else "PIXELS DIFFER" });
+    try benchConfig(gpa, w);
+    try w.print("\n", .{});
 
     const W: f32 = @floatFromInt(opts.size[0]);
     const H: f32 = @floatFromInt(opts.size[1]);
@@ -488,6 +517,25 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     const t_grow_commit = t.read();
     try grow.report(w, "frame: drag, grow canvas");
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen); commit {d:.3} ms, canvas {d}x{d}\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H), ms(t_grow_commit), app.editor.canvas.width(), app.editor.canvas.height() });
+
+    // Canvas background switch (`b`) over the grown canvas, both ways: it
+    // repaints only the canvas around the image (and the toast).
+    var bg = Stats{};
+    defer bg.deinit(gpa);
+    damage_px = 0;
+    app.comp.prof = .{};
+    const n_bg = 20;
+    for (0..n_bg) |_| {
+        t.reset();
+        _ = try app.handle(.{ .key = .{ .key = .{ .char = 'b' } } });
+        const d = try app.render();
+        try bg.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    if (app.editor.settings.canvas_bg != .light) return error.BenchCanvasNotLight;
+    try bg.report(w, "frame: canvas bg switch");
+    try reportProf(w, app.comp.prof, n_bg);
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_bg, @as(f64, @floatFromInt(damage_px / n_bg)) * 100 / (W * H) });
 
     // Pan with the middle button, one frame per motion event.
     var pan = Stats{};
