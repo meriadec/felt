@@ -21,7 +21,7 @@ pub const ToolInfo = struct {
 pub const Again = struct { action: Action, label: []const u8 };
 
 pub const tools = [_]ToolInfo{
-    .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session.", .again = .{ .action = .arrow_style, .label = "arrow style: straight / stairs" } },
+    .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too).", .again = .{ .action = .arrow_style, .label = "arrow style: straight / stairs" } },
     .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases." },
     .{ .tool = .rect, .key = 'r', .name = "rect", .mouse = "Drag from corner to corner." },
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },

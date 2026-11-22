@@ -6,7 +6,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
-| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. |
+| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too). |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
