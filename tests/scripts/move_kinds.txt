@@ -2,6 +2,8 @@
 # new place. A rect is grabbed by its outline; the pixelate re-samples the
 # image under its new place; the callout box moves, its tip stays.
 size 900 500
+ui tool arrow
+ui arrow-style straight
 drag 120 100 260 160
 key r
 drag 300 80 420 150

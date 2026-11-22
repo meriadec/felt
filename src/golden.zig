@@ -245,6 +245,8 @@ test "drawing past the image grows the exported PNG with the light canvas; undo 
     const path = out_dir ++ "/grow-test.png";
     const app = try App.create(gpa, image, 400, 300, .{ .output_path = path, .clipboard = .none });
     defer app.destroy();
+    app.editor.tool = .arrow; // a straight arrow (set here, not the startup defaults)
+    app.editor.arrow_style = .straight;
     // Image at 1:1 in (150, 125)..(250, 175). Arrow from inside to 60 px past the right edge.
     _ = try app.handle(.{ .mouse_down = .{ .x = 200, .y = 150 } });
     _ = try app.handle(.{ .mouse_move = .{ .x = 310, .y = 150 } });
@@ -285,6 +287,10 @@ test "panning scrolls the scene to the same pixels as a full repaint" {
     const image = try core.image_io.load(gpa, fixture);
     const app = try App.create(gpa, image, 900, 500, .{ .output_path = null, .clipboard = .none });
     defer app.destroy();
+    // Stairs arrows and callouts (set here, not the startup defaults); the
+    // keys below pick each tool.
+    app.editor.tool = .move;
+    app.editor.arrow_style = .stairs;
     const key = struct {
         fn ev(c: u21) core.input.Event {
             return .{ .key = .{ .key = .{ .char = c } } };

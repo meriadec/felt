@@ -4,6 +4,8 @@
 # the export only the committed one.
 image tests/fixtures/strip.png
 size 900 500
+ui tool arrow
+ui arrow-style straight
 drag 300 250 120 300
 key 4
 down 500 250

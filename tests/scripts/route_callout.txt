@@ -3,7 +3,8 @@
 # midpoint turn would cross the pointer's middle segment. The arrow turns
 # right of that segment instead, clear of it: nothing crosses.
 size 900 500
-key c c
+ui tool callout
+ui pointer-style stairs
 drag 250 190 600 360
 type Pointer
 key enter

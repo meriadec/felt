@@ -4,6 +4,7 @@
 # the first keeps its midpoint turn. Same pair drawn the other way round:
 # route_nest_swap.txt.
 size 900 500
-key a
+ui tool arrow
+ui arrow-style stairs
 drag 495 100 260 400
 drag 557 100 435 400

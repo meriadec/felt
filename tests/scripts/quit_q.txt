@@ -2,6 +2,8 @@
 # the help, then shows the unsaved-changes toast. While typing, q is a
 # letter ("quiet").
 size 900 500
+ui tool arrow
+ui arrow-style straight
 key t
 click 300 150
 type quiet

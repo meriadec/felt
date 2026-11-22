@@ -4,9 +4,10 @@
 # back (the stairs arrow at its midpoint); redo: both again, exactly.
 # Undo, redo once more, and end redone.
 size 900 500
-key a
+ui tool arrow
+ui arrow-style stairs
 drag 150 120 650 380
-key a
+ui arrow-style straight
 drag 340 250 460 250
 key ctrl+z
 key ctrl+y

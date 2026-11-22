@@ -207,6 +207,8 @@ test "a canvas switch over a grown canvas is an unsaved change until saved or sw
     const image = try Canvas.init(gpa, 100, 50);
     const app = try App.create(gpa, image, 400, 300, .{ .output_path = out, .clipboard = .none, .settings = .{ .canvas_bg = .dark } });
     defer app.destroy();
+    app.editor.tool = .arrow; // a straight arrow (set here, not the startup defaults)
+    app.editor.arrow_style = .straight;
     const b = core.input.Event{ .key = .{ .key = .{ .char = 'b' } } };
     // Image at (150, 125)..(250, 175): an arrow out past the right edge grows the canvas.
     _ = try app.handle(.{ .mouse_down = .{ .x = 200, .y = 150 } });

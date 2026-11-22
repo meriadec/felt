@@ -5,7 +5,9 @@
 # segment, no extra crossing) and its middle segment stays clear of the
 # first one's, so each crossing is clean.
 size 900 500
+ui tool arrow
+ui arrow-style straight
 drag 80 250 820 250
-key a
+ui arrow-style stairs
 drag 300 120 600 380
 drag 250 350 650 150

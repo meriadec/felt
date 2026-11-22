@@ -3,6 +3,8 @@
 # middle drag pans, a number and a text go past the bottom right. The export
 # holds the grown white canvas. Sizes do not change with the zoom.
 size 900 500
+ui tool arrow
+ui arrow-style straight
 key -
 drag 60 60 300 200
 wheel down at 100 100 ctrl

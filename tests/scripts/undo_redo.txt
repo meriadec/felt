@@ -1,5 +1,7 @@
 # Undo/redo: 3 shapes, undo 2, redo 1 with ctrl+y, redo none after a new shape.
 size 900 500
+ui tool arrow
+ui arrow-style straight
 key r
 drag 100 100 200 200
 key a

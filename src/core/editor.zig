@@ -818,6 +818,10 @@ const T = struct {
         // The panels would cover most of a 200x100 screen; tests that click
         // them show them.
         self.ed.dock_visible = false;
+        // Tests draw straight arrows unless they pick another tool or style
+        // (set here, not the startup defaults).
+        self.ed.tool = .arrow;
+        self.ed.arrow_style = .straight;
     }
     fn deinit(self: *T) void {
         self.ed.deinit();

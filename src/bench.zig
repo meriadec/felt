@@ -255,8 +255,11 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var drag = Stats{};
     defer drag.deinit(gpa);
     var damage_px: u64 = 0;
-    // The arrow is the default tool: `a` now would switch it to stairs.
-    if (app.editor.tool != .arrow or app.editor.arrow_style != .straight) return error.BenchNotStraightArrow;
+    // Straight arrows, set here (not the startup defaults): each case below
+    // goes on from the tool and style the case before it left.
+    app.editor.tool = .arrow;
+    app.editor.arrow_style = .straight;
+    _ = try app.render();
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i)) / n_moves;

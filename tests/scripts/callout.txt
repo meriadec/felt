@@ -1,6 +1,7 @@
 # Callouts: drag from target to box, type; one upward; a plain-click label.
 size 900 500
-key c
+ui tool callout
+ui pointer-style straight
 drag 260 160 360 230
 type Leaked key: rotate it
 key enter

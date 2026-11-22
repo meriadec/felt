@@ -2,6 +2,7 @@
 # (route_nest.txt): the right arrow first, at its midpoint; the left one
 # then turns above it. They nest, nothing crosses.
 size 900 500
-key a
+ui tool arrow
+ui arrow-style stairs
 drag 557 100 435 400
 drag 495 100 260 400
