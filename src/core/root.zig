@@ -21,6 +21,7 @@ pub const input = @import("input.zig");
 pub const keymap = @import("keymap.zig");
 pub const draw = @import("draw.zig");
 pub const extent = @import("extent.zig");
+pub const route = @import("route.zig");
 pub const editor = @import("editor.zig");
 pub const icons = @import("icons.zig");
 pub const dock = @import("dock.zig");
