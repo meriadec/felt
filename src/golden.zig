@@ -57,16 +57,24 @@ fn writeOut(gpa: std.mem.Allocator, cv: *const Canvas, name: []const u8, kind: [
 pub fn check(gpa: std.mem.Allocator, name: []const u8, actual: *const Canvas) !bool {
     const path = try std.fmt.allocPrint(gpa, "{s}/{s}.png", .{ golden_dir, name });
     defer gpa.free(path);
-    if (updating()) {
-        try core.image_io.savePng(gpa, actual, path);
-        return true;
-    }
     var expected = core.image_io.load(gpa, path) catch |err| {
+        if (updating()) {
+            try core.image_io.savePng(gpa, actual, path);
+            std.debug.print("golden {s}: created\n", .{name});
+            return true;
+        }
         std.debug.print("golden {s}: cannot load {s} ({s}). New script? Run: zig build test -Dupdate-goldens=true\n", .{ name, path, @errorName(err) });
         writeOut(gpa, actual, name, "actual");
         return false;
     };
     defer expected.deinit(gpa);
+    if (updating()) {
+        // Rewrite only on a pixel change: no churn from encoder changes.
+        if (expected.width == actual.width and expected.height == actual.height and std.mem.eql(u32, expected.pixels, actual.pixels)) return true;
+        try core.image_io.savePng(gpa, actual, path);
+        std.debug.print("golden {s}: updated\n", .{name});
+        return true;
+    }
     if (expected.width != actual.width or expected.height != actual.height) {
         std.debug.print("golden {s}: size {d}x{d}, expected {d}x{d}\n", .{ name, actual.width, actual.height, expected.width, expected.height });
         writeOut(gpa, actual, name, "actual");
@@ -151,7 +159,7 @@ test "golden replays" {
         defer gpa.free(export_name);
         if (!try check(gpa, export_name, &exp)) failed += 1;
     }
-    if (updating()) std.debug.print("goldens updated for {d} scripts in {s}/\n", .{ names.len, golden_dir });
+    if (updating()) std.debug.print("checked {d} scripts; goldens with new pixels were rewritten in {s}/\n", .{ names.len, golden_dir });
     if (failed > 0) {
         std.debug.print("{d} golden check(s) failed. Look at the PNGs in {s}/. If the change is intended: zig build test -Dupdate-goldens=true\n", .{ failed, out_dir });
         return error.GoldenMismatch;
