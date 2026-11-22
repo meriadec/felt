@@ -1,0 +1,20 @@
+# Stairs arrows: `a` again (the arrow tool is active) switches to stairs.
+# Horizontal first down-right, vertical first, a big blue one to the up
+# left, then green: a short S (small rise), a near-flat one (a straight
+# line), a short vertical-first one. The dock switch picks straight for
+# one arrow; undo and redo it; the switch picks stairs again: the toast
+# says so and the switch shows stairs active.
+size 900 500
+key a
+drag 100 90 400 230
+drag 470 60 540 330
+key 5 ] ]
+drag 840 420 580 280
+key 4 [ [
+drag 600 90 690 104
+drag 600 150 780 152
+drag 640 190 660 260
+ui arrow-style
+drag 260 300 420 380
+key ctrl+z ctrl+y
+ui arrow-style
