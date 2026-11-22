@@ -27,3 +27,7 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-22: `-Dupdate-goldens=true` rewrote every golden after an encoder change (same pixels). Fix: rewrite only on a pixel change.
 - 2026-11-23: checking the chrome at 1080p and 4K took ad hoc `--headless --size` commands. Fix: `zig build shot -Dsize=WxH`.
 - 2026-11-23: a zoom crop written to a reused /tmp path showed an old unrelated image in the agent's image reader. Fix: docs/testing.md writes zooms under test-out/ with a new name and `+repage`.
+- 2026-11-23: golden scripts could only replay on the 1200x750 fixture; the canvas-growth case needed a small wide image. Fix: script command `image PATH` and tests/fixtures/strip.png.
+- 2026-11-23: `zig build shot -Dsize=3840x2160` replays the same screen coordinates, so shapes land far from the image at 4K. Doc: docs/testing.md says -Dsize is for chrome checks.
+- 2026-11-23: the X11 smoke test failed once: Esc came 0.5 s after Ctrl+S, before the save. Fix: the script waits for the saved file.
+- 2026-11-23: a compile error in `zig build check` prints a multi-KB zig command line around the error. Workaround: `zig build check 2>&1 | grep -v '^/home'`; open.

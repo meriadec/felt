@@ -5,10 +5,10 @@
 1. Core unit tests (`test` blocks in `src/core/*.zig`).
 2. App tests: CLI, script parser, export mapping, keymap doc freshness.
 3. Golden replays (`src/golden.zig`): every `tests/scripts/*.txt` is replayed on
-   `tests/fixtures/screenshot.png` (1200x750), or on the script's `image`. For each script it compares the
-   final UI frame and the export with `tests/golden/<name>.frame.png` and
-   `<name>.export.png`, and checks that the damage-tracked frame equals a full
-   repaint.
+   `tests/fixtures/screenshot.png` (1200x750), or on the script's `image`.
+   For each script it compares the final UI frame and the export with
+   `tests/golden/<name>.frame.png` and `<name>.export.png`, and checks that
+   the damage-tracked frame equals a full repaint.
 
 Tests run with the repo root as working directory and always re-run (they read
 files from disk).
@@ -26,6 +26,9 @@ chrome scales with the screen height, so check it at real sizes too:
 ```sh
 zig build shot -Dscript=help -Dsize=3840x2160   # test-out/shots/help.3840x2160.frame.png
 ```
+
+`-Dsize` replays the same screen coordinates, so shapes land elsewhere on a
+bigger screen: use it to check the chrome, not the shapes.
 
 To check anti-aliasing, zoom a crop. Write it under test-out/ with a new name
 each time (an image viewer may cache a reused path), and `+repage`:
