@@ -25,6 +25,36 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
+## Auto-routing (2026-11)
+
+Min of 3 runs each, before (commit "test: a callout grows the canvas to
+its pointer head") and after the auto-routing of stairs paths. The cases
+that existed did not move beyond noise (1080p: drag stairs arrow avg
+0.33 -> 0.34 ms, p95 0.64 -> 0.66; 4K: avg 1.08 -> 1.12, p95 2.33 ->
+2.43; all others within +-5%). The stairs move case now grabs the first
+segment (the middle holds the bend handle), so its numbers changed with
+the repaint pattern (4K p95 2.10 -> 1.58 ms).
+
+The routing cases (`benchRouting` in src/bench.zig): 31 annotations plus
+a fan of 8 stairs arrows across the row of 30 numbers, then a stairs
+arrow dragged through them and committed, then one fan arrow moved:
+
+| Metric | 1080p | 4K |
+|---|---|---|
+| commit of a fan arrow (settle + render) | avg 0.93 ms, p95 1.83 | avg 2.39 ms, p95 4.75 |
+| frame, drag stairs arrow, routed in the preview | avg 0.46 ms, p95 0.64 | avg 1.42 ms, p95 2.25 |
+| its commit | 1.30 ms | 2.89 ms (settle 0.6 ms) |
+| frame, move a stairs arrow, routed | avg 0.85 ms, p95 1.07 | avg 2.07 ms, p95 2.64 |
+| route per motion event (`route.best`, 40 annotations) | 0.034 ms | 0.035 ms |
+| move commit, 2 neighbours re-routed | 3.7 ms | 6.7 ms (settle 0.7 ms) |
+
+The router is cheap: every candidate path lies in the box of its two
+ends, so it collects only the segments and label boxes that touch that
+box (a bounds test per segment), then tests 1 + 49 x 2 candidates of 3
+segments each, with a bounds rejection per pair. A commit's time is
+mostly the scene repaint of the re-routed paths (old and new cover, each
+rect repainting every annotation under it), like a move.
+
 ## Numbers (2026-11, after the stairs arrows and the callout arrow pointers)
 
 `zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs;
@@ -145,6 +175,11 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   at 4K with 31 annotations; the undo of a move repaints in place). A
   per-step scene cache would make it ~1 ms.
 - A move under or of a big pixelate repaints the whole pixelate each frame.
+- A commit that re-routes long stairs paths repaints their old and new
+  covers over every annotation under them (6.7 ms at 4K with 2 re-routes
+  among 40 annotations); a per-annotation layer cache would cut it.
+- `route.best` collects obstacles per call (text measure for label
+  boxes); a drag could cache them for its duration if scenes get dense.
 - No profiler here (`perf` is not allowed). The bench prints a scene /
   frame / chrome split of the move drags (`compositor.Prof`); finer splits
   (per annotation kind) still need temporary timers.
