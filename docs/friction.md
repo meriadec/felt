@@ -24,3 +24,4 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-22: CLI errors did not name the bad option or path. Fix: cli.Diag and per-path messages.
 - 2026-11-22: `git stash` without `-u` while splitting commits hid staged work. Rule: stage the commit's paths and `git commit` them; check other commits in a `git worktree`.
 - 2026-11-22: `perf record` is not allowed (perf_event_paranoid), no sudo. Profile with micro-benchmarks or timers instead; open.
+- 2026-11-22: `-Dupdate-goldens=true` rewrote every golden after an encoder change (same pixels). Fix: rewrite only on a pixel change.
