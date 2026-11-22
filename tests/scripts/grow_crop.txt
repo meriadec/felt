@@ -3,7 +3,6 @@
 # The view refits; a green arrow past the new bottom edge grows it again.
 image tests/fixtures/strip.png
 size 900 500
-key a
 drag 80 100 300 245
 key x
 drag 150 160 450 275

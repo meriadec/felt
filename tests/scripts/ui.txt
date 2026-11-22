@@ -1,7 +1,6 @@
 # UI states: blue picked by a dock click, size up twice, then the
 # unsaved-changes toast after Esc.
 size 900 500
-key a
 drag 300 300 400 200
 ui color 5
 key ] ]

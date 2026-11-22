@@ -229,10 +229,17 @@ fn toolRows(out: []Row) []Row {
     return out[0..keymap.tools.len];
 }
 
-/// Key bindings, tools left out, colors as one row, neighbours with the same
-/// action kind and label merged (redo, zoom in, the four pan arrows).
+/// A second press of a tool key (`a a`), then key bindings: tools left
+/// out, colors as one row, neighbours with the same action kind and label
+/// merged (redo, zoom in, the four pan arrows).
 fn keyRows(out: []Row) []Row {
     var n: usize = 0;
+    // The active tool's key again (e.g. `a a`: arrow style).
+    for (keymap.tools) |t| if (t.again) |ag| {
+        const k = keymap.toolKey(t.tool);
+        out[n] = .{ .caps = .{ k, k, "", "" }, .n_caps = 2, .label = ag.label };
+        n += 1;
+    };
     var prev: ?keymap.Action = null;
     for (keymap.bindings, keymap.caps) |b, cap| {
         switch (b.action) {

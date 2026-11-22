@@ -93,6 +93,8 @@ pub const Editor = struct {
     tool_before_crop: Tool = .arrow,
     color_idx: u8 = 0,
     size_idx: u8 = style.default_size,
+    /// Style of new arrows. It stays for the session, across tool switches.
+    arrow_style: ann.ArrowStyle = .straight,
     /// The shortcut overlay (`?`/F1).
     help_visible: bool = false,
     /// The icon dock and the top bar (Space hides both to see the image).
@@ -361,7 +363,7 @@ pub const Editor = struct {
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
         const c = self.currentColor();
         return switch (d.tool) {
-            .arrow => .{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c } },
+            .arrow => .{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } },
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
             .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c } },
@@ -608,9 +610,21 @@ pub const Editor = struct {
         _ = try self.doc.redo(self.gpa);
     }
 
+    /// Set the style of new arrows (an arrow in progress follows) and say it.
+    fn setArrowStyle(self: *Editor, s: ann.ArrowStyle) void {
+        self.arrow_style = s;
+        self.setToast("Arrow: {s}", .{@tagName(s)});
+    }
+
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
         switch (action) {
-            .tool => |t| try self.setTool(t),
+            // The active tool's key again: its `again` action, if any.
+            .tool => |t| if (t != self.tool) {
+                try self.setTool(t);
+            } else if (keymap.toolInfo(t).again) |ag| {
+                return self.run(ag.action, was_armed);
+            } else try self.setTool(t),
+            .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
             .next_tool => try self.setTool(keymap.cycleTool(self.tool, 1)),
             .prev_tool => try self.setTool(keymap.cycleTool(self.tool, -1)),
             .color => |i| self.color_idx = i,
@@ -975,4 +989,34 @@ test "move: an annotation made before a crop stays under it" {
     try std.testing.expect(n.center.x < 120 + n.size);
     // The canvas does not grow for it.
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 20, .x1 = 120, .y1 = 80 }, t.ed.canvas);
+}
+
+test "a again switches the arrow style of new arrows, for the session; an arrow in progress follows" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("a"); // the arrow tool is active: a second press
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    try std.testing.expectEqualStrings("Arrow: stairs", t.ed.toast().?);
+    try std.testing.expectEqual(Tool.arrow, t.ed.tool);
+    try t.drag(10, 10, 50, 40);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
+    // Another tool and back: the style stays.
+    _ = try t.key("r");
+    _ = try t.key("a");
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    // In the middle of a drag: the preview follows, the drag goes on.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 60 } });
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 90, .y = 90 } });
+    _ = try t.key("a");
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.preview().?.arrow.style);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 90, .y = 90 } });
+    try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.doc.items.items[1].arrow.style);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
+    // Undo and redo keep each arrow's own style.
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+y");
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
 }

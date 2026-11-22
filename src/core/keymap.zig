@@ -8,10 +8,20 @@ const palette = @import("color.zig").palette;
 
 pub const Tool = enum { arrow, text, rect, number, callout, pixelate, move, crop };
 
-pub const ToolInfo = struct { tool: Tool, key: u8, name: []const u8, mouse: []const u8 };
+pub const ToolInfo = struct {
+    tool: Tool,
+    key: u8,
+    name: []const u8,
+    mouse: []const u8,
+    /// What the tool key does when the tool is already active.
+    again: ?Again = null,
+};
+
+/// A second press of the active tool's key.
+pub const Again = struct { action: Action, label: []const u8 };
 
 pub const tools = [_]ToolInfo{
-    .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Drag from the tail to the head." },
+    .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again changes it for new arrows, for the rest of the session.", .again = .{ .action = .arrow_style, .label = "arrow style: straight / stairs" } },
     .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases." },
     .{ .tool = .rect, .key = 'r', .name = "rect", .mouse = "Drag from corner to corner." },
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },
@@ -42,6 +52,8 @@ pub fn toolKey(t: Tool) []const u8 {
 
 pub const Action = union(enum) {
     tool: Tool,
+    /// Switch the style of new arrows (straight, stairs).
+    arrow_style,
     next_tool,
     prev_tool,
     color: u8,
@@ -207,6 +219,7 @@ pub fn writeMarkdown(w: *std.Io.Writer) !void {
     );
     for (tools) |t| try w.print("| `{c}` | {s} | {s} |\n", .{ t.key, t.name, t.mouse });
     try w.writeAll("\n## Keys\n\n| Key | Action |\n|---|---|\n");
+    for (tools) |t| if (t.again) |ag| try w.print("| `{c}` again ({s} tool active) | {s} |\n", .{ t.key, t.name, ag.label });
     for (bindings, caps) |b, cap| {
         if (b.action == .tool) continue;
         try w.print("| `{s}` | {s}{s} |\n", .{ cap, if (b.action == .color) "color " else "", b.label });
