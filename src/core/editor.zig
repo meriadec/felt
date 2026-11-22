@@ -210,10 +210,10 @@ pub const Editor = struct {
         return null;
     }
 
-    /// The move tool's target to outline: the part being moved, or under
-    /// the pointer.
+    /// The move tool's target to outline: the part under the pointer. None
+    /// while it moves: the shape itself shows where it goes, and a frame
+    /// then pays for one raster less (docs/perf.md).
     pub fn highlight(self: *const Editor) ?Grab {
-        if (self.mode == .moving) return self.mode.moving.grab;
         if (self.tool != .move or self.mode != .idle or self.help_visible) return null;
         const g = self.hover orelse return null;
         return if (g.index < self.doc.items.items.len) g else null;
