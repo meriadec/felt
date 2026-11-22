@@ -23,22 +23,33 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
-## Numbers (2026-11, commit "perf: split image downscaling across threads")
+## Numbers (2026-11, after the crop tool and the Nord dock)
 
-`zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080):
+`zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs:
 
 | Metric | Value |
 |---|---|
-| decode PNG (min) | 9.5 ms (stb: 11.8 ms) |
-| first frame render (min) | 5.7 ms |
-| startup total (min) | 15.3 ms |
-| frame, drag arrow | avg 0.54 ms, p95 1.07 ms (damage 11% of screen) |
-| frame, drag pixelate | avg 0.33 ms, p95 0.70 ms |
-| frame, type a character | avg 0.06 ms |
-| undo, scene rebuild with 31 annotations | 9.2 ms |
-| export render / PNG encode | 4.1 ms / 11.3 ms (stb: 60 ms) |
+| decode PNG (min) | 7.0 ms (stb: 8.8 ms) |
+| first frame render (min) | 5.5 ms |
+| startup total (min) | 12.4 ms |
+| frame, drag arrow | avg 0.49 ms, p95 1.0 ms (damage 11% of screen) |
+| frame, drag pixelate | avg 0.31 ms, p95 0.66 ms |
+| frame, type a character | avg 0.13 ms (was 0.06 ms: the text label adds a box and a soft shadow) |
+| frame, drag crop (outside dimmed) | avg 0.57 ms, p95 0.59 ms |
+| crop release (refit + scene rebuild) | 4.2 ms |
+| undo, scene rebuild with 31 annotations | 8.7-10.7 ms |
+| export render / PNG encode | 4.2 ms / 10.7 ms (stb: 58 ms) |
 
-`zig build bench -- --size 3840x2160 root4k.png` (real 4K screenshot, 1.6 MB PNG):
+`zig build bench -- --size 3840x2160` (same image, 4K screen, UI scale 2):
+drag arrow avg 1.5 ms p95 3.4 ms, drag pixelate avg 0.56 ms, type a character
+avg 0.43 ms, drag crop avg 1.7 ms p95 1.75 ms, crop release 10 ms.
+
+Before these changes (commit "fix: ring every palette swatch"), the same runs
+gave: startup 12.4 ms, drag arrow avg 0.50 ms, type 0.06 ms, undo 10.0 ms,
+export 4.6 / 10.4 ms; at 4K drag arrow avg 2.0 ms p95 4.8 ms.
+
+`zig build bench -- --size 3840x2160 root4k.png` (real 4K screenshot, 1.6 MB PNG;
+measured at commit "perf: split image downscaling across threads"):
 
 | Metric | Value |
 |---|---|
@@ -64,6 +75,10 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   transparent huge pages: 16 page faults per 4K frame instead of 8100.
 - Compositor layers: the image is drawn straight into the scene; the frame is
   the X11 shared-memory image; only damaged rectangles are repainted and put.
+- Crop keeps the decoded image: the base layer downscales (or copies) only
+  the kept rectangle; the export copies it. A crop drag repaints only the
+  bands between the old and the new rectangle (Damage does not merge rects
+  whose union is much bigger than both).
 - Rasterizer: signed distance shapes in 8x8 tiles; tiles outside are skipped,
   tiles inside are filled without per-pixel math.
 - Downscale: separable area filter, both passes split across threads.
