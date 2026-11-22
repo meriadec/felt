@@ -28,6 +28,8 @@ pub fn main() !u8 {
         return 2;
     };
 
+    var default_out: ?[]u8 = null;
+    defer if (default_out) |p| gpa.free(p);
     switch (opts.mode) {
         .help => try writeStdout(cli.usage),
         .keymap_md => {
@@ -47,7 +49,10 @@ pub fn main() !u8 {
         }) catch |err| return fail(err, opts.image.?),
         .window => x11.run(gpa, .{
             .image_path = opts.image.?,
-            .output_path = opts.output orelse opts.image.?,
+            .output_path = opts.output orelse blk: {
+                default_out = try cli.defaultOutput(gpa, opts.image.?);
+                break :blk default_out.?;
+            },
             .timing = opts.timing,
             .smoke = opts.smoke,
         }, &start) catch |err| return fail(err, opts.image.?),

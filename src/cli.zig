@@ -9,7 +9,8 @@ pub const usage =
     \\
     \\Options:
     \\  -e <image>             Same as the <image> argument (ksnip compatible)
-    \\  -o, --output <path>    Ctrl+S writes here (default: overwrite <image>)
+    \\  -o, --output <path>    Ctrl+S writes a PNG here (default: overwrite <image> if it
+    \\                         is a .png, else <image stem>.annotated.png)
     \\  --timing               Print startup timings to stderr
     \\  --smoke                Open the window, show one frame, print timings, exit
     \\  --keymap-md            Print the key map as Markdown and exit
@@ -121,12 +122,30 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
     return o;
 }
 
+/// Where Ctrl+S writes: `-o`, else the input if it is a PNG, else a PNG
+/// next to it (never PNG bytes in a .jpg). Caller frees with `gpa`.
+pub fn defaultOutput(gpa: std.mem.Allocator, image: []const u8) ![]u8 {
+    const ext = std.fs.path.extension(image);
+    if (std.ascii.eqlIgnoreCase(ext, ".png")) return gpa.dupe(u8, image);
+    return std.fmt.allocPrint(gpa, "{s}.annotated.png", .{image[0 .. image.len - ext.len]});
+}
+
 pub fn parseSize(s: []const u8) ?[2]u32 {
     const x = std.mem.indexOfScalar(u8, s, 'x') orelse return null;
     const w = std.fmt.parseInt(u32, s[0..x], 10) catch return null;
     const h = std.fmt.parseInt(u32, s[x + 1 ..], 10) catch return null;
     if (w == 0 or h == 0 or w > 16384 or h > 16384) return null;
     return .{ w, h };
+}
+
+test "default output never writes PNG into another format" {
+    const gpa = std.testing.allocator;
+    const a = try defaultOutput(gpa, "/x/shot.PNG");
+    defer gpa.free(a);
+    try std.testing.expectEqualStrings("/x/shot.PNG", a);
+    const b = try defaultOutput(gpa, "/x/photo.jpg");
+    defer gpa.free(b);
+    try std.testing.expectEqualStrings("/x/photo.annotated.png", b);
 }
 
 test "parse" {
