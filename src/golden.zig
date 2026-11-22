@@ -332,3 +332,51 @@ test "docs/keymap.md is up to date" {
         return error.StaleKeymapDoc;
     }
 }
+
+test "an annotation changed in place repaints only its old and new area, like a full repaint" {
+    const gpa = std.testing.allocator;
+    // Noise: any pixelate block that averages stale pixels shows.
+    const image = try Canvas.init(gpa, 1200, 750);
+    var rng = std.Random.DefaultPrng.init(7);
+    for (image.pixels) |*px| px.* = 0xff000000 | @as(u32, rng.random().int(u24));
+    const app = try App.create(gpa, image, 600, 400, .{ .output_path = null, .clipboard = .none });
+    defer app.destroy();
+    const red = core.color.palette[0].color;
+    try app.doc.add(gpa, .{ .rect = .{ .a = .{ .x = 100, .y = 100 }, .b = .{ .x = 300, .y = 250 }, .width = 6, .color = red } });
+    try app.doc.add(gpa, .{ .pixelate = .{ .a = .{ .x = 250, .y = 200 }, .b = .{ .x = 500, .y = 400 }, .block = 12 } });
+    try app.doc.add(gpa, .{ .arrow = .{ .tail = .{ .x = 600, .y = 600 }, .head = .{ .x = 800, .y = 300 }, .width = 6, .color = red } });
+    _ = try app.handle(.{ .mouse_move = .{ .x = 1, .y = 1 } }); // syncs the canvas
+    _ = try app.render();
+    const moves = [_]struct { i: usize, dx: f32 }{
+        .{ .i = 0, .dx = 120 }, // the rect slides under the pixelate: it re-samples
+        .{ .i = 1, .dx = -200 }, // the pixelate moves: it re-samples elsewhere
+        .{ .i = 2, .dx = 700 }, // the arrow leaves the image: the canvas grows
+        .{ .i = 2, .dx = -700 }, // and comes back: the canvas shrinks
+    };
+    for (moves) |m| {
+        var a = app.doc.items.items[m.i];
+        switch (a) {
+            .rect => |*r| {
+                r.a.x += m.dx;
+                r.b.x += m.dx;
+            },
+            .pixelate => |*p| {
+                p.a.x += m.dx;
+                p.b.x += m.dx;
+            },
+            .arrow => |*r| {
+                r.tail.x += m.dx;
+                r.head.x += m.dx;
+            },
+            else => unreachable,
+        }
+        app.doc.setLive(m.i, a);
+        _ = try app.handle(.{ .mouse_move = .{ .x = 2, .y = 2 } });
+        const d = try app.render();
+        try std.testing.expect(d.area() < 600 * 400);
+        var fresh = core.compositor.Compositor{ .gpa = gpa };
+        defer fresh.deinit();
+        _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+        try std.testing.expectEqual(@as(usize, 0), compare(app.frame(), &fresh.frame.?, null).bad);
+    }
+}

@@ -1,7 +1,8 @@
 //! Compositor: builds screen frames with caching and damage tracking.
 //! Layers: `scaled` = the kept part of the image at the view scale (rebuilt on
 //! zoom or crop), `scene` = background + white canvas + image + committed
-//! annotations (appended in place, scrolled on a pan, repainted after undo),
+//! annotations (appended in place, scrolled on a pan, repainted in place
+//! where an annotation moved or the canvas changed, repainted after undo of an add),
 //! `frame` = scene + white canvas of the shape in progress + crop dimming +
 //! chrome + preview, repainted only in damaged rects.
 const std = @import("std");
@@ -13,6 +14,7 @@ const chrome = @import("chrome.zig");
 const resample = @import("resample.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
+const Annotation = @import("annotation.zig").Annotation;
 const Editor = @import("editor.zig").Editor;
 
 const Rect = geom.Rect;
@@ -76,6 +78,9 @@ pub const Compositor = struct {
     pic_key: Rect = Rect.empty,
     scene_valid: bool = false,
     scene_count: usize = 0,
+    /// The annotations as the scene shows them (shallow copies: the text
+    /// belongs to the document). A move shows up as a difference.
+    painted: std.ArrayList(Annotation) = .empty,
     scene_removals: u64 = 0,
     /// Canvas (image px) the scene was painted with.
     scene_canvas: Rect = Rect.empty,
@@ -91,6 +96,7 @@ pub const Compositor = struct {
         if (self.scaled) |*cv| cv.deinit(self.gpa);
         if (self.scene) |*cv| cv.deinit(self.gpa);
         if (self.owns_frame) if (self.frame) |*cv| cv.deinit(self.gpa);
+        self.painted.deinit(self.gpa);
         self.scaled = null;
         self.scene = null;
         self.frame = null;
@@ -128,9 +134,30 @@ pub const Compositor = struct {
         for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, extent.fill);
         try self.paintImage(cv, s, r);
         for (s.doc.items.items[0..n], 0..) |a, i| {
+            if (!draw.bounds(s.ctx, a, s.xf, .{}).intersects(r)) continue; // e.g. no text mask to render
             const clip = s.itemClip(i);
             try draw.annotation(s.ctx, cv, r.intersect(clip), a, s.xf, .{ .area = clip });
         }
+    }
+
+    /// Grow `r` to hold every pixelate among the first `n` annotations that it
+    /// touches: a pixelate block averages the pixels under it, so a repaint
+    /// that cuts a pixelate would average its own output.
+    fn coverPixelates(s: *const Scene, r_in: Rect, n: usize) Rect {
+        var r = r_in;
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (s.doc.items.items[0..n], 0..) |a, i| {
+                if (a != .pixelate) continue;
+                const b = draw.bounds(s.ctx, a, s.xf, .{}).intersect(s.itemClip(i));
+                if (b.intersects(r) and !r.contains(b)) {
+                    r = r.unite(b);
+                    grew = true;
+                }
+            }
+        }
+        return r.intersect(s.view.screen());
     }
 
     /// The kept part of the image, in `r` of its screen rectangle.
@@ -216,19 +243,32 @@ pub const Compositor = struct {
         const frame = &self.frame.?;
         const items = doc.items.items;
 
-        // Scene: append new annotations (the canvas may grow), or repaint
-        // after a removal or a shrink.
-        if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count or !ed.canvas.contains(self.scene_canvas)) {
+        // Scene: append new annotations; repaint in place where one moved or
+        // the canvas grew or shrank; repaint all after a removal.
+        if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count) {
             try self.paintScene(&s, full_rect, items.len);
+            self.painted.clearRetainingCapacity();
+            try self.painted.appendSlice(self.gpa, items);
             full = true;
         } else {
+            var fix = Damage{};
             if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
-                // Grown: the new canvas bands were background, nothing drawn there.
-                for (s.canvas_dst.minus(v.rect(self.scene_canvas))) |b| {
-                    scene.fillRect(b, extent.fill);
-                    dmg.add(b.intersect(full_rect));
-                }
+                const old_dst = v.rect(self.scene_canvas);
+                for (s.canvas_dst.minus(old_dst)) |b| fix.add(b.intersect(full_rect));
+                for (old_dst.minus(s.canvas_dst)) |b| fix.add(b.intersect(full_rect));
             }
+            for (self.painted.items[0..self.scene_count], items[0..self.scene_count]) |*old, cur| {
+                if (std.meta.eql(old.*, cur)) continue;
+                fix.add(draw.bounds(ctx, old.*, v.xf, .{}).intersect(full_rect));
+                fix.add(draw.bounds(ctx, cur, v.xf, .{}).intersect(full_rect));
+                old.* = cur;
+            }
+            for (fix.slice()) |r| {
+                const rr = coverPixelates(&s, r, self.scene_count);
+                try self.paintScene(&s, rr, self.scene_count);
+                dmg.add(rr);
+            }
+            try self.painted.appendSlice(self.gpa, items[self.scene_count..]);
             for (items[self.scene_count..], self.scene_count..) |a, i| {
                 const clip = s.itemClip(i);
                 try draw.annotation(ctx, scene, clip, a, v.xf, .{ .area = clip });
