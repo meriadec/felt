@@ -27,6 +27,9 @@ pub const Ctx = struct {
 pub const Options = struct {
     /// The shape is in progress: draw the text caret and the pixelate frame.
     preview: bool = false,
+    /// Image area in target px (null: the whole canvas). Pixelate averages
+    /// only pixels inside, so the screen background never bleeds in.
+    area: ?Rect = null,
 };
 
 const preview_frame = Color{ .r = 128, .g = 128, .b = 128, .a = 200 };
@@ -60,7 +63,7 @@ pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform,
         .pixelate => |p| {
             const r = sortedBounds(xf.apply(p.a), xf.apply(p.b)).toRect();
             const block: i32 = @intFromFloat(@max(2, @round(p.block * xf.scale)));
-            cv.pixelate(r, block, clip);
+            cv.pixelate(r, block, opts.area orelse cv.bounds(), clip);
             if (opts.preview) raster.fill(cv, clip, sdf.RectStroke{ .min = r.toBounds().min, .max = r.toBounds().max, .w = 1 }, .{ .solid = preview_frame }, .{});
         },
         .text => |t| try drawText(ctx, cv, clip, t, xf, opts.preview),

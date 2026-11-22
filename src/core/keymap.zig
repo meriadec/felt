@@ -5,7 +5,7 @@ const std = @import("std");
 const input = @import("input.zig");
 const palette = @import("color.zig").palette;
 
-pub const Tool = enum { arrow, text, rect, number, callout, highlight, pixelate };
+pub const Tool = enum { arrow, text, rect, number, callout, highlight, pixelate, crop };
 
 pub const ToolInfo = struct { tool: Tool, key: u8, name: []const u8, mouse: []const u8 };
 
@@ -17,6 +17,7 @@ pub const tools = [_]ToolInfo{
     .{ .tool = .callout, .key = 'c', .name = "callout", .mouse = "Drag from the point of interest to where the box goes, release, type, Enter. A plain click makes a label without a pointer." },
     .{ .tool = .highlight, .key = 'h', .name = "highlight", .mouse = "Drag over text to mark it like a highlighter pen." },
     .{ .tool = .pixelate, .key = 'p', .name = "pixelate", .mouse = "Drag over a secret to pixelate it." },
+    .{ .tool = .crop, .key = 'x', .name = "crop", .mouse = "Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores." },
 };
 
 /// The tool `delta` places after `t` in `tools` order, wrapping around.

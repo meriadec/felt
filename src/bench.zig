@@ -1,6 +1,6 @@
 //! Benchmark (`annotate --bench`, `zig build bench`): times decode, startup
-//! render, per-frame render while dragging and typing, undo rebuild and
-//! export, on a synthetic screenshot or a given image. Budgets: docs/perf.md.
+//! render, per-frame render while dragging and typing, undo rebuild,
+//! export and crop, on a synthetic screenshot or a given image. Budgets: docs/perf.md.
 const std = @import("std");
 const core = @import("core");
 const App = @import("app.zig").App;
@@ -195,5 +195,24 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     const stb_png = try core.image_io.encodePngStb(gpa, &out);
     defer gpa.free(stb_png);
     try w.print("{s:<26} {d:>7.3} ms ({d} KiB)\n", .{ "export PNG encode, stb ref", ms(t.lap()), stb_png.len / 1024 });
+
+    // Crop: drag (dimmed outside), then release = refit + scene rebuild.
+    var crop = Stats{};
+    defer crop.deinit(gpa);
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'x' } } });
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.1, .y = H * 0.1 } });
+    _ = try app.render();
+    for (0..100) |i| {
+        const f = @as(f32, @floatFromInt(i)) / 100;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.3 + 0.5 * f), .y = H * (0.3 + 0.5 * f) } });
+        t.reset();
+        _ = try app.render();
+        try crop.add(gpa, t.read());
+    }
+    try crop.report(w, "frame: drag crop");
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.8, .y = H * 0.8 } });
+    t.reset();
+    _ = try app.render();
+    try w.print("{s:<26} {d:>7.3} ms ({d}x{d} image px kept)\n", .{ "frame: crop (refit)", ms(t.read()), app.editor.view.src.width(), app.editor.view.src.height() });
     try w.flush();
 }

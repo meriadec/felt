@@ -26,9 +26,11 @@ pub const Canvas = struct {
         self.* = undefined;
     }
 
-    pub fn clone(self: *const Canvas, gpa: std.mem.Allocator) !Canvas {
-        const cv = try init(gpa, self.width, self.height);
-        @memcpy(cv.pixels, self.pixels);
+    /// New canvas holding the part `r` of self (inside its bounds).
+    pub fn copyOut(self: *const Canvas, gpa: std.mem.Allocator, r: Rect) !Canvas {
+        std.debug.assert(std.meta.eql(r.intersect(self.bounds()), r) and !r.isEmpty());
+        var cv = try init(gpa, @intCast(r.width()), @intCast(r.height()));
+        cv.blitRect(self, r, 0, 0);
         return cv;
     }
 
@@ -68,10 +70,18 @@ pub const Canvas = struct {
 
     /// Copy all of `src` into self with its top-left at (dx, dy), clipped.
     pub fn blit(self: *Canvas, src: *const Canvas, dx: i32, dy: i32) void {
-        const dst = Rect.fromSize(dx, dy, @intCast(src.width), @intCast(src.height)).intersect(self.bounds());
+        self.blitRect(src, src.bounds(), dx, dy);
+    }
+
+    /// Copy the part `sr` of `src` (inside its bounds) into self with its
+    /// top-left at (dx, dy), clipped.
+    pub fn blitRect(self: *Canvas, src: *const Canvas, sr: Rect, dx: i32, dy: i32) void {
+        const dst = Rect.fromSize(dx, dy, sr.width(), sr.height()).intersect(self.bounds());
         if (dst.isEmpty()) return;
+        const ox = sr.x0 - dx;
+        const oy = sr.y0 - dy;
         var y = dst.y0;
-        while (y < dst.y1) : (y += 1) @memcpy(self.row(y, dst.x0, dst.x1), src.row(y - dy, dst.x0 - dx, dst.x1 - dx));
+        while (y < dst.y1) : (y += 1) @memcpy(self.row(y, dst.x0, dst.x1), src.row(y + oy, dst.x0 + ox, dst.x1 + ox));
     }
 
     /// Source-over blend of `c` scaled by `cov` (0..255) into the pixel at `i`.
@@ -114,9 +124,9 @@ pub const Canvas = struct {
 
     /// Replace `r` by blocks of `block` pixels, each the mean color of the block.
     /// Blocks align to `r`'s top-left so a partial redraw gives the same blocks;
-    /// only pixels inside `clip` are written.
-    pub fn pixelate(self: *Canvas, r: Rect, block: i32, clip: Rect) void {
-        const area = r.intersect(self.bounds());
+    /// only pixels inside `limit` are read and only pixels inside `clip` are written.
+    pub fn pixelate(self: *Canvas, r: Rect, block: i32, limit: Rect, clip: Rect) void {
+        const area = r.intersect(self.bounds()).intersect(limit);
         if (area.isEmpty() or block < 1) return;
         const wclip = clip.intersect(area);
         if (wclip.isEmpty()) return;
@@ -220,7 +230,7 @@ test "pixelate averages blocks" {
     defer cv.deinit(gpa);
     cv.fill(color.black);
     cv.fillRect(Rect.fromSize(0, 0, 1, 2), color.white);
-    cv.pixelate(cv.bounds(), 2, cv.bounds());
+    cv.pixelate(cv.bounds(), 2, cv.bounds(), cv.bounds());
     try std.testing.expectEqual(@as(u32, 0xff7f7f7f), cv.pixels[0]);
     try std.testing.expectEqual(@as(u32, 0xff000000), cv.pixels[3]);
 }

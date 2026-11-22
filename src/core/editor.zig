@@ -51,6 +51,8 @@ pub const Editor = struct {
     doc: *Document,
     view: View,
     tool: Tool = .arrow,
+    /// Tool to go back to after a crop.
+    tool_before_crop: Tool = .arrow,
     color_idx: u8 = 0,
     size_idx: u8 = style.default_size,
     help_visible: bool = true,
@@ -60,6 +62,7 @@ pub const Editor = struct {
     saved_revision: u64 = 0,
     toast_buf: [256]u8 = undefined,
     toast_len: usize = 0,
+    hint_buf: [96]u8 = undefined,
 
     pub fn init(gpa: std.mem.Allocator, doc: *Document, view: View) Editor {
         return .{ .gpa = gpa, .doc = doc, .view = view, .saved_revision = doc.revision };
@@ -99,12 +102,47 @@ pub const Editor = struct {
 
     pub fn toast(self: *const Editor) ?[]const u8 {
         if (self.toast_len > 0) return self.toast_buf[0..self.toast_len];
+        if (self.cropRect()) |r| return std.fmt.bufPrint(@constCast(&self.hint_buf), "Crop to {d} x {d} px. Release to crop, Esc to cancel.", .{ r.width(), r.height() }) catch null;
         if (self.mode == .typing) return "Type. Enter or Esc: done. Shift+Enter: new line.";
         return null;
     }
 
     pub fn resize(self: *Editor, w: u32, h: u32) void {
-        self.view = View.fit(self.view.image_w, self.view.image_h, w, h);
+        self.view = View.fitRect(self.view.image_w, self.view.image_h, self.view.src, w, h);
+    }
+
+    /// Refit the view when the document crop changed (crop, undo, redo).
+    fn syncView(self: *Editor) bool {
+        const want = self.doc.visible(self.view.image_w, self.view.image_h);
+        if (std.meta.eql(want, self.view.src)) return false;
+        self.view = View.fitRect(self.view.image_w, self.view.image_h, want, self.view.screen_w, self.view.screen_h);
+        return true;
+    }
+
+    /// Image rectangle a crop drag selects: whole pixels, inside the kept part.
+    fn cropRectOf(self: *const Editor, a: Vec2, b: Vec2) geom.Rect {
+        const lo = a.min(b);
+        const hi = a.max(b);
+        const r = geom.Rect{
+            .x0 = @intFromFloat(@round(lo.x)),
+            .y0 = @intFromFloat(@round(lo.y)),
+            .x1 = @intFromFloat(@round(hi.x)),
+            .y1 = @intFromFloat(@round(hi.y)),
+        };
+        return r.intersect(self.view.src);
+    }
+
+    /// The crop in progress, in image pixels.
+    pub fn cropRect(self: *const Editor) ?geom.Rect {
+        if (self.mode != .drag or self.mode.drag.tool != .crop) return null;
+        return self.cropRectOf(self.mode.drag.start, self.mode.drag.cur);
+    }
+
+    /// The crop in progress on screen: the compositor dims everything outside.
+    pub fn cropPreview(self: *const Editor) ?geom.Rect {
+        const r = self.cropRect() orelse return null;
+        const b = r.toBounds();
+        return (geom.Bounds{ .min = self.view.toScreen(b.min), .max = self.view.toScreen(b.max) }).toRect();
     }
 
     /// The shape in progress, for drawing. Borrows the draft text.
@@ -128,11 +166,17 @@ pub const Editor = struct {
             .highlight => .{ .highlight = .{ .a = d.start, .b = d.cur, .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = style.pixelate_block / self.view.xf.scale } },
             .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c } },
-            .text, .number => null,
+            .text, .number, .crop => null,
         };
     }
 
     pub fn handle(self: *Editor, ev: input.Event) !Effect {
+        var eff = try self.handleEvent(ev);
+        if (self.syncView()) eff.redraw = true;
+        return eff;
+    }
+
+    fn handleEvent(self: *Editor, ev: input.Event) !Effect {
         switch (ev) {
             .key, .mouse_down => {
                 // Any deliberate input hides the toast and disarms quit.
@@ -202,6 +246,14 @@ pub const Editor = struct {
             return .{ .redraw = true };
         }
         if (is_click) return .{ .redraw = true };
+        if (d.tool == .crop) {
+            const r = self.cropRectOf(d.start, ip);
+            if (!r.isEmpty()) {
+                try self.doc.setCrop(self.gpa, r);
+                self.tool = self.tool_before_crop;
+            }
+            return .{ .redraw = true };
+        }
         var fin = d;
         fin.cur = ip;
         if (self.shapeFromDrag(fin)) |a| try self.doc.add(self.gpa, a);
@@ -280,6 +332,7 @@ pub const Editor = struct {
     fn setTool(self: *Editor, t: Tool) !void {
         try self.commitTyping();
         self.cancel();
+        if (t == .crop and self.tool != .crop) self.tool_before_crop = self.tool;
         self.tool = t;
     }
 
@@ -396,6 +449,28 @@ test "tab cycles tools; tab while typing commits first" {
     try std.testing.expectEqualStrings("x", t.doc.items.items[0].text.text);
     try std.testing.expectEqual(keymap.cycleTool(.text, 1), t.ed.tool);
     try std.testing.expect(t.ed.mode == .idle);
+}
+
+test "crop drag crops, refits the view, goes back to the tool; undo restores" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("r");
+    _ = try t.key("x");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 10 } });
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 120, .y = 60 } });
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.cropPreview().?);
+    try std.testing.expect(t.ed.toast() != null);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 120, .y = 60 } });
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.doc.crop.?);
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.view.src);
+    try std.testing.expectEqual(Tool.rect, t.ed.tool);
+    // Screen (50, 25) is the image point (20, 10) after the refit (centered 1:1).
+    try std.testing.expectEqual(Vec2.init(20, 10), t.ed.view.toImage(.{ .x = 50, .y = 25 }));
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(u32, 200), @as(u32, @intCast(t.ed.view.src.width())));
+    _ = try t.key("ctrl+y");
+    try std.testing.expectEqual(@as(u32, 100), @as(u32, @intCast(t.ed.view.src.width())));
 }
 
 test "callout drag then type" {

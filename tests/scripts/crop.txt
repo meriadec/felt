@@ -1,0 +1,18 @@
+# Crop: a rect and an arrow, crop to the API card (the view refits), add a
+# number, undo the number and the crop, redo the crop, then start a second
+# crop: the frame shows the dimmed preview, the export the first crop.
+size 900 500
+key r
+drag 85 140 455 185
+key a
+drag 300 400 180 175
+key x
+drag 70 55 485 285
+key 5 n
+click 600 250
+key ctrl+z ctrl+z ctrl+y
+key x
+down 150 120
+move 400 200
+move 750 360
+move 700 330

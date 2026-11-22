@@ -1,7 +1,8 @@
 //! Area-average (box filter) downscaling, separable, fixed point.
-//! Used once per window size to build the on-screen copy of the image.
+//! Used once per window size or crop to build the on-screen copy of the image.
 const std = @import("std");
 const Canvas = @import("canvas.zig").Canvas;
+const Rect = @import("geom.zig").Rect;
 
 const one = 1 << 14;
 
@@ -58,22 +59,30 @@ const Taps = struct {
 /// Downscale `src` to dw x dh (each <= source size). Caller owns the result.
 /// Both passes split rows across threads (4x faster on 8+ cores).
 pub fn downscale(gpa: std.mem.Allocator, src: *const Canvas, dw: u32, dh: u32) !Canvas {
-    std.debug.assert(dw > 0 and dh > 0);
-    if (dw == src.width and dh == src.height) return src.clone(gpa);
+    return downscaleRect(gpa, src, src.bounds(), dw, dh);
+}
 
-    var job = Job{ .src = src, .dw = dw };
-    job.hx = try Taps.init(gpa, src.width, dw);
+/// Downscale the part `r` of `src` (inside its bounds) to dw x dh.
+pub fn downscaleRect(gpa: std.mem.Allocator, src: *const Canvas, r: Rect, dw: u32, dh: u32) !Canvas {
+    std.debug.assert(dw > 0 and dh > 0 and !r.isEmpty());
+    std.debug.assert(std.meta.eql(r.intersect(src.bounds()), r));
+    const sw: u32 = @intCast(r.width());
+    const sh: u32 = @intCast(r.height());
+    if (dw == sw and dh == sh) return src.copyOut(gpa, r);
+
+    var job = Job{ .src = src, .x0 = @intCast(r.x0), .y0 = @intCast(r.y0), .sw = sw, .dw = dw };
+    job.hx = try Taps.init(gpa, sw, dw);
     defer job.hx.deinit(gpa);
-    job.vy = try Taps.init(gpa, src.height, dh);
+    job.vy = try Taps.init(gpa, sh, dh);
     defer job.vy.deinit(gpa);
-    job.tmp = try Canvas.init(gpa, dw, src.height);
+    job.tmp = try Canvas.init(gpa, dw, sh);
     defer job.tmp.deinit(gpa);
     job.out = try Canvas.init(gpa, dw, dh);
     errdefer job.out.deinit(gpa);
     job.acc = try gpa.alloc(u32, @as(usize, dw) * 3 * max_threads);
     defer gpa.free(job.acc);
 
-    parallelRows(&job, src.height, Job.horizontal);
+    parallelRows(&job, sh, Job.horizontal);
     parallelRows(&job, dh, Job.vertical);
     return job.out;
 }
@@ -82,6 +91,10 @@ const max_threads = 8;
 
 const Job = struct {
     src: *const Canvas,
+    /// Source rectangle: top-left and width (rows come from the tmp height).
+    x0: usize,
+    y0: usize,
+    sw: usize,
     dw: u32,
     hx: Taps = undefined,
     vy: Taps = undefined,
@@ -95,7 +108,7 @@ const Job = struct {
         const src = j.src;
         const dw = j.dw;
         for (y0..y1) |y| {
-            const srow = src.pixels[y * src.width ..][0..src.width];
+            const srow = src.pixels[(j.y0 + y) * src.width + j.x0 ..][0..j.sw];
             const drow = j.tmp.pixels[y * dw ..][0..dw];
             for (drow, 0..) |*d, x| {
                 const w = j.hx.weights[x * j.hx.max_taps ..][0..j.hx.count[x]];
@@ -170,4 +183,16 @@ test "halving averages 2x2 blocks" {
     defer out.deinit(gpa);
     try std.testing.expectEqual(@as(u32, 0xff808080), out.pixels[0]);
     try std.testing.expectEqual(@as(u32, 0xff000000), out.pixels[1]);
+}
+
+test "a source rectangle downscales only that part" {
+    const gpa = std.testing.allocator;
+    var src = try Canvas.init(gpa, 6, 4);
+    defer src.deinit(gpa);
+    src.fill(.{ .r = 0, .g = 0, .b = 0 });
+    src.fillRect(Rect.fromSize(2, 2, 4, 2), .{ .r = 255, .g = 255, .b = 255 });
+    var out = try downscaleRect(gpa, &src, Rect.fromSize(2, 2, 4, 2), 2, 1);
+    defer out.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 0xffffffff), out.pixels[0]);
+    try std.testing.expectEqual(@as(u32, 0xffffffff), out.pixels[1]);
 }

@@ -192,6 +192,44 @@ test "export is at original resolution with annotations mapped from screen" {
     try std.testing.expectEqual(red, app.frame().at(100, 20)); // top edge on screen
 }
 
+test "crop exports the kept part at original resolution; undo restores" {
+    const gpa = std.testing.allocator;
+    var image = try Canvas.init(gpa, 400, 300);
+    image.fill(core.color.Color.rgb(0x808080));
+    const app = try App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none });
+    defer app.destroy();
+    const ev = struct {
+        fn key(c: u21) core.input.Event {
+            return .{ .key = .{ .key = .{ .char = c } } };
+        }
+        fn drag(a: *App, x0: f32, y0: f32, x1: f32, y1: f32) !void {
+            _ = try a.handle(.{ .mouse_down = .{ .x = x0, .y = y0 } });
+            _ = try a.handle(.{ .mouse_move = .{ .x = x1, .y = y1 } });
+            _ = try a.handle(.{ .mouse_up = .{ .x = x1, .y = y1 } });
+            _ = try a.render();
+        }
+    };
+    _ = try app.handle(ev.key('r'));
+    try ev.drag(app, 20, 20, 180, 130); // image (40, 40)..(360, 260)
+    _ = try app.handle(ev.key('x'));
+    try ev.drag(app, 10, 10, 110, 80); // image (20, 20)..(220, 160)
+    var out = try app.exportImage();
+    defer out.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 200), out.width);
+    try std.testing.expectEqual(@as(u32, 140), out.height);
+    const red = core.color.palette[0].color.toPixel();
+    try std.testing.expectEqual(red, out.at(20, 100)); // left edge of the rect, shifted by the crop origin
+    try std.testing.expectEqual(red, out.at(100, 20)); // top edge
+    try std.testing.expectEqual(@as(u32, 0xff808080), out.at(100, 100));
+
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    var full = try app.exportImage();
+    defer full.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 400), full.width);
+    try std.testing.expectEqual(@as(u32, 300), full.height);
+    try std.testing.expectEqual(red, full.at(40, 150));
+}
+
 test "docs/keymap.md is up to date" {
     const gpa = std.testing.allocator;
     var buf: [16 * 1024]u8 = undefined;

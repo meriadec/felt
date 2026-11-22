@@ -32,12 +32,12 @@ image files. Build: `coreModule` in build.zig.
 | `sdf.zig` | Signed distance shapes (capsule, disc, triangle, rects, union, subtract) |
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
-| `view.zig` | Fit the image to the screen, never above 1:1, centered |
+| `view.zig` | Fit the image (or its crop) to the screen, never above 1:1, centered |
 | `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks |
 | `image_io.zig` | Decode and encode image files: `png.zig` first, stb_image for the rest |
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
-| `document.zig` | Annotation list, undo/redo, number counter |
+| `document.zig` | Annotation list, crop rectangle, undo/redo of both, number counter |
 | `style.zig` | Size levels (stroke, font) |
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, hint bar, docs/keymap.md |
@@ -45,7 +45,7 @@ image files. Build: `coreModule` in build.zig.
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds |
 | `chrome.zig` | Hint bar, status pill, toast (layout as draw ops) |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
-| `exporter.zig` | Full-resolution export (identity transform) |
+| `exporter.zig` | Full-resolution export of the kept part (crop origin shift) |
 
 `src/` (the `annotate` executable module):
 
@@ -65,10 +65,14 @@ image files. Build: `coreModule` in build.zig.
 
 - The core never imports a backend or `src/`. The build enforces it: a module
   cannot import files outside its root directory.
-- Annotations live in image pixels. The editor converts screen input with
-  `view.toImage` and screen sizes with `/ view.xf.scale`. Draw code computes
-  geometry in image units, then applies the `Xform`. So the export (identity
-  transform) matches the screen.
+- Annotations live in image pixels of the full original image. The editor
+  converts screen input with `view.toImage` and screen sizes with
+  `/ view.xf.scale`. Draw code computes geometry in image units, then applies
+  the `Xform`. So the export (a shift by the crop origin) matches the screen.
+- A crop never touches the image or the annotations: `Document.crop` is the
+  kept rectangle; the view fits it, the export copies it. Undo just restores
+  the previous rectangle. Annotations are clipped to the kept part on screen
+  (`view.dst`) and in the export.
 - Every pixel write takes a clip `Rect`. The compositor repaints only damaged
   rects; `draw.bounds` must cover everything `draw.annotation` can touch
   (shadows and anti-aliasing included). The golden test checks that an
@@ -81,9 +85,10 @@ image files. Build: `coreModule` in build.zig.
 
 ## Compositor layers
 
-`base` (background + downscaled image, built lazily for undo), `scene` (base +
-committed annotations, appended in place, rebuilt after undo), `frame` (scene +
-preview + chrome). In X11 the frame is the shared-memory image, so a present is
+`base` (background + downscaled kept part of the image, built lazily for
+undo), `scene` (base + committed annotations, appended in place, rebuilt after
+undo, resize or crop), `frame` (scene + crop dimming + chrome + preview). A crop
+drag damages only the bands between the old and the new crop rectangle. In X11 the frame is the shared-memory image, so a present is
 only `XShmPutImage` of the damaged rects.
 
 ## Add a tool

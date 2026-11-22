@@ -13,6 +13,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `c` | callout | Drag from the point of interest to where the box goes, release, type, Enter. A plain click makes a label without a pointer. |
 | `h` | highlight | Drag over text to mark it like a highlighter pen. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
+| `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |
 
 ## Keys
 
