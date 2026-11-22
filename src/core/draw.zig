@@ -321,7 +321,10 @@ pub fn arrowShape(a: ann_mod.Arrow, xf: Xform) ArrowShape {
     const h = xf.apply(a.head);
     const hw = @max(1, a.width * xf.scale) * 0.5;
     const hl = headLength(a.width) * xf.scale;
-    switch (a.style) {
+    // A stairs arrow with a rise under the stroke width is a straight one:
+    // a jog that small would only show as a dent.
+    const straight = a.style == .straight or stairs.Route.of(t, h).rise < 2 * hw;
+    switch (if (straight) ann_mod.ArrowStyle.straight else .stairs) {
         .straight => {
             const d = h.sub(t);
             const l = d.len();
@@ -541,6 +544,12 @@ test "stairs arrow: the stroke follows the elbow path, the head points along the
     var b = a;
     b.style = .straight;
     try std.testing.expect(arrowShape(b, .identity).dist(.{ .x = 50, .y = 25 }) < 0);
+    // A rise under the stroke width: a straight arrow.
+    var flat = a;
+    flat.head = .{ .x = 200, .y = 3 };
+    try std.testing.expect(arrowShape(flat, .identity) == .straight);
+    flat.head.y = 5;
+    try std.testing.expect(arrowShape(flat, .identity) == .stairs);
     // Same body bounds for both: the path stays in the box of its ends.
     const sb = s.bounds();
     try std.testing.expect(sb.min.x >= -3 and sb.max.x <= 203 and sb.min.y >= -3 and sb.max.y <= 113);
