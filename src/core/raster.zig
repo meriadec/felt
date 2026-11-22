@@ -12,8 +12,6 @@ const Rect = geom.Rect;
 pub const Paint = union(enum) {
     /// Source-over blend.
     solid: Color,
-    /// Multiply blend (highlighter); alpha sets strength.
-    multiply: Color,
 };
 
 pub const Options = struct {
@@ -66,7 +64,6 @@ pub fn fill(canvas: *Canvas, clip: Rect, shape: anytype, paint: Paint, opts: Opt
                     }
                     switch (paint) {
                         .solid => |c| canvas.blendAt(i, c, cov),
-                        .multiply => |c| canvas.multiplyAt(i, c, (cov * c.a + 127) / 255),
                     }
                 }
             }

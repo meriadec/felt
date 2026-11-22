@@ -284,7 +284,7 @@ test "panning scrolls the scene to the same pixels as a full repaint" {
     }.ev;
     _ = try app.handle(key('-'));
     // Shapes of every kind across the screen, some past the image.
-    const kinds = [_]u21{ 'a', 'r', 'h', 'c' };
+    const kinds = [_]u21{ 'a', 'r', 'p', 'c' };
     for (kinds, 0..) |k, i| {
         _ = try app.handle(key(k));
         const x: f32 = 60 + 200 * @as(f32, @floatFromInt(i));

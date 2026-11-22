@@ -213,7 +213,7 @@ pub const Editor = struct {
     /// The move tool's target to outline: the part under the pointer. None
     /// while it moves: the shape itself shows where it goes, and a frame
     /// then pays for one raster less (docs/perf.md).
-    pub fn highlight(self: *const Editor) ?Grab {
+    pub fn outlined(self: *const Editor) ?Grab {
         if (self.tool != .move or self.mode != .idle or self.help_visible) return null;
         const g = self.hover orelse return null;
         return if (g.index < self.doc.items.items.len) g else null;
@@ -363,7 +363,6 @@ pub const Editor = struct {
         return switch (d.tool) {
             .arrow => .{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c } },
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
-            .highlight => .{ .highlight = .{ .a = d.start, .b = d.cur, .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
             .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c } },
             .text, .number, .move, .crop => null,
@@ -913,7 +912,7 @@ test "move: topmost wins, Esc puts it back, a drag is one exact undo step" {
     try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 60, .y = 30 })); // inside the first: no stroke
     // Hover follows the pointer.
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 20, .y = 30 } });
-    try std.testing.expectEqual(@as(usize, 0), t.ed.highlight().?.index);
+    try std.testing.expectEqual(@as(usize, 0), t.ed.outlined().?.index);
     // Esc in the middle of a drag puts it back, with no undo step.
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 30 } });
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 25, .y = 35 } });

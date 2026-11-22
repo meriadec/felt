@@ -436,7 +436,7 @@ const Outline = struct {
     const handle_edge = color.nord.n0;
 
     fn of(ctx: draw.Ctx, doc: *const Document, ed: *const Editor) ?Outline {
-        const g = ed.highlight() orelse return null;
+        const g = ed.outlined() orelse return null;
         const a = doc.items.items[g.index];
         const ui = @import("style.zig").uiScale(ed.view.screen_h);
         var o = Outline{ .ann = a, .part = g.part, .ui = ui, .rect = draw.outlineBounds(ctx, a, ed.view.xf, lineStyle(ui, g.part)) };

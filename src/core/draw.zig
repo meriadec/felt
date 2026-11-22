@@ -59,7 +59,6 @@ pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform,
             const s = boxShape(b, xf);
             drawWithShadow(cv, clip, s, b.color, Shadow.of(b.width * xf.scale));
         },
-        .highlight => |h| raster.fill(cv, clip, highlightShape(h, xf), .{ .multiply = highlightTint(h.color) }, .{}),
         .pixelate => |p| {
             const r = sortedBounds(xf.apply(p.a), xf.apply(p.b)).toRect();
             const block: i32 = @intFromFloat(@max(2, @round(p.block * xf.scale)));
@@ -78,7 +77,6 @@ pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
     const b: Bounds = switch (ann) {
         .arrow => |a| arrowShape(a, xf).bounds().expand(Shadow.of(a.width * xf.scale).margin()),
         .rect => |r| boxShape(r, xf).bounds().expand(Shadow.of(r.width * xf.scale).margin()),
-        .highlight => |h| highlightShape(h, xf).bounds().expand(2),
         .pixelate => |p| sortedBounds(xf.apply(p.a), xf.apply(p.b)).expand(1),
         .text => |t| blk: {
             const g = textGeom(ctx, t, xf);
@@ -189,7 +187,6 @@ pub fn bodyBounds(ctx: Ctx, ann: Annotation, xf: Xform) Rect {
     const b: Bounds = switch (ann) {
         .arrow => |a| arrowShape(a, xf).bounds(),
         .rect => |r| boxShape(r, xf).bounds(),
-        .highlight => |h| highlightShape(h, xf).bounds(),
         .pixelate => |p| sortedBounds(xf.apply(p.a), xf.apply(p.b)),
         .text => |t| textGeom(ctx, t, xf).box.bounds(),
         .number => |n| blk: {
@@ -209,7 +206,6 @@ pub fn hitDist(ctx: Ctx, ann: Annotation, xf: Xform, p: Vec2) f32 {
     return switch (ann) {
         .arrow => |a| arrowShape(a, xf).dist(p),
         .rect => |r| boxShape(r, xf).dist(p),
-        .highlight => |h| highlightShape(h, xf).dist(p),
         .pixelate => |q| blk: {
             const b = sortedBounds(xf.apply(q.a), xf.apply(q.b));
             break :blk (sdf.RoundRect{ .min = b.min, .max = b.max, .radius = 0 }).dist(p);
@@ -238,7 +234,6 @@ pub fn outline(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform, st
             const e = b.w * 0.5 + off;
             raster.fill(cv, clip, sdf.ring(sdf.RoundRect{ .min = b.min.sub(.{ .x = e, .y = e }), .max = b.max.add(.{ .x = e, .y = e }), .radius = off }, st.w), paint, .{});
         },
-        .highlight => |h| raster.fill(cv, clip, sdf.ring(sdf.Grown(sdf.RoundRect){ .s = highlightShape(h, xf), .r = off }, st.w), paint, .{}),
         .pixelate => |q| {
             const b = sortedBounds(xf.apply(q.a), xf.apply(q.b)).expand(off);
             raster.fill(cv, clip, sdf.ring(sdf.RoundRect{ .min = b.min, .max = b.max, .radius = off }, st.w), paint, .{});
@@ -301,20 +296,11 @@ pub fn arrowShape(a: ann_mod.Arrow, xf: Xform) ArrowShape {
     };
 }
 
-// ---- rect, highlight ---------------------------------------------------
+// ---- rect ----------------------------------------------------------------
 
 fn boxShape(b: ann_mod.Box, xf: Xform) sdf.RectStroke {
     const s = sortedBounds(xf.apply(b.a), xf.apply(b.b));
     return .{ .min = s.min, .max = s.max, .w = @max(1, b.width * xf.scale) };
-}
-
-fn highlightShape(h: ann_mod.Highlight, xf: Xform) sdf.RoundRect {
-    const s = sortedBounds(xf.apply(h.a), xf.apply(h.b));
-    return .{ .min = s.min, .max = s.max, .radius = 3 * xf.scale };
-}
-
-fn highlightTint(c: Color) Color {
-    return c.lighten(0.35);
 }
 
 // ---- text label ------------------------------------------------------

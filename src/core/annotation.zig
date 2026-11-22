@@ -20,9 +20,6 @@ pub const Number = struct { center: Vec2, value: u32, size: f32, color: Color };
 /// Text box attached at `anchor`, with a pointer to `target` (none = label).
 pub const Callout = struct { target: ?Vec2, anchor: Vec2, text: []const u8, size: f32, color: Color };
 
-/// Highlighter marker (multiply blend) over the rectangle a..b.
-pub const Highlight = struct { a: Vec2, b: Vec2, color: Color };
-
 /// Pixelated rectangle a..b with square blocks of `block` pixels.
 pub const Pixelate = struct { a: Vec2, b: Vec2, block: f32 };
 
@@ -32,7 +29,6 @@ pub const Annotation = union(enum) {
     text: Text,
     number: Number,
     callout: Callout,
-    highlight: Highlight,
     pixelate: Pixelate,
 
     /// Text owned by the annotation, if any.
@@ -57,10 +53,6 @@ pub const Annotation = union(enum) {
                 if (part != .tail) x.head = x.head.add(d);
             },
             .rect => |*x| {
-                x.a = x.a.add(d);
-                x.b = x.b.add(d);
-            },
-            .highlight => |*x| {
                 x.a = x.a.add(d);
                 x.b = x.b.add(d);
             },

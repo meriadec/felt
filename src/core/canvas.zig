@@ -1,5 +1,5 @@
 //! Canvas: an owned or borrowed buffer of opaque ARGB pixels plus the basic
-//! pixel operations (fill, copy, alpha blend, multiply, coverage masks, pixelate).
+//! pixel operations (fill, copy, alpha blend, coverage masks, pixelate).
 //! Every write takes a clip rectangle; callers never write outside it.
 const std = @import("std");
 const color = @import("color.zig");
@@ -121,14 +121,6 @@ pub const Canvas = struct {
         self.pixels[i] = blendPixel(self.pixels[i], c, cov * c.a);
     }
 
-    /// Multiply blend (highlighter) of `c` with strength `cov` (0..255).
-    pub inline fn multiplyAt(self: *Canvas, i: usize, c: Color, cov: u32) void {
-        const d = self.pixels[i];
-        const m = Color.fromPixel(d);
-        const prod = Color{ .r = mul255(m.r, c.r), .g = mul255(m.g, c.g), .b = mul255(m.b, c.b) };
-        self.pixels[i] = blendPixel(d, prod, cov * 255);
-    }
-
     /// Blend a solid color over a rectangle.
     pub fn blendRect(self: *Canvas, r: Rect, c: Color) void {
         const cr = r.intersect(self.bounds());
@@ -222,11 +214,6 @@ pub fn freeBytes(gpa: std.mem.Allocator, b: []u8) void {
         const px: [*]Pixel = @ptrCast(@alignCast(b.ptr));
         bigFree(px[0 .. (b.len + 3) / 4]);
     } else gpa.free(b);
-}
-
-inline fn mul255(a: u8, b: u8) u8 {
-    const x = @as(u32, a) * b + 128;
-    return @intCast((x + (x >> 8)) >> 8);
 }
 
 /// Blend `src` over opaque `dst` with alpha `a16` in 0..255*255.

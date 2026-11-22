@@ -1,5 +1,5 @@
 # Tab cycles tools in toolbar order, Shift+Tab goes back. Tab while typing
-# finishes the text first. Ends on the highlight tool (3 Tabs after rect).
+# finishes the text first. Ends on the pixelate tool (3 Tabs after rect).
 size 900 500
 key tab tab
 drag 100 120 300 200

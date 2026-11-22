@@ -70,12 +70,6 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
             pen.line(-0.42, -0.3, 0.42, -0.3);
             pen.line(-0.42, 0.0, 0.15, 0.0);
         },
-        .highlight => {
-            pen.fill(pen.box(-0.85, 0.5, 0.85, 0.82, 0.08), 0.45);
-            // Marker body, tilted, with a chisel tip touching the stroke.
-            pen.fill(sdf.Capsule{ .a = pen.p(0.05, -0.05), .b = pen.p(0.6, -0.6), .r = pen.k * 0.2 }, 1);
-            pen.fill(pen.tri(.{ -0.3, 0.38 }, .{ -0.12, -0.08 }, .{ 0.18, 0.22 }), 1);
-        },
         .pixelate => {
             const cell = 0.5;
             const gap = 0.08;

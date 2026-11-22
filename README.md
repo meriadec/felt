@@ -1,7 +1,7 @@
 # annotate
 
 Fast full-screen screenshot annotation for X11. Opens an image, you draw
-arrows, text labels, boxes, numbered bubbles, callouts, highlights and
+arrows, text labels, boxes, numbered bubbles, callouts and
 pixelation with one-letter tools, crop it, then save (Ctrl+S) or copy (Ctrl+C). Built to replace
 `ksnip -e` in an i3 setup.
 

@@ -35,17 +35,6 @@ pub const Color = struct {
     pub fn contrast(c: Color) Color {
         return if (c.luminance() > 0.6) nord.n0 else nord.n6;
     }
-
-    /// Mix toward white by `t` in 0..1.
-    pub fn lighten(c: Color, t: f32) Color {
-        const f = struct {
-            fn ch(v: u8, k: f32) u8 {
-                const x: f32 = @floatFromInt(v);
-                return @intFromFloat(@round(x + (255.0 - x) * k));
-            }
-        };
-        return .{ .r = f.ch(c.r, t), .g = f.ch(c.g, t), .b = f.ch(c.b, t), .a = c.a };
-    }
 };
 
 pub const white = Color.rgb(0xffffff);

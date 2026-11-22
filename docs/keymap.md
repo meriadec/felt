@@ -11,7 +11,6 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
 | `c` | callout | Drag from the point of interest to where the box goes, release, type, Enter. A plain click makes a label without a pointer. |
-| `h` | highlight | Drag over text to mark it like a highlighter pen. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
 | `m` | move | Point at an annotation: it lights up. Drag it to move it. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. Undo puts it back. |
 | `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |
