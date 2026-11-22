@@ -1,0 +1,7 @@
+# Pixelate the API key and an IP address; a drag in progress shows the preview.
+size 900 500
+key p
+drag 95 150 450 175
+drag 225 247 320 263
+down 120 340
+move 300 410

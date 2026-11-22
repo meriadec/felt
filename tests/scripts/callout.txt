@@ -1,0 +1,14 @@
+# Callouts: drag from target to box, type; one upward; a plain-click label.
+size 900 500
+key c
+drag 260 160 360 230
+type Leaked key: rotate it
+key enter
+key 5
+drag 600 290 690 160
+type Friday spike\nwhy?
+key enter
+key 3
+click 160 470
+type Draft
+key enter

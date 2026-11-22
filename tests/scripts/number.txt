@@ -1,0 +1,11 @@
+# Numbered bubbles: 1..4, undo the 4th, place it again elsewhere, then 5 in blue.
+size 900 500
+key n
+click 110 160
+click 250 210
+click 120 355
+click 600 100
+key ctrl+z
+click 760 160
+key 5 ]
+click 520 300

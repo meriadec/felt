@@ -1,0 +1,7 @@
+# Highlighter in yellow over text, then a green one, then a red rect on top.
+size 900 500
+key h 3
+drag 88 103 330 119
+drag 88 362 280 382
+key 4
+drag 88 386 280 404

@@ -1,0 +1,6 @@
+# UI states: color and size picked, help hidden, unsaved-changes toast after Esc.
+size 900 500
+key a
+drag 300 300 400 200
+key 5 ] ] ?
+key esc

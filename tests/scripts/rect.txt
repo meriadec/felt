@@ -1,0 +1,8 @@
+# Rectangles: default, thin green, thick blue dragged bottom-right to top-left.
+size 900 500
+key r
+drag 85 140 455 185
+key 4 [
+drag 95 190 245 235
+key 5 ] ]
+drag 820 470 520 100
