@@ -1122,3 +1122,33 @@ test "the style switch shows above the dock with the callout tool; a click picks
     try std.testing.expect(t.ed.mode == .idle);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
 }
+
+test "move: a stairs callout is grabbed on its elbow; its box moves alone and the pointer re-routes" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("c");
+    _ = try t.key("c"); // stairs
+    try t.drag(10, 10, 150, 70); // box right of x 150; pointer: left to x 80, up to y 10, left to x 10
+    _ = try t.key("H");
+    _ = try t.key("enter");
+    _ = try t.key("m");
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 80, .y = 40 }).?); // middle segment
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 120, .y = 70 }).?); // first segment
+    try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 115, .y = 52 })); // the straight line
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .tip }, t.ed.grabAt(.{ .x = 11, .y = 11 }).?);
+    // The box by its middle segment: the box moves, the tip stays, the elbow re-routes.
+    try t.drag(80, 40, 90, 50);
+    const c = t.doc.items.items[0].callout;
+    try std.testing.expectEqual(Vec2.init(10, 10), c.target.?);
+    try std.testing.expectEqual(Vec2.init(160, 80), c.anchor);
+    try std.testing.expect(draw.hitDist(t.ed.ctx(), t.doc.items.items[0], t.ed.view.xf, .{ .x = 85, .y = 45 }) < 0); // new middle x 85
+    // The tip alone.
+    try t.drag(10, 10, 30, 90);
+    try std.testing.expectEqual(Vec2.init(30, 90), t.doc.items.items[0].callout.target.?);
+    try std.testing.expectEqual(Vec2.init(160, 80), t.doc.items.items[0].callout.anchor);
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(Vec2.init(150, 70), t.doc.items.items[0].callout.anchor);
+    try std.testing.expectEqual(Vec2.init(10, 10), t.doc.items.items[0].callout.target.?);
+}
