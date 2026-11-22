@@ -104,6 +104,12 @@ fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
     core.addIncludePath(b.path("vendor/stb"));
     // stb is always optimized: a Debug PNG decode is 10x slower and slows every test.
     core.addCSourceFile(.{ .file = b.path("vendor/stb/stb_impl.c"), .flags = &.{ "-O2", "-fno-sanitize=undefined" } });
+    core.addIncludePath(b.path("vendor/libdeflate"));
+    core.addCSourceFiles(.{
+        .root = b.path("vendor/libdeflate/lib"),
+        .files = &.{ "deflate_decompress.c", "deflate_compress.c", "zlib_decompress.c", "zlib_compress.c", "adler32.c", "crc32.c", "utils.c", "x86/cpu_features.c" },
+        .flags = &.{ "-O2", "-fno-sanitize=undefined" },
+    });
     core.addAnonymousImport("font_ttf", .{ .root_source_file = b.path("vendor/fonts/DejaVuSans-Bold.ttf") });
     return core;
 }
