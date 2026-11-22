@@ -14,18 +14,22 @@ pub const Canvas = struct {
     height: u32,
     pixels: []Pixel,
 
+    /// Pixel contents are undefined. Big canvases bypass `gpa` (see bigAlloc).
     pub fn init(gpa: std.mem.Allocator, w: u32, h: u32) !Canvas {
-        const px = try gpa.alloc(Pixel, @as(usize, w) * h);
+        const n = @as(usize, w) * h;
+        const px = if (n * 4 >= big_bytes) try bigAlloc(n) else try gpa.alloc(Pixel, n);
         return .{ .width = w, .height = h, .pixels = px };
     }
 
     pub fn deinit(self: *Canvas, gpa: std.mem.Allocator) void {
-        gpa.free(self.pixels);
+        if (self.pixels.len * 4 >= big_bytes) bigFree(self.pixels) else gpa.free(self.pixels);
         self.* = undefined;
     }
 
     pub fn clone(self: *const Canvas, gpa: std.mem.Allocator) !Canvas {
-        return .{ .width = self.width, .height = self.height, .pixels = try gpa.dupe(Pixel, self.pixels) };
+        const cv = try init(gpa, self.width, self.height);
+        @memcpy(cv.pixels, self.pixels);
+        return cv;
     }
 
     pub fn bounds(self: *const Canvas) Rect {
@@ -142,6 +146,25 @@ pub const Canvas = struct {
         }
     }
 };
+
+/// Canvases from this size up get their own mapping with transparent huge
+/// pages: a 4K frame faults in 16 pages instead of 8100 (zig build bench).
+const big_bytes = 4 << 20;
+const huge_page = 2 << 20;
+
+fn bigAlloc(n: usize) ![]Pixel {
+    const len = std.mem.alignForward(usize, n * 4, huge_page);
+    const mem = std.posix.mmap(null, len, std.posix.PROT.READ | std.posix.PROT.WRITE, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0) catch return error.OutOfMemory;
+    std.posix.madvise(mem.ptr, len, std.posix.MADV.HUGEPAGE) catch {};
+    const px: [*]Pixel = @ptrCast(mem.ptr);
+    return px[0..n];
+}
+
+fn bigFree(px: []Pixel) void {
+    const len = std.mem.alignForward(usize, px.len * 4, huge_page);
+    const p: [*]align(std.heap.page_size_min) u8 = @ptrCast(@alignCast(px.ptr));
+    std.posix.munmap(p[0..len]);
+}
 
 inline fn mul255(a: u8, b: u8) u8 {
     const x = @as(u32, a) * b + 128;
