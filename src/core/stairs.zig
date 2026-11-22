@@ -84,7 +84,7 @@ pub const Path = struct {
     }
 
     pub fn dist(s: Path, p: Vec2) f32 {
-        // Segments: one square root for the three.
+        // Segments (axis aligned): one square root for the three.
         const d2 = @min(segDist2(p, s.t, s.a[0]), @min(segDist2(p, s.b[0], s.a[1]), segDist2(p, s.b[1], s.end)));
         var d = @sqrt(d2);
         // Arcs: only inside the quarter of each corner; outside it the
@@ -119,14 +119,14 @@ pub const Path = struct {
     }
 };
 
-/// Squared distance from `p` to the segment a..b.
+/// Squared distance from `p` to the segment a..b, which is axis aligned:
+/// the distance to a box of zero width, no division.
 fn segDist2(p: Vec2, a: Vec2, b: Vec2) f32 {
-    const pa = p.sub(a);
-    const ba = b.sub(a);
-    const l2 = ba.dot(ba);
-    const h = if (l2 < 1e-9) 0 else std.math.clamp(pa.dot(ba) / l2, 0, 1);
-    const q = pa.sub(ba.scale(h));
-    return q.dot(q);
+    const lo = a.min(b);
+    const hi = a.max(b);
+    const dx = @max(@max(lo.x - p.x, p.x - hi.x), 0);
+    const dy = @max(@max(lo.y - p.y, p.y - hi.y), 0);
+    return dx * dx + dy * dy;
 }
 
 test "route: the dominant axis first and last, the turn at the midpoint" {
