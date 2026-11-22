@@ -130,7 +130,7 @@ fn translateKey(ks: c.KeySym) ?input.Key {
         c.XK_Return, c.XK_KP_Enter => .{ .named = .enter },
         c.XK_BackSpace => .{ .named = .backspace },
         c.XK_Delete => .{ .named = .delete },
-        c.XK_Tab => .{ .named = .tab },
+        c.XK_Tab, c.XK_ISO_Left_Tab => .{ .named = .tab }, // Shift+Tab sends ISO_Left_Tab
         c.XK_F1 => .{ .named = .f1 },
         c.XK_Left => .{ .named = .left },
         c.XK_Right => .{ .named = .right },

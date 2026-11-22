@@ -19,6 +19,15 @@ pub const tools = [_]ToolInfo{
     .{ .tool = .pixelate, .key = 'p', .name = "pixelate", .mouse = "Drag over a secret to pixelate it." },
 };
 
+/// The tool `delta` places after `t` in `tools` order, wrapping around.
+pub fn cycleTool(t: Tool, delta: i32) Tool {
+    const n: i32 = tools.len;
+    for (tools, 0..) |info, i| if (info.tool == t) {
+        return tools[@intCast(@mod(@as(i32, @intCast(i)) + delta, n))].tool;
+    };
+    unreachable;
+}
+
 pub fn toolInfo(t: Tool) *const ToolInfo {
     for (&tools) |*info| if (info.tool == t) return info;
     unreachable;
@@ -31,6 +40,8 @@ pub fn toolKey(t: Tool) []const u8 {
 
 pub const Action = union(enum) {
     tool: Tool,
+    next_tool,
+    prev_tool,
     color: u8,
     size_up,
     size_down,
@@ -72,6 +83,8 @@ pub const bindings: []const Binding = blk: {
         .label = if (i == 0) "color" else p.name,
     }};
     list = list ++ [_]Binding{
+        .{ .chord = .{ .key = .{ .named = .tab }, .shift = false }, .action = .next_tool, .bar = "Tab", .label = "next tool" },
+        .{ .chord = .{ .key = .{ .named = .tab }, .shift = true }, .action = .prev_tool, .label = "previous tool" },
         .{ .chord = .{ .key = ch('[') }, .action = .size_down, .bar = "[ ]", .label = "size" },
         .{ .chord = .{ .key = ch(']') }, .action = .size_up, .label = "bigger" },
         .{ .chord = .{ .key = ch('z'), .ctrl = true, .shift = false }, .action = .undo, .bar = "Ctrl Z", .label = "undo" },
@@ -93,6 +106,7 @@ pub const extra = [_][2][]const u8{
     .{ "Esc while drawing", "Cancel the shape in progress" },
     .{ "Esc with unsaved changes", "Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image." },
     .{ "Ctrl+Z while typing", "Drop the text in progress" },
+    .{ "Tab while typing", "Finish the text, then go to the next tool" },
 };
 
 fn lower(c: u21) u21 {
@@ -122,6 +136,7 @@ pub fn chordName(buf: []u8, chord: Chord) []const u8 {
         .named => |n| w.writeAll(switch (n) {
             .escape => "Esc",
             .f1 => "F1",
+            .tab => "Tab",
             else => @tagName(n),
         }) catch {},
     }
@@ -163,6 +178,14 @@ test "lookup" {
     try std.testing.expectEqual(Action.toggle_help, lookup(.{ .key = .{ .char = '?' }, .mods = .{ .shift = true } }).?);
     try std.testing.expectEqual(Action{ .color = 2 }, lookup(.{ .key = .{ .char = '3' } }).?);
     try std.testing.expectEqual(@as(?Action, null), lookup(.{ .key = .{ .char = 'a' }, .mods = .{ .ctrl = true } }));
+    try std.testing.expectEqual(Action.next_tool, lookup(.{ .key = .{ .named = .tab } }).?);
+    try std.testing.expectEqual(Action.prev_tool, lookup(.{ .key = .{ .named = .tab }, .mods = .{ .shift = true } }).?);
+}
+
+test "cycleTool wraps both ways in toolbar order" {
+    try std.testing.expectEqual(tools[1].tool, cycleTool(tools[0].tool, 1));
+    try std.testing.expectEqual(tools[tools.len - 1].tool, cycleTool(tools[0].tool, -1));
+    try std.testing.expectEqual(tools[0].tool, cycleTool(tools[tools.len - 1].tool, 1));
 }
 
 test "markdown mentions every tool" {

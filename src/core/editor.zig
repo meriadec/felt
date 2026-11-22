@@ -245,6 +245,7 @@ pub const Editor = struct {
                     return .{ .redraw = true };
                 },
                 .named => |n| switch (n) {
+                    .tab => {}, // not text: falls through to the key map (finish, next tool)
                     .enter => {
                         if (k.mods.shift) try self.draft.append(self.gpa, '\n') else try self.commitTyping();
                         return .{ .redraw = true };
@@ -275,13 +276,18 @@ pub const Editor = struct {
         return self.run(action, was_armed);
     }
 
+    /// Finish any text in progress, drop any shape in progress, switch tool.
+    fn setTool(self: *Editor, t: Tool) !void {
+        try self.commitTyping();
+        self.cancel();
+        self.tool = t;
+    }
+
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
         switch (action) {
-            .tool => |t| {
-                try self.commitTyping();
-                self.cancel();
-                self.tool = t;
-            },
+            .tool => |t| try self.setTool(t),
+            .next_tool => try self.setTool(keymap.cycleTool(self.tool, 1)),
+            .prev_tool => try self.setTool(keymap.cycleTool(self.tool, -1)),
             .color => |i| self.color_idx = i,
             .size_up => self.changeSize(1),
             .size_down => self.changeSize(-1),
@@ -372,6 +378,24 @@ test "quit asks once when dirty" {
     try t.drag(10, 10, 50, 40);
     try std.testing.expectEqual(@as(?Command, null), (try t.key("esc")).command);
     try std.testing.expectEqual(Command.quit, (try t.key("esc")).command.?);
+}
+
+test "tab cycles tools; tab while typing commits first" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("tab");
+    try std.testing.expectEqual(keymap.cycleTool(.arrow, 1), t.ed.tool);
+    _ = try t.key("shift+tab");
+    _ = try t.key("shift+tab");
+    try std.testing.expectEqual(keymap.cycleTool(.arrow, -1), t.ed.tool);
+    _ = try t.key("t");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 5, .y = 50 } });
+    _ = try t.key("x");
+    _ = try t.key("tab");
+    try std.testing.expectEqualStrings("x", t.doc.items.items[0].text.text);
+    try std.testing.expectEqual(keymap.cycleTool(.text, 1), t.ed.tool);
+    try std.testing.expect(t.ed.mode == .idle);
 }
 
 test "callout drag then type" {

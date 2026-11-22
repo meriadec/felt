@@ -26,6 +26,8 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `6` | color purple |
 | `7` | color white |
 | `8` | color black |
+| `Tab` | next tool |
+| `Shift+Tab` | previous tool |
 | `[` | size |
 | `]` | bigger |
 | `Ctrl+z` | undo |
@@ -46,3 +48,4 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Esc while drawing | Cancel the shape in progress |
 | Esc with unsaved changes | Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image. |
 | Ctrl+Z while typing | Drop the text in progress |
+| Tab while typing | Finish the text, then go to the next tool |
