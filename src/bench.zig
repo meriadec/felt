@@ -1,6 +1,7 @@
 //! Benchmark (`annotate --bench`, `zig build bench`): times decode, startup
-//! render, per-frame render while dragging and typing, undo rebuild, export,
-//! crop, a drag that grows the canvas, pan and zoom, on a synthetic
+//! render, per-frame render while dragging (arrows, a stairs callout) and
+//! typing, move drags (arrows, a callout box), undo rebuild, export, crop,
+//! a drag that grows the canvas, pan and zoom, on a synthetic
 //! screenshot or a given image. Budgets: docs/perf.md.
 const std = @import("std");
 const core = @import("core");
@@ -283,6 +284,59 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     // Straight arrows again, the move tool active again.
     for ("aam") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
     if (app.editor.arrow_style != .straight or app.editor.tool != .move) return error.BenchStateNotRestored;
+    _ = try app.render();
+
+    // A stairs callout: drag from the target to the box (the preview), then
+    // move its box among 32 annotations (the elbow re-routes each frame).
+    var dcs = Stats{};
+    defer dcs.deinit(gpa);
+    damage_px = 0;
+    for ("cc") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } }); // again: stairs
+    if (app.editor.arrow_style != .stairs or app.editor.tool != .callout) return error.BenchNoStairsCallout;
+    const box_at = core.geom.Vec2.init(W * 0.6, H * 0.4);
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.15, .y = H * 0.25 } });
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * 0.15 + (box_at.x - W * 0.15) * f, .y = H * 0.25 + (box_at.y - H * 0.25) * f } });
+        t.reset();
+        const d = try app.render();
+        try dcs.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    _ = try app.handle(.{ .mouse_up = .{ .x = box_at.x, .y = box_at.y } });
+    for ("Stairs callout") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } });
+    try dcs.report(w, "frame: drag stairs callout");
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
+    var mvc = Stats{};
+    defer mvc.deinit(gpa);
+    damage_px = 0;
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
+    _ = try app.render();
+    // The box starts at the anchor and runs right (the target is left).
+    const ui = core.style.uiScale(opts.size[1]);
+    _ = try app.handle(.{ .mouse_down = .{ .x = box_at.x + 30 * ui, .y = box_at.y } });
+    if (app.editor.mode != .moving or app.editor.mode.moving.grab.part != .whole) return error.BenchMoveMissedTheCalloutBox;
+    app.comp.prof = .{};
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
+        _ = try app.handle(.{ .mouse_move = .{ .x = box_at.x + 30 * ui + W * 0.1 * f, .y = box_at.y + H * 0.1 * f } });
+        t.reset();
+        const d = try app.render();
+        try mvc.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    _ = try app.handle(.{ .mouse_up = .{ .x = box_at.x + 30 * ui + W * 0.1, .y = box_at.y + H * 0.1 } });
+    _ = try app.render();
+    try mvc.report(w, "frame: move callout box");
+    try reportProf(w, app.comp.prof, n_moves + 1);
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
+    // Take the callout back (the move, then the add), straight style and
+    // the move tool again: the cases below see the scene they had.
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    for ("ccm") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    if (app.editor.arrow_style != .straight or app.editor.tool != .move or app.doc.items.items.len != 31) return error.BenchStateNotRestored;
     _ = try app.render();
 
     // Export.
