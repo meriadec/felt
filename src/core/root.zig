@@ -18,6 +18,10 @@ pub const document = @import("document.zig");
 pub const input = @import("input.zig");
 pub const keymap = @import("keymap.zig");
 pub const draw = @import("draw.zig");
+pub const editor = @import("editor.zig");
+pub const chrome = @import("chrome.zig");
+pub const compositor = @import("compositor.zig");
+pub const exporter = @import("exporter.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
