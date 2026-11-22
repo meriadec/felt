@@ -1,0 +1,74 @@
+//! Colors. A `Pixel` is a packed 0xAARRGGBB u32 (native endian), the layout of
+//! a 24/32-bit X11 TrueColor visual, so frames blit to X11 without conversion.
+const std = @import("std");
+
+pub const Pixel = u32;
+
+pub const Color = struct {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8 = 255,
+
+    pub fn rgb(hex: u24) Color {
+        return .{ .r = @truncate(hex >> 16), .g = @truncate(hex >> 8), .b = @truncate(hex) };
+    }
+
+    pub fn withAlpha(c: Color, a: u8) Color {
+        return .{ .r = c.r, .g = c.g, .b = c.b, .a = a };
+    }
+
+    pub fn toPixel(c: Color) Pixel {
+        return (@as(u32, c.a) << 24) | (@as(u32, c.r) << 16) | (@as(u32, c.g) << 8) | c.b;
+    }
+
+    pub fn fromPixel(p: Pixel) Color {
+        return .{ .a = @truncate(p >> 24), .r = @truncate(p >> 16), .g = @truncate(p >> 8), .b = @truncate(p) };
+    }
+
+    /// Relative luminance in 0..1 (sRGB weights, no gamma: good enough to pick contrast).
+    pub fn luminance(c: Color) f32 {
+        return (0.2126 * @as(f32, @floatFromInt(c.r)) + 0.7152 * @as(f32, @floatFromInt(c.g)) + 0.0722 * @as(f32, @floatFromInt(c.b))) / 255.0;
+    }
+
+    /// Black or white, whichever reads best on top of `c`.
+    pub fn contrast(c: Color) Color {
+        return if (c.luminance() > 0.6) black else white;
+    }
+
+    /// Mix toward white by `t` in 0..1.
+    pub fn lighten(c: Color, t: f32) Color {
+        const f = struct {
+            fn ch(v: u8, k: f32) u8 {
+                const x: f32 = @floatFromInt(v);
+                return @intFromFloat(@round(x + (255.0 - x) * k));
+            }
+        };
+        return .{ .r = f.ch(c.r, t), .g = f.ch(c.g, t), .b = f.ch(c.b, t), .a = c.a };
+    }
+};
+
+pub const white = Color.rgb(0xffffff);
+pub const black = Color.rgb(0x000000);
+
+pub const Named = struct { name: []const u8, color: Color };
+
+/// Annotation palette, selected with keys 1..8 (index 0 = key 1).
+pub const palette = [_]Named{
+    .{ .name = "red", .color = Color.rgb(0xe53935) },
+    .{ .name = "orange", .color = Color.rgb(0xfb8c00) },
+    .{ .name = "yellow", .color = Color.rgb(0xfdd835) },
+    .{ .name = "green", .color = Color.rgb(0x43a047) },
+    .{ .name = "blue", .color = Color.rgb(0x1e88e5) },
+    .{ .name = "purple", .color = Color.rgb(0x8e24aa) },
+    .{ .name = "white", .color = Color.rgb(0xffffff) },
+    .{ .name = "black", .color = Color.rgb(0x111111) },
+};
+
+test "pixel round trip" {
+    const c = Color{ .r = 1, .g = 2, .b = 3, .a = 4 };
+    try std.testing.expectEqual(@as(u32, 0x04010203), c.toPixel());
+    try std.testing.expectEqual(c, Color.fromPixel(c.toPixel()));
+    try std.testing.expectEqual(white, palette[0].color.contrast());
+    try std.testing.expectEqual(black, palette[2].color.contrast());
+}
