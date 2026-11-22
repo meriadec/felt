@@ -32,3 +32,5 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-23: the X11 smoke test failed once: Esc came 0.5 s after Ctrl+S, before the save. Fix: the script waits for the saved file.
 - 2026-11-23: a compile error in `zig build check` prints a multi-KB zig command line around the error. Workaround: `zig build check 2>&1 | grep -v '^/home'`; open.
 - 2026-11-23: adding the move tool widened the dock and broke the dock clicks in ui.txt and help.txt (raw coordinates). Fix: script command `ui tool NAME | color N | size | help | undo | redo`.
+- 2026-11-23: `zig build check ...; git commit` committed on a red check (a golden had changed). Rule: chain `check && git commit`; every commit re-checked in a worktree at the end.
+- 2026-11-23: no profiler (`perf` not allowed): finding the move drag hot spot took temporary timers in compositor.zig. Open: a `--bench` breakdown flag.

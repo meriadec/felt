@@ -23,39 +23,40 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
-## Numbers (2026-11, after the growing canvas, zoom and pan)
+## Numbers (2026-11, after the move tool, the top bar and the flat chrome)
 
-`zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs:
+`zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs;
+"was" is the run before these changes (commit "docs: log the friction of the
+growing canvas work"):
 
 | Metric | Value |
 |---|---|
-| decode PNG (min) | 7.0 ms (stb: 8.7 ms) |
-| first frame render (min) | 5.7 ms (was 5.3: the downscaled image is kept in `scaled`, then copied) |
-| startup total (min) | 12.7 ms |
-| frame, drag arrow | avg 0.50 ms, p95 1.0 ms (damage 11% of screen) |
-| frame, drag pixelate | avg 0.32 ms, p95 0.67 ms |
+| decode PNG (min) | 7.0 ms (stb: 9.0 ms) |
+| first frame render (min) | 5.8 ms (was 5.6) |
+| startup total (min) | 13.0 ms (was 12.6) |
+| frame, drag arrow | avg 0.24 ms, p95 0.47 ms (was 0.50 / 1.0: sdf union skips the head far from it) |
+| frame, drag pixelate | avg 0.32 ms, p95 0.70 ms |
 | frame, type a character | avg 0.14 ms |
-| frame, drag crop (outside dimmed) | avg 0.58 ms, p95 0.60 ms |
-| crop release (refit + scene rebuild) | 4.1 ms |
-| undo, scene rebuild with 31 annotations | 3.1 ms (was 8.7-10.7: `scaled` is kept, no new downscale) |
-| export render / PNG encode | 4.8 ms / 10.5 ms (stb: 58-80 ms) |
-| zoom out (`-`), scene rebuild at 2/3 | 5.2 ms |
-| frame, drag that grows the canvas | avg 0.32 ms, p95 0.64 ms (damage 5.4% of screen) |
-| frame, pan (middle drag, 31 annotations) | avg 0.83 ms, p95 1.0 ms (was 3.4 ms before the scene scroll) |
-| Ctrl+wheel zoom (downscale + rebuild) | avg 4.1 ms, p95 5.0 ms |
+| frame, move drag (long arrow, 31 annotations) | avg 0.55 ms, p95 0.61 ms, damage 5.2% of screen (new) |
+| undo, scene rebuild with 31 annotations | 2.2 ms (was 4.0) |
+| export render / PNG encode | 4.7 ms / 11.3 ms |
+| frame, drag crop (outside dimmed) | avg 0.34 ms, p95 0.39 ms |
+| crop release (refit + scene rebuild) | 2.8 ms |
+| zoom out (`-`), scene rebuild at 2/3 | 5.1 ms |
+| frame, drag that grows the canvas | avg 0.15 ms, p95 0.28 ms (was 0.32 / 0.63) |
+| frame, pan (middle drag, 31 annotations) | avg 0.60 ms, p95 0.97 ms |
+| Ctrl+wheel zoom (downscale + rebuild) | avg 2.6 ms, p95 3.2 ms |
 
-`zig build bench -- --size 3840x2160` (same image, 4K screen, UI scale 2):
-drag arrow avg 1.6 ms p95 3.4 ms, drag pixelate avg 0.86 ms p95 2.0 ms (the
-drag starts outside the image, so it grows the canvas live), type a character
-avg 0.44 ms, drag crop avg 1.7 ms p95 1.8 ms, crop release 10 ms, undo 10.4 ms,
-export 7.2 / 12.6 ms, drag that grows the canvas avg 0.90 ms p95 1.9 ms, pan
-avg 4.5 ms p95 4.6 ms (two full-frame copies: scene scroll + frame), zoom
-11.3-13.3 ms.
+`zig build bench -- --size 3840x2160` (same image, 4K screen, UI scale 2),
+min of 2 runs: drag arrow avg 0.78 ms p95 1.72 ms (was 1.53 / 3.37), drag
+pixelate avg 0.90 ms p95 2.1 ms, type a character avg 0.43 ms, move drag
+avg 1.56 ms p95 1.73 ms (damage 6.4%; 8.2 ms before the slab repaint below),
+undo 8.4 ms (was 10.3), export 5.6 / 14.2 ms, drag crop avg 0.81 ms, crop
+release 7.2 ms, drag that grows the canvas avg 0.45 ms p95 0.89 ms, pan avg
+3.9 ms p95 4.7 ms, zoom 7.6-9.1 ms.
 
-Before these changes (commit "docs: perf numbers after the crop tool"), the
-same runs gave: first frame 5.3 ms, startup 12.3 ms, drag arrow avg 0.49 ms,
-undo 10.6 ms, export 4.2 / 10.8 ms; at 4K drag arrow avg 1.5 ms p95 3.3 ms,
-drag pixelate avg 0.55 ms, undo 13.2 ms, export 6.4 ms.
+The move drag went 8.2 -> 5.0 ms (sdf union) -> 4.4 ms (no outline while
+moving) -> 1.6 ms (slab repaint) at 4K.
 
 `zig build bench -- --size 3840x2160 root4k.png` (real 4K screenshot, 1.6 MB PNG;
 measured at commit "perf: split image downscaling across threads"):
@@ -89,6 +90,15 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   above 1:1 sampled (nearest) only where visible. The export copies it.
 - The canvas grows by bands: a drag past the image damages only the white
   bands it adds or removes; a commit fills them in the scene and appends.
+- A move repaints the scene only under the old and the new place, and
+  for thin shapes (arrow, callout pointer, rect outline) only slabs along
+  them (`draw.cover`, on a fixed grid); a slab at the old and the new place
+  merges into one when that adds no pixel (`Fix` in compositor.zig). A
+  repaint rect that touches a pixelate grows to hold all of it.
+- `sdf.Union` skips its second shape where the distance to that shape's
+  bounds is already larger: along an arrow shaft, the head is not computed.
+- Damage keeps up to 12 rects; when full, a new rect folds into the one
+  that grows the least (not all into one).
 - A pan scrolls the scene (whole-pixel offsets) and paints only the
   uncovered strips. A scene with a pixelate repaints in full (pixelate reads
   the pixels under it). A crop drag repaints only the
@@ -113,6 +123,10 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
 - Zoom at 4K rebuilds `scaled` (11-13 ms); levels could be cached.
 - Present is 6-10 ms for a full 4K frame (X server copy); the first frame,
   zoom and pan pay it.
-- Undo rebuilds the whole scene (3 ms at 1080p, 10 ms at 4K with 31 annotations). A per-step
-  scene cache would make it ~1 ms.
+- Undo of an add or a crop rebuilds the whole scene (2.2 ms at 1080p, 8.4 ms
+  at 4K with 31 annotations; the undo of a move repaints in place). A
+  per-step scene cache would make it ~1 ms.
+- A move under or of a big pixelate repaints the whole pixelate each frame.
+- No profiler here (`perf` is not allowed): the move drag was split with
+  temporary timers in compositor.zig. A `--bench` breakdown flag would help.
 - PNG row conversion (RGBA -> pixels, 3-4 ms at 4K) could run on threads.

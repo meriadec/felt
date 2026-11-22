@@ -133,6 +133,8 @@ annotation moved or the canvas grew or shrank; repainted in full after the
 undo of an add or a crop, resize or zoom), `frame` (scene +
 white canvas the shape in progress adds + crop dimming + move outline +
 chrome + preview). A
+move repaints the scene only in slabs along the old and the new place
+(`draw.cover`), merged where that adds no pixel. A
 crop drag damages only the bands between the old and the new crop rectangle;
 a drag that grows the canvas damages only the bands it adds or removes. In X11 the frame is the shared-memory image, so a present is
 only `XShmPutImage` of the damaged rects.
