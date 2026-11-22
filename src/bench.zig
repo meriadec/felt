@@ -122,7 +122,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var drag = Stats{};
     defer drag.deinit(gpa);
     var damage_px: u64 = 0;
-    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
+    // The arrow is the default tool: `a` now would switch it to stairs.
+    if (app.editor.tool != .arrow or app.editor.arrow_style != .straight) return error.BenchNotStraightArrow;
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
     const n_moves = 300;
     for (0..n_moves) |i| {
