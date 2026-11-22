@@ -1,6 +1,7 @@
 //! Benchmark (`annotate --bench`, `zig build bench`): times decode, startup
 //! render, per-frame render while dragging (arrows, a stairs callout) and
-//! typing, move drags (arrows, a callout box), undo rebuild, export, crop,
+//! typing, move drags (arrows, a callout box), auto-routing among stairs
+//! paths (drag, move, commits that re-route), undo rebuild, export, crop,
 //! a drag that grows the canvas, pan and zoom, on a synthetic
 //! screenshot or a given image. Budgets: docs/perf.md.
 const std = @import("std");
@@ -75,6 +76,91 @@ fn reportProf(w: *std.Io.Writer, p: core.compositor.Prof, n: u64) !void {
     });
 }
 
+/// Auto-routing (route.zig) among dense paths: a fan of stairs arrows
+/// across the row of numbers (each commit re-routes the ones around it),
+/// a stairs arrow dragged through them (routed each frame) and committed,
+/// one of the fan moved by its body (routed each frame). Undoes it all:
+/// the cases after it see the scene they had (31 annotations, the move
+/// tool, straight arrows).
+fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Options) !void {
+    const W: f32 = @floatFromInt(opts.size[0]);
+    const H: f32 = @floatFromInt(opts.size[1]);
+    var t = try std.time.Timer.start();
+    const doc = &app.doc;
+    for ("aa") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } }); // the arrow tool, again: stairs
+    if (app.editor.arrow_style != .stairs or app.editor.tool != .arrow) return error.BenchNoStairsStyle;
+    const n_fan = 8;
+    var fan = Stats{};
+    defer fan.deinit(gpa);
+    const h0 = doc.history.items.len;
+    for (0..n_fan) |k| {
+        const kf: f32 = @floatFromInt(k);
+        _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.1, .y = H * (0.3 + 0.03 * kf) } });
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.55 + 0.03 * kf), .y = H * (0.6 + 0.03 * kf) } });
+        _ = try app.render();
+        t.reset();
+        _ = try app.handle(.{ .mouse_up = .{ .x = W * (0.55 + 0.03 * kf), .y = H * (0.6 + 0.03 * kf) } });
+        _ = try app.render();
+        try fan.add(gpa, t.read());
+    }
+    if (doc.items.items.len != 31 + n_fan) return error.BenchFanMissing;
+    try fan.report(w, "commit stairs, re-route");
+    try w.print("{s:<26} {d} re-routes in {d} commits\n", .{ "  chained", doc.history.items.len - h0 - n_fan, n_fan });
+
+    var drag = Stats{};
+    defer drag.deinit(gpa);
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.12, .y = H * 0.28 } });
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.3 + 0.4 * f), .y = H * (0.5 + 0.3 * f) } });
+        t.reset();
+        _ = try app.render();
+        try drag.add(gpa, t.read());
+    }
+    try drag.report(w, "frame: drag stairs, routed");
+    const h1 = doc.history.items.len;
+    t.reset();
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.7, .y = H * 0.8 } });
+    _ = try app.render();
+    try w.print("{s:<26} {d:>7.3} ms ({d} re-routed, {d} annotations)\n", .{ "  commit", ms(t.read()), doc.history.items.len - h1 - 1, doc.items.items.len });
+
+    // Move fan arrow 3 by its first segment.
+    var mv = Stats{};
+    defer mv.deinit(gpa);
+    var ev = Stats{};
+    defer ev.deinit(gpa);
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
+    _ = try app.render();
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.13, .y = H * 0.39 } });
+    if (app.editor.mode != .moving or app.editor.mode.moving.grab.part != .whole or app.editor.mode.moving.grab.index != 31 + 3) return error.BenchMoveMissedTheFanArrow;
+    app.comp.prof = .{};
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
+        t.reset();
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.13 + 0.1 * f), .y = H * (0.39 + 0.05 * f) } });
+        try ev.add(gpa, t.lap());
+        _ = try app.render();
+        try mv.add(gpa, t.read());
+    }
+    try mv.report(w, "frame: move stairs, routed");
+    try ev.report(w, "  event (route, hit)");
+    try reportProf(w, app.comp.prof, n_moves);
+    const h2 = doc.history.items.len;
+    t.reset();
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.23, .y = H * 0.44 } });
+    _ = try app.render();
+    try w.print("{s:<26} {d:>7.3} ms ({d} re-routed)\n", .{ "  commit", ms(t.read()), doc.history.items.len - h2 - 1 });
+
+    // Undo the move, the routed arrow and the fan.
+    for (0..n_fan + 2) |_| _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    for ("aam") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    if (app.editor.arrow_style != .straight or app.editor.tool != .move or doc.items.items.len != 31) return error.BenchStateNotRestored;
+    _ = try app.render();
+    try w.print("\n", .{});
+}
+
+const n_moves = 300;
+
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
 }
@@ -139,7 +225,6 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     // The arrow is the default tool: `a` now would switch it to stairs.
     if (app.editor.tool != .arrow or app.editor.arrow_style != .straight) return error.BenchNotStraightArrow;
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
-    const n_moves = 300;
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i)) / n_moves;
         _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.2 + 0.6 * f), .y = H * (0.7 - 0.5 * f) } });
@@ -338,6 +423,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     for ("ccm") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
     if (app.editor.arrow_style != .straight or app.editor.tool != .move or app.doc.items.items.len != 31) return error.BenchStateNotRestored;
     _ = try app.render();
+    try benchRouting(gpa, w, app, opts);
 
     // Export.
     t.reset();
