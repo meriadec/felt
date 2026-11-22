@@ -121,8 +121,9 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     const h1 = doc.history.items.len;
     t.reset();
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.7, .y = H * 0.8 } });
+    const t_settle = t.lap();
     _ = try app.render();
-    try w.print("{s:<26} {d:>7.3} ms ({d} re-routed, {d} annotations)\n", .{ "  commit", ms(t.read()), doc.history.items.len - h1 - 1, doc.items.items.len });
+    try w.print("{s:<26} {d:>7.3} ms (event {d:.3} ms: route, settle; {d} re-routed, {d} annotations)\n", .{ "  commit", ms(t_settle + t.read()), ms(t_settle), doc.history.items.len - h1 - 1, doc.items.items.len });
 
     // Move fan arrow 3 by its first segment.
     var mv = Stats{};
@@ -148,8 +149,9 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     const h2 = doc.history.items.len;
     t.reset();
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.23, .y = H * 0.44 } });
+    const t_settle2 = t.lap();
     _ = try app.render();
-    try w.print("{s:<26} {d:>7.3} ms ({d} re-routed)\n", .{ "  commit", ms(t.read()), doc.history.items.len - h2 - 1 });
+    try w.print("{s:<26} {d:>7.3} ms (event {d:.3} ms: settle; {d} re-routed)\n", .{ "  commit", ms(t_settle2 + t.read()), ms(t_settle2), doc.history.items.len - h2 - 1 });
 
     // Undo the move, the routed arrow and the fan.
     for (0..n_fan + 2) |_| _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
