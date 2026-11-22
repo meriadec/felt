@@ -6,8 +6,35 @@ const core = @import("core");
 const input = core.input;
 const Event = input.Event;
 
+/// A click on a chrome item, placed when the script runs (from the screen
+/// size then), so scripts survive dock layout changes.
+pub const UiTarget = union(enum) {
+    tool: core.keymap.Tool,
+    /// Palette index (the script names the color key, 1-based).
+    color: u8,
+    size,
+    help,
+    undo,
+    redo,
+};
+
+pub const Step = union(enum) {
+    event: Event,
+    ui: UiTarget,
+};
+
+/// A list of steps that takes events, for the parser.
+const Steps = struct {
+    list: *std.ArrayList(Step),
+    gpa: std.mem.Allocator,
+
+    fn append(self: Steps, _: std.mem.Allocator, ev: Event) !void {
+        try self.list.append(self.gpa, .{ .event = ev });
+    }
+};
+
 pub const Script = struct {
-    events: std.ArrayList(Event) = .empty,
+    events: std.ArrayList(Step) = .empty,
     size: ?[2]u32 = null,
     /// Image to replay on (path from the repo root); wins over the CLI image.
     image: ?[]const u8 = null,
@@ -54,7 +81,7 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     if (trimmed.len == 0 or trimmed[0] == '#') return;
     var it = std.mem.tokenizeScalar(u8, trimmed, ' ');
     const cmd = it.next().?;
-    const ev = &s.events;
+    const ev = Steps{ .list = &s.events, .gpa = gpa };
     if (std.mem.eql(u8, cmd, "image")) {
         const path = it.next() orelse return fail(err, "image needs a path");
         if (s.image) |old| gpa.free(old);
@@ -123,12 +150,26 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
             }
         }
         for (0..times) |_| try ev.append(gpa, .{ .wheel = .{ .delta = step, .x = x, .y = y, .mods = mods } });
+    } else if (std.mem.eql(u8, cmd, "ui")) {
+        const what = it.next() orelse return fail(err, ui_help);
+        const t: UiTarget = if (std.mem.eql(u8, what, "tool")) blk: {
+            const name = it.next() orelse return fail(err, ui_help);
+            for (core.keymap.tools) |info| if (std.mem.eql(u8, info.name, name)) break :blk .{ .tool = info.tool };
+            return fail(err, "ui tool: unknown tool name (see the key map)");
+        } else if (std.mem.eql(u8, what, "color")) blk: {
+            const k = try num(err, &it);
+            if (k < 1 or k > core.color.palette.len) return fail(err, "ui color: 1 to the palette size");
+            break :blk .{ .color = @intFromFloat(k - 1) };
+        } else if (std.mem.eql(u8, what, "size")) .size else if (std.mem.eql(u8, what, "help")) .help else if (std.mem.eql(u8, what, "undo")) .undo else if (std.mem.eql(u8, what, "redo")) .redo else return fail(err, ui_help);
+        try s.events.append(gpa, .{ .ui = t });
     } else if (std.mem.eql(u8, cmd, "resize")) {
         try ev.append(gpa, .{ .resize = .{ .w = @intFromFloat(try num(err, &it)), .h = @intFromFloat(try num(err, &it)) } });
     } else {
-        return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize)");
+        return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize, ui)");
     }
 }
+
+const ui_help = "ui needs: tool NAME, color N, size, help, undo or redo";
 
 test "parse script" {
     const gpa = std.testing.allocator;
@@ -142,13 +183,19 @@ test "parse script" {
         \\type Hi\n!
         \\wheel up 2
         \\wheel down at 10 20 ctrl
+        \\ui tool crop
+        \\ui color 3
+        \\ui redo
     , &err);
     defer s.deinit(gpa);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
     try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
-    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1), s.events.items.len);
-    const z = s.events.items[s.events.items.len - 1].wheel;
+    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1 + 3), s.events.items.len);
+    const z = s.events.items[s.events.items.len - 4].event.wheel;
     try std.testing.expect(z.mods.ctrl and z.delta == -1 and z.x == 10 and z.y == 20);
     try std.testing.expectError(error.BadScript, parse(gpa, "key a\nfly 1 2", &err));
     try std.testing.expectEqual(@as(usize, 2), err.line);
+    try std.testing.expectEqual(UiTarget{ .tool = .crop }, s.events.items[s.events.items.len - 3].ui);
+    try std.testing.expectEqual(UiTarget{ .color = 2 }, s.events.items[s.events.items.len - 2].ui);
+    try std.testing.expectError(error.BadScript, parse(gpa, "ui tool lasso", &err));
 }

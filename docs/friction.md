@@ -31,3 +31,4 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-23: `zig build shot -Dsize=3840x2160` replays the same screen coordinates, so shapes land far from the image at 4K. Doc: docs/testing.md says -Dsize is for chrome checks.
 - 2026-11-23: the X11 smoke test failed once: Esc came 0.5 s after Ctrl+S, before the save. Fix: the script waits for the saved file.
 - 2026-11-23: a compile error in `zig build check` prints a multi-KB zig command line around the error. Workaround: `zig build check 2>&1 | grep -v '^/home'`; open.
+- 2026-11-23: adding the move tool widened the dock and broke the dock clicks in ui.txt and help.txt (raw coordinates). Fix: script command `ui tool NAME | color N | size | help | undo | redo`.

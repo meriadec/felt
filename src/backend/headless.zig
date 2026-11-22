@@ -30,12 +30,45 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
     const app = try App.create(gpa, image, size[0], size[1], cfg);
     errdefer app.destroy();
     _ = try app.render();
-    for (script.events.items) |ev| {
-        const r = try app.handle(ev);
-        if (r.quit) break;
-        if (r.redraw) _ = try app.render();
-    }
+    for (script.events.items) |step| switch (step) {
+        .event => |ev| if (try feed(app, ev)) break,
+        .ui => |t| {
+            const p = uiPoint(app, t);
+            if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
+            if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
+        },
+    };
     return app;
+}
+
+/// Handle one event, render if asked; true on quit.
+fn feed(app: *App, ev: core.input.Event) !bool {
+    const r = try app.handle(ev);
+    if (r.redraw) _ = try app.render();
+    return r.quit;
+}
+
+/// Screen center of a chrome item at the current screen size.
+fn uiPoint(app: *App, t: script_mod.UiTarget) core.geom.Vec2 {
+    const w = app.editor.view.screen_w;
+    const h = app.editor.view.screen_h;
+    const d = core.dock.Dock.of(w, h);
+    const bar = core.topbar.TopBar.of(w, h);
+    const mid = struct {
+        fn f(b: core.geom.Bounds) core.geom.Vec2 {
+            return b.min.add(b.max).scale(0.5);
+        }
+    }.f;
+    return switch (t) {
+        .tool => |tool| for (core.keymap.tools, 0..) |info, i| {
+            if (info.tool == tool) break mid(d.tools[i]);
+        } else unreachable,
+        .color => |i| d.swatches[i],
+        .size => mid(d.size),
+        .help => mid(d.help),
+        .undo => mid(bar.slots[0]),
+        .redo => mid(bar.slots[1]),
+    };
 }
 
 /// Read and parse a script file; prints `path:line: message` on errors.
