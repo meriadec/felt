@@ -116,6 +116,31 @@ const Fix = struct {
     }
 };
 
+/// Where render time goes, summed since the last reset (`--bench` prints it).
+pub const Prof = struct {
+    /// Scene: appends, repaints in place, full rebuilds.
+    scene_ns: u64 = 0,
+    /// Frame: the damage rects composed from the scene and the overlays.
+    frame_ns: u64 = 0,
+    /// Chrome draws, part of `frame_ns`.
+    chrome_ns: u64 = 0,
+    /// Scene repaint rects (after merges) and frame damage rects.
+    fix_rects: u64 = 0,
+    dmg_rects: u64 = 0,
+};
+
+/// A timer that reads 0 where the OS has none.
+const Clock = struct {
+    t: ?std.time.Timer,
+
+    fn start() Clock {
+        return .{ .t = std.time.Timer.start() catch null };
+    }
+    fn read(c: *Clock) u64 {
+        return if (c.t) |*t| t.read() else 0;
+    }
+};
+
 pub const Compositor = struct {
     gpa: std.mem.Allocator,
     /// The kept part of the image at the view scale, when the scale is
@@ -147,6 +172,7 @@ pub const Compositor = struct {
     prev_chrome: [chrome.max_panels]Rect = @splat(Rect.empty),
     prev_chrome_sig: u64 = 0,
     force_full: bool = true,
+    prof: Prof = .{},
 
     pub fn deinit(self: *Compositor) void {
         if (self.scaled) |*cv| cv.deinit(self.gpa);
@@ -301,6 +327,7 @@ pub const Compositor = struct {
 
         // Scene: append new annotations; repaint in place where one moved or
         // the canvas grew or shrank; repaint all after a removal.
+        var clock = Clock.start();
         if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count) {
             try self.paintScene(&s, full_rect, items.len);
             self.painted.clearRetainingCapacity();
@@ -320,7 +347,9 @@ pub const Compositor = struct {
                 for (draw.cover(ctx, cur, v.xf, &buf)) |r| fix.add(r.intersect(full_rect));
                 old.* = cur;
             }
-            for (fix.slice()) |r| {
+            const fixes = fix.slice();
+            self.prof.fix_rects += fixes.len;
+            for (fixes) |r| {
                 const rr = coverPixelates(&s, r, self.scene_count);
                 try self.paintScene(&s, rr, self.scene_count);
                 dmg.add(rr);
@@ -332,6 +361,7 @@ pub const Compositor = struct {
                 dmg.add(draw.bounds(ctx, a, v.xf, .{}).intersect(clip));
             }
         }
+        self.prof.scene_ns += clock.read();
         self.scene_valid = true;
         self.scene_count = items.len;
         self.scene_removals = doc.removals;
@@ -390,16 +420,21 @@ pub const Compositor = struct {
             dmg = .{};
             dmg.add(full_rect);
         }
+        clock = Clock.start();
+        self.prof.dmg_rects += dmg.len;
         for (dmg.slice()) |r_raw| {
             const r = r_raw.intersect(full_rect);
             frame.copyRect(scene, r);
             for (extra) |b| frame.fillRect(b.intersect(r), extent.fill);
             if (crop) |c| drawCropOverlay(frame, r, c);
             if (outline) |o| o.paint(ctx, frame, r, v.xf);
+            var chrome_clock = Clock.start();
             try chrome.draw(ctx, frame, r, &lay);
+            self.prof.chrome_ns += chrome_clock.read();
             // The shape in progress goes over the chrome: what you type stays visible.
             if (preview) |p| try draw.annotation(ctx, frame, r.intersect(preview_clip), p, v.xf, .{ .preview = true, .area = preview_clip });
         }
+        self.prof.frame_ns += clock.read();
         return dmg;
     }
 };

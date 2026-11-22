@@ -8,7 +8,9 @@ zig build bench -- --size 3840x2160 shot.png     # your own image and screen siz
 DISPLAY=:0 zig-out/bin/annotate --smoke shot.png # real window: prints timings, exits after the first frame
 ```
 
-`--bench` always builds ReleaseFast. It repeats startup 7 times and prints min
+Move drags also print a split: scene repaint, frame composition (chrome
+part of it) and the rect counts (`compositor.Prof`), so a slow case shows
+its hot part without temporary timers. `--bench` always builds ReleaseFast. It repeats startup 7 times and prints min
 and median: this desktop (Ryzen AI 9 HX 370, `powersave` governor, hybrid
 cores) varies by +-30% from run to run, so compare mins. `--smoke` needs
 `-Doptimize=ReleaseFast` for real numbers. `--timing` prints the same line on a
@@ -127,6 +129,7 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   at 4K with 31 annotations; the undo of a move repaints in place). A
   per-step scene cache would make it ~1 ms.
 - A move under or of a big pixelate repaints the whole pixelate each frame.
-- No profiler here (`perf` is not allowed): the move drag was split with
-  temporary timers in compositor.zig. A `--bench` breakdown flag would help.
+- No profiler here (`perf` is not allowed). The bench prints a scene /
+  frame / chrome split of the move drags (`compositor.Prof`); finer splits
+  (per annotation kind) still need temporary timers.
 - PNG row conversion (RGBA -> pixels, 3-4 ms at 4K) could run on threads.

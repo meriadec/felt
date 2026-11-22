@@ -61,6 +61,19 @@ const Stats = struct {
 
 const startup_runs = 7;
 
+/// Per-frame split of the render time (compositor.Prof over `n` frames).
+fn reportProf(w: *std.Io.Writer, p: core.compositor.Prof, n: u64) !void {
+    const f: f64 = @floatFromInt(n);
+    try w.print("{s:<26} scene {d:.3} ms, frame {d:.3} ms (chrome {d:.3}); rects: scene {d:.1}, damage {d:.1}\n", .{
+        "  split (avg)",
+        ms(p.scene_ns) / f,
+        ms(p.frame_ns) / f,
+        ms(p.chrome_ns) / f,
+        @as(f64, @floatFromInt(p.fix_rects)) / f,
+        @as(f64, @floatFromInt(p.dmg_rects)) / f,
+    });
+}
+
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
 }
@@ -217,6 +230,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.35, .y = H * 0.575 } });
     if (app.editor.mode != .moving) return error.BenchMoveMissedTheArrow;
+    app.comp.prof = .{};
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
         t.reset();
@@ -230,6 +244,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.render();
     try mv.report(w, "frame: move drag (arrow)");
     try mv_ev.report(w, "  event (hit, canvas)");
+    try reportProf(w, app.comp.prof, n_moves + 1);
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
 
     // Move tool: drag a long stairs arrow by its middle segment among 32
@@ -247,6 +262,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.render();
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.45, .y = H * 0.3 } });
     if (app.editor.mode != .moving) return error.BenchMoveMissedTheStairsArrow;
+    app.comp.prof = .{};
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
         _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.45 + 0.1 * f), .y = H * (0.3 + 0.1 * f) } });
@@ -258,6 +274,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.55, .y = H * 0.4 } });
     _ = try app.render();
     try mvs.report(w, "frame: move drag (stairs)");
+    try reportProf(w, app.comp.prof, n_moves + 1);
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
     // Take the stairs arrow back (the move, then the add): the cases below
     // keep the scene they had before it.
