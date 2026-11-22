@@ -30,6 +30,7 @@ image files. Build: `coreModule` in build.zig.
 | `geom.zig` | `Vec2`, `Bounds`, `Rect` (half-open ints), `Xform` (image -> screen) |
 | `canvas.zig` | Pixel buffer and pixel ops (fill, copy, blend, multiply, mask, pixelate) |
 | `sdf.zig` | Signed distance shapes (capsule, disc, triangle, rects, union, subtract) |
+| `stairs.zig` | Stairs arrow path: elbow route, round corners, its signed distance |
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
 | `view.zig` | Image-to-screen transform: fit the canvas to the screen (never above 1:1, centered) |

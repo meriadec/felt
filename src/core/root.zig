@@ -6,6 +6,7 @@ pub const color = @import("color.zig");
 pub const geom = @import("geom.zig");
 pub const canvas = @import("canvas.zig");
 pub const sdf = @import("sdf.zig");
+pub const stairs = @import("stairs.zig");
 pub const raster = @import("raster.zig");
 pub const image_io = @import("image_io.zig");
 pub const png = @import("png.zig");
