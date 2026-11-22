@@ -30,7 +30,8 @@ image files. Build: `coreModule` in build.zig.
 | `geom.zig` | `Vec2`, `Bounds`, `Rect` (half-open ints), `Xform` (image -> screen) |
 | `canvas.zig` | Pixel buffer and pixel ops (fill, copy, blend, multiply, mask, pixelate) |
 | `sdf.zig` | Signed distance shapes (capsule, disc, triangle, rects, union, subtract) |
-| `stairs.zig` | Stairs arrow path: elbow route, round corners, its signed distance |
+| `stairs.zig` | Stairs arrow path: elbow route (turn position, axis order), round corners, its signed distance |
+| `route.zig` | Auto-routing of stairs paths: the elbow with the fewest crossings and the least crowding (`best`), re-routes around a change (`settle`) |
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
 | `view.zig` | Image-to-screen transform: fit the canvas to the screen (never above 1:1, centered) |
@@ -88,7 +89,11 @@ image files. Build: `coreModule` in build.zig.
   `Document.Move` step with the geometry from before. Undo and redo swap the
   two geometries; the text is shared, never copied. A move changes only the
   moved annotation's clip and the canvas, both recomputed from geometry, so
-  undo is exact. The compositor keeps a shallow copy of what it painted and
+  undo is exact. A step may carry chained moves (`Move.chained`): the
+  re-routes of other stairs paths that the step caused (see Auto-routing).
+  Undo and redo take a step with all its chained moves and swap the
+  stored geometry: nothing is routed again, so they are exact. The
+  compositor keeps a shallow copy of what it painted and
   repaints the old and new bounds of any annotation that differs, the bands
   the canvas gained or lost, and grows each repaint rect to hold any
   pixelate it touches (a pixelate averages the pixels under it).
@@ -102,6 +107,13 @@ image files. Build: `coreModule` in build.zig.
   is not saved). A stairs arrow
   (stairs.zig) is an elbow connector: along the dominant axis to the
   midpoint, along the other axis, along the dominant axis into the head.
+  Its `elbow` (annotation.Elbow) can move the turn off the midpoint (`at`,
+  a fraction of the first axis, so it scales with the arrow) and run
+  along the minor axis first (`flip`, only where that axis has room for
+  full corners and a full head; a callout pointer never flips). The head
+  length follows the span, not the turn, and the turn is clamped so the
+  head keeps its straight stretch. The path always stays in the box of
+  its two ends, so an elbow never changes bounds, clips or the canvas.
   Its two corners are quarter circles of `cornerRadius(width)`, clamped so
   the middle segment and the head keep room; a rise under the stroke width
   draws straight. Hit tests, bounds, clips and move repaints follow the
@@ -123,8 +135,39 @@ image files. Build: `coreModule` in build.zig.
   pointer (it would be only a head stuck to the box); the tip handle
   still pulls it out. Hit tests, outlines, bounds, clips and move
   repaints take the box and the pointer (`CalloutShape`, `draw.cover`).
+- Auto-routing (route.zig): a stairs path that is not pinned picks its
+  elbow among fixed candidates (the midpoint first, then 49 turn
+  positions across the room with full corners, then the same flipped; a
+  strictly lower cost wins, so the choice is deterministic). Cost: 1000
+  per crossing with another path (stairs segments, straight arrows,
+  callout pointers); 3 per px run along one (within 15 degrees) closer
+  than `nearGap` = 1.5 x the two stroke widths, weighted by closeness;
+  100 per near touch (an end or a corner that close to another path); 2
+  per px through a label box (text, callout box, number; not one the path
+  starts on or points at; grown by a stroke width); 0.2 per px the turn
+  moves off the midpoint; 200 for a flip. Paths from or to one point share
+  their stretch freely. Rect outlines and pixelates are not obstacles (an
+  arrow often points into a rect). With nothing in the box of its ends, a
+  path keeps the default elbow: the look of the stairs before routing.
+  Who routes: the path being drawn (preview and commit) or moved, each
+  frame, against all others. On a commit (an add, the end of a move) the
+  auto paths whose end box touches the old or new body bounds of the
+  change re-route (`route.settle`): in creation order, two passes, the
+  changed one included; they go in the same undo step as chained moves.
+  Paths do not re-route on undo, redo or a crop. Straight arrows never
+  change. The compositor repaints a re-routed path like a moved one (old
+  and new cover).
+- Bend pin (move tool): a stairs path whose middle segment is longer than
+  three handle radii shows a handle in its middle (the outline's third
+  dot). A press there drags the turn along the first axis (inside the
+  room for full corners) and pins the elbow (`Elbow.pinned`: no routing,
+  it stays as set when its ends move, as a fraction). Within a handle
+  radius of the midpoint it snaps to the default and is auto again; on
+  release a toast says "Bend pinned" or "Bend: auto". The pin is part of
+  the annotation, so undo restores it.
 - Callout move: a press on the tip (handle radius 9 px at 1080p) moves the
-  tip alone; anywhere else on the callout (box or pointer) moves the box
+  tip alone; anywhere else on the callout (box or pointer, but the bend
+  handle) moves the box
   alone, the tip stays on its target and the pointer re-routes. An arrow longer than four handle radii: a press on
   an end moves that end alone.
   The canvas grows at most `extent.limit` past the kept rectangle (2048 to
