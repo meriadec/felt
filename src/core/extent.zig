@@ -131,3 +131,22 @@ test "a shape grows the canvas only on the sides its body crosses" {
     try std.testing.expect(!fits(ctx, img, .{ .arrow = .{ .tail = .{ .x = 1e5, .y = 50 }, .head = .{ .x = 1e5 + 50, .y = 50 }, .width = 6, .color = red } }));
     try std.testing.expect(!reachable(img, .{ .x = 0, .y = -3000 }));
 }
+
+test "a callout grows the canvas to its pointer head, stairs or straight" {
+    const gpa = std.testing.allocator;
+    var font = try @import("font.zig").Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    const ctx = draw.Ctx{ .gpa = gpa, .font = &font };
+    const red = color.palette[0].color;
+    const img = Rect.fromSize(0, 0, 200, 100);
+    // The box inside, the target past the left edge: only x0 grows, past the head.
+    for ([_]@import("annotation.zig").ArrowStyle{ .straight, .stairs }) |st| {
+        const a = Annotation{ .callout = .{ .target = .{ .x = -60, .y = 20 }, .anchor = .{ .x = 100, .y = 60 }, .text = "Hi", .size = 14, .color = red, .width = 4, .style = st } };
+        const r = grow(ctx, img, a);
+        try std.testing.expect(r.x0 <= -60 - pad);
+        try std.testing.expectEqual(draw.bounds(ctx, a, .identity, .{}).x0 - pad, r.x0);
+        try std.testing.expectEqual(img.y0, r.y0);
+        try std.testing.expectEqual(img.x1, r.x1);
+        try std.testing.expectEqual(img.y1, r.y1);
+    }
+}
