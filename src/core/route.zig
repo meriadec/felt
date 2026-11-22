@@ -3,8 +3,9 @@
 //! parameters (annotation.Elbow): where its middle segment turns, and, for
 //! an arrow, which axis runs first. `best` tries a fixed set of elbows and
 //! keeps the cheapest: a crossing with the path of another annotation costs
-//! most, then running along one closer than about two stroke widths, then
-//! running through a label box (text, callout box, number), then the
+//! most, then running along one closer than about two stroke widths or
+//! passing that close to its end or corner (a near touch), then running
+//! through a label box (text, callout box, number), then the
 //! distance from the default elbow (the midpoint, the dominant axis first).
 //! With nothing around, a path keeps the default look. Every candidate path
 //! stays in the box of its two ends, so only what crosses that box counts.
@@ -24,6 +25,9 @@ pub const cross_cost: f32 = 1000;
 /// Cost per px of a run along another path, at no gap (less as the gap
 /// grows, none at `nearGap`).
 pub const near_cost: f32 = 3;
+/// Cost of an end or corner of one path nearer than `nearGap` to the
+/// other (less as the distance grows): a near touch.
+pub const touch_cost: f32 = 100;
 /// Cost per px of path inside a label box.
 pub const box_cost: f32 = 2;
 /// Cost per px that the middle segment moves off the midpoint.
@@ -106,6 +110,7 @@ pub const Obstacles = struct {
                     c += cross_cost;
                 } else if (!sharesEnd(a, b, q.a, q.b)) {
                     c += near_cost * nearLength(a, b, q.a, q.b, g);
+                    c += touch_cost * (closeness(q.a, a, b, g) + closeness(q.b, a, b, g) + closeness(a, q.a, q.b, g) + closeness(b, q.a, q.b, g));
                 }
             }
             for (o.boxes[0..o.n_boxes]) |bx| c += box_cost * lengthInside(a, b, bx.expand(w * 0.5));
@@ -267,6 +272,14 @@ pub fn nearLength(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2, g: f32) f32 {
     return (hi - lo) * (1 - gap / g);
 }
 
+/// 1 when `p` is on the segment a..b, down to 0 at distance `g`.
+pub fn closeness(p: Vec2, a: Vec2, b: Vec2, g: f32) f32 {
+    const d = b.sub(a);
+    const l2 = d.dot(d);
+    const t = if (l2 < 1e-6) 0 else std.math.clamp(p.sub(a).dot(d) / l2, 0, 1);
+    return @max(0, 1 - p.dist(a.add(d.scale(t))) / g);
+}
+
 /// Length of the segment a..b inside the box `bx`.
 pub fn lengthInside(a: Vec2, b: Vec2, bx: Bounds) f32 {
     const d = b.sub(a);
@@ -312,6 +325,10 @@ test "parallel gap: the overlap weighted by closeness; none past the gap or acro
     try std.testing.expectEqual(@as(f32, 0), nearLength(v(0, 0), v(10, 0), v(0, 6), v(10, 6), 6));
     try std.testing.expectEqual(@as(f32, 0), nearLength(v(0, 0), v(10, 0), v(5, -5), v(5, 5), 6));
     try std.testing.expectEqual(@as(f32, 0), nearLength(v(0, 0), v(10, 0), v(20, 0), v(30, 0), 6));
+    // A near touch: an end close to the other segment.
+    try std.testing.expectApproxEqAbs(@as(f32, 0.5), closeness(v(5, 3), v(0, 0), v(10, 0), 6), 1e-4);
+    try std.testing.expectEqual(@as(f32, 0), closeness(v(5, 7), v(0, 0), v(10, 0), 6));
+    try std.testing.expectApproxEqAbs(@as(f32, 1), closeness(v(10, 0), v(0, 0), v(10, 0), 6), 1e-4);
     // Through a box: the length inside.
     try std.testing.expectApproxEqAbs(@as(f32, 4), lengthInside(v(0, 5), v(20, 5), .{ .min = v(8, 0), .max = v(12, 10) }), 1e-4);
     try std.testing.expectEqual(@as(f32, 0), lengthInside(v(0, 20), v(20, 20), .{ .min = v(8, 0), .max = v(12, 10) }));
