@@ -99,6 +99,7 @@ pub const Obstacles = struct {
 
     /// Cost of the polyline `pts` with stroke width `w` among the obstacles.
     pub fn cost(o: *const Obstacles, pts: []const Vec2, w: f32) f32 {
+        const ends = [2]Vec2{ pts[0], pts[pts.len - 1] };
         var c: f32 = 0;
         for (pts[0 .. pts.len - 1], pts[1..]) |a, b| {
             if (a.dist(b) < 1e-3) continue;
@@ -108,12 +109,13 @@ pub const Obstacles = struct {
                 if (!overlaps(sb.expand(g), segBounds(q.a, q.b))) continue;
                 if (crosses(a, b, q.a, q.b)) {
                     c += cross_cost;
-                } else if (!sharesEnd(a, b, q.a, q.b)) {
+                } else if (!sharesEnd(a, b, q.a, q.b, ends)) {
                     c += near_cost * nearLength(a, b, q.a, q.b, g);
                     c += touch_cost * (closeness(q.a, a, b, g) + closeness(q.b, a, b, g) + closeness(a, q.a, q.b, g) + closeness(b, q.a, q.b, g));
                 }
             }
-            for (o.boxes[0..o.n_boxes]) |bx| c += box_cost * lengthInside(a, b, bx.expand(w * 0.5));
+            // A stroke width of space around a box: no grazing.
+            for (o.boxes[0..o.n_boxes]) |bx| c += box_cost * lengthInside(a, b, bx.expand(w * 1.5));
         }
         return c;
     }
@@ -236,11 +238,16 @@ pub fn crosses(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2) bool {
     return ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0));
 }
 
-/// The two segments start or end at the same point (paths from one
-/// place share their first stretch: that is no crowding).
-fn sharesEnd(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2) bool {
+/// The segment a0..a1 starts or ends where b0..b1 does, at one of the
+/// routed path's `ends`: paths from (or to) one place share their first
+/// stretch, that is no crowding. Two corners on one point are.
+fn sharesEnd(a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2, ends: [2]Vec2) bool {
     const e = 0.5;
-    return a0.dist(b0) < e or a0.dist(b1) < e or a1.dist(b0) < e or a1.dist(b1) < e;
+    for ([_]Vec2{ a0, a1 }) |p| {
+        if (p.dist(ends[0]) >= e and p.dist(ends[1]) >= e) continue;
+        if (p.dist(b0) < e or p.dist(b1) < e) return true;
+    }
+    return false;
 }
 
 /// How much of a0..a1 runs along b0..b1 (within 15 degrees) closer than
