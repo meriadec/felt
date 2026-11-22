@@ -76,12 +76,17 @@ pub const Editor = struct {
         return color.palette[self.color_idx].color;
     }
 
+    /// Screen px to image px, with the UI scale.
+    fn toImg(self: *const Editor, screen_px_1080: f32) f32 {
+        return screen_px_1080 * style.uiScale(self.view.screen_h) / self.view.xf.scale;
+    }
+
     fn strokeImg(self: *const Editor) f32 {
-        return style.sizes[self.size_idx].stroke / self.view.xf.scale;
+        return self.toImg(style.sizes[self.size_idx].stroke);
     }
 
     fn fontImg(self: *const Editor) f32 {
-        return style.sizes[self.size_idx].font / self.view.xf.scale;
+        return self.toImg(style.sizes[self.size_idx].font);
     }
 
     pub fn dirty(self: *const Editor) bool {
@@ -164,7 +169,7 @@ pub const Editor = struct {
             .arrow => .{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c } },
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .highlight => .{ .highlight = .{ .a = d.start, .b = d.cur, .color = c } },
-            .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = style.pixelate_block / self.view.xf.scale } },
+            .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
             .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c } },
             .text, .number, .crop => null,
         };

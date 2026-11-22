@@ -38,7 +38,7 @@ image files. Build: `coreModule` in build.zig.
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
 | `document.zig` | Annotation list, crop rectangle, undo/redo of both, number counter |
-| `style.zig` | Size levels (stroke, font) |
+| `style.zig` | Size levels (stroke, font), UI scale from the screen height |
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, hint bar, docs/keymap.md |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
