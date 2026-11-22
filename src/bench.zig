@@ -183,6 +183,31 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.render();
     try w.print("{s:<26} {d:>7.3} ms ({d} annotations)\n", .{ "frame: undo (rebuild)", ms(t.read()), app.doc.items.items.len });
 
+    // Move tool: drag the first arrow by its shaft among 31 annotations.
+    // Each frame repaints the old and new arrow bounds of the scene.
+    var mv = Stats{};
+    defer mv.deinit(gpa);
+    var mv_ev = Stats{};
+    defer mv_ev.deinit(gpa);
+    damage_px = 0;
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.35, .y = H * 0.575 } });
+    if (app.editor.mode != .moving) return error.BenchMoveMissedTheArrow;
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
+        t.reset();
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.35 + 0.1 * f), .y = H * (0.575 + 0.1 * f) } });
+        try mv_ev.add(gpa, t.lap());
+        const d = try app.render();
+        try mv.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.45, .y = H * 0.675 } });
+    _ = try app.render();
+    try mv.report(w, "frame: move drag (arrow)");
+    try mv_ev.report(w, "  event (hit, canvas)");
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
+
     // Export.
     t.reset();
     var out = try app.exportImage();
