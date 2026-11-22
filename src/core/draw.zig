@@ -108,11 +108,11 @@ pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []cons
                     buf[0] = s.b.bounds().expand(m).toRect(); // head
                     n = 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, buf[1..]);
                 },
-                // Axis-aligned segments and corners: their boxes are tight.
+                // Axis-aligned segments: their boxes are tight.
                 .stairs => |s| {
                     buf[0] = s.b.bounds().expand(m).toRect();
                     for (s.a.pieces(m), 1..) |b, i| buf[i] = b.toRect();
-                    n = 8;
+                    n = 4;
                 },
             }
         },
