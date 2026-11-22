@@ -10,7 +10,16 @@ const Vec2 = geom.Vec2;
 /// (an elbow with two round corners, see stairs.zig).
 pub const ArrowStyle = enum { straight, stairs };
 
-pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color, style: ArrowStyle = .straight };
+/// Where a stairs path turns (see stairs.zig): `at` is the place of the
+/// middle segment along the first axis, as a fraction of the way from the
+/// tail to the head (0.5: halfway); `flip` runs along the other axis first
+/// (the minor one: vertical-horizontal-vertical for a wide arrow). The
+/// router (route.zig) sets both to keep paths apart, unless `pinned` (the
+/// user dragged the middle segment: the elbow stays as set). A straight
+/// arrow ignores it.
+pub const Elbow = struct { at: f32 = 0.5, flip: bool = false, pinned: bool = false };
+
+pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color, style: ArrowStyle = .straight, elbow: Elbow = .{} };
 
 /// Rectangle outline.
 pub const Box = struct { a: Vec2, b: Vec2, width: f32, color: Color };
@@ -25,8 +34,9 @@ pub const Number = struct { center: Vec2, value: u32, size: f32, color: Color };
 /// label). The box sits on the far side of `anchor` from the target, so
 /// `anchor` is the middle of the box side that faces the target: the
 /// pointer starts there. The pointer is an arrow of stroke `width` and
-/// `style`, drawn under the box.
-pub const Callout = struct { target: ?Vec2, anchor: Vec2, text: []const u8, size: f32, color: Color, width: f32, style: ArrowStyle = .straight };
+/// `style`, drawn under the box. A stairs pointer leaves across that side:
+/// its `elbow` never flips.
+pub const Callout = struct { target: ?Vec2, anchor: Vec2, text: []const u8, size: f32, color: Color, width: f32, style: ArrowStyle = .straight, elbow: Elbow = .{} };
 
 /// Pixelated rectangle a..b with square blocks of `block` pixels.
 pub const Pixelate = struct { a: Vec2, b: Vec2, block: f32 };

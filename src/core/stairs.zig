@@ -1,9 +1,11 @@
 //! Stairs path: the stroke of a stairs arrow (an elbow connector). From the
 //! tail it runs along the dominant axis to the midpoint, turns 90 degrees,
 //! runs along the other axis, turns again and ends along the dominant axis
-//! into the head (horizontal-vertical-horizontal when |dx| >= |dy|). The two
-//! corners are quarter circles. `Path` is a signed distance shape (see
-//! sdf.zig) of the stroke without the head; draw.zig adds the head.
+//! into the head (horizontal-vertical-horizontal when |dx| >= |dy|). A
+//! route may turn elsewhere than the midpoint, and may run along the other
+//! axis first (see `Route.init`, annotation.Elbow). The two corners are
+//! quarter circles. `Path` is a signed distance shape (see sdf.zig) of the
+//! stroke without the head; draw.zig adds the head.
 const std = @import("std");
 const geom = @import("geom.zig");
 
@@ -21,26 +23,51 @@ pub const Route = struct {
     u: Vec2,
     /// Direction of the middle segment (unit, axis aligned, across `u`).
     v: Vec2,
-    /// Length of the first segment (and of the last one).
+    /// Length of the first segment.
     run: f32,
+    /// Length of the last segment.
+    run2: f32,
     /// Length of the middle segment (0: a straight line).
     rise: f32,
 
+    /// The default route: along the dominant axis, the turn at the midpoint.
     pub fn of(t: Vec2, h: Vec2) Route {
+        return init(t, h, 0.5, false);
+    }
+
+    /// The route that runs first along the dominant axis (the other one
+    /// with `flip`) and turns at `at` (0..1) of the way along it.
+    pub fn init(t: Vec2, h: Vec2, at: f32, flip: bool) Route {
         const d = h.sub(t);
-        const horizontal = @abs(d.x) >= @abs(d.y);
+        const horizontal = (@abs(d.x) >= @abs(d.y)) != flip;
         const along = if (horizontal) d.x else d.y;
         const across = if (horizontal) d.y else d.x;
         const su: f32 = if (along < 0) -1 else 1;
         const sv: f32 = if (across < 0) -1 else 1;
         const u = if (horizontal) Vec2.init(su, 0) else Vec2.init(0, su);
         const v = if (horizontal) Vec2.init(0, sv) else Vec2.init(sv, 0);
-        const run = @abs(along) * 0.5;
+        const len = @abs(along);
+        const run = len * at;
         const rise = @abs(across);
         const c1 = t.add(u.scale(run));
-        return .{ .t = t, .c1 = c1, .c2 = c1.add(v.scale(rise)), .h = h, .u = u, .v = v, .run = run, .rise = rise };
+        return .{ .t = t, .c1 = c1, .c2 = c1.add(v.scale(rise)), .h = h, .u = u, .v = v, .run = run, .run2 = len - run, .rise = rise };
+    }
+
+    /// Length along the first axis, tail to head.
+    pub fn span(rt: Route) f32 {
+        return rt.run + rt.run2;
     }
 };
+
+/// Where the middle segment of a route of `span` can go with full corners
+/// of radius `r` and a straight last stretch of `keep` for the head, as
+/// `at` fractions (see `Route.init`); null when there is no room.
+pub fn bendRange(span: f32, r: f32, keep: f32) ?[2]f32 {
+    if (span <= 0) return null;
+    const lo = r / span;
+    const hi = 1 - (r + keep) / span;
+    return if (lo <= hi) .{ lo, hi } else null;
+}
 
 /// Corner radius (same unit as the stroke width) before `Path.init` clamps
 /// it to the segments.
@@ -67,9 +94,9 @@ pub const Path = struct {
     /// The stroke stops `back` before the head point; the last `keep`
     /// (>= back) stays straight for the head. The corner radius is `r_pref`,
     /// or less where a segment is too short: a short middle segment gives
-    /// an S curve, no middle segment a straight line. Needs keep <= run.
+    /// an S curve, no middle segment a straight line. Needs keep <= run2.
     pub fn init(rt: Route, back: f32, keep: f32, r_pref: f32, hw: f32) Path {
-        const r = @max(0, @min(@min(r_pref, rt.run - keep), @min(rt.run, rt.rise * 0.5)));
+        const r = @max(0, @min(@min(r_pref, rt.run2 - keep), @min(rt.run, rt.rise * 0.5)));
         return .{
             .t = rt.t,
             .a = .{ rt.c1.sub(rt.u.scale(r)), rt.c2.sub(rt.v.scale(r)) },
@@ -142,6 +169,26 @@ test "route: the dominant axis first and last, the turn at the midpoint" {
     try std.testing.expectEqual(Vec2.init(0, -50), up.c1);
     try std.testing.expectEqual(Vec2.init(-30, -50), up.c2);
     try std.testing.expectEqual(@as(f32, 30), up.rise);
+}
+
+test "route: a turn off the midpoint, and the other axis first" {
+    const rt = Route.init(.{ .x = 0, .y = 0 }, .{ .x = 100, .y = 40 }, 0.25, false);
+    try std.testing.expectEqual(Vec2.init(25, 0), rt.c1);
+    try std.testing.expectEqual(Vec2.init(25, 40), rt.c2);
+    try std.testing.expectEqual(@as(f32, 75), rt.run2);
+    try std.testing.expectEqual(@as(f32, 100), rt.span());
+    // Flipped: vertical first, the turn at 3/4 of the 40 px down.
+    const f = Route.init(.{ .x = 0, .y = 0 }, .{ .x = 100, .y = 40 }, 0.75, true);
+    try std.testing.expectEqual(Vec2.init(0, 1), f.u);
+    try std.testing.expectEqual(Vec2.init(1, 0), f.v);
+    try std.testing.expectEqual(Vec2.init(0, 30), f.c1);
+    try std.testing.expectEqual(Vec2.init(100, 30), f.c2);
+    try std.testing.expectEqual(@as(f32, 100), f.rise);
+    // The default route is the midpoint one, to the bit.
+    try std.testing.expectEqual(Route.init(.{ .x = 3, .y = 7 }, .{ .x = 101, .y = 59 }, 0.5, false), Route.of(.{ .x = 3, .y = 7 }, .{ .x = 101, .y = 59 }));
+    // Room for the middle segment: full corners, the head stretch kept.
+    try std.testing.expectEqual([2]f32{ 0.1, 0.7 }, bendRange(100, 10, 20).?);
+    try std.testing.expectEqual(@as(?[2]f32, null), bendRange(30, 10, 20));
 }
 
 test "path: the stroke follows the segments and the round corners" {

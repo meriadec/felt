@@ -317,31 +317,86 @@ fn headShape(h: Vec2, dir: Vec2, len: f32) Head {
 /// point, inside the head.
 const shaft_back = 0.6;
 
+/// How a stairs arrow runs through an `Xform` (target px): its route (the
+/// elbow of the arrow, clamped so the head keeps its straight stretch),
+/// whether it runs along the minor axis first, and its head length.
+pub const StairsPlan = struct { rt: stairs.Route, flip: bool, head: f32 };
+
+/// The stairs plan of `a`, or null: it draws straight (a straight arrow,
+/// or a rise under the stroke width: a jog that small would only show as
+/// a dent). A flip shows only where the minor axis has room for full
+/// corners and a full head; else the arrow runs along the dominant axis
+/// first. The head length follows the span of the first axis, not the
+/// turn, so moving the turn never resizes the head.
+pub fn stairsPlan(a: ann_mod.Arrow, xf: Xform) ?StairsPlan {
+    if (a.style == .straight) return null;
+    const t = xf.apply(a.tail);
+    const h = xf.apply(a.head);
+    const hw = @max(1, a.width * xf.scale) * 0.5;
+    const base = stairs.Route.of(t, h);
+    if (base.rise < 2 * hw) return null;
+    const hl = headLength(a.width) * xf.scale;
+    const flip = a.elbow.flip and base.rise * 0.375 >= hl and
+        stairs.bendRange(base.rise, stairs.cornerRadius(a.width) * xf.scale, hl) != null;
+    const span = if (flip) base.rise else base.span();
+    const head = @min(hl, span * 0.5 * 0.75);
+    const at = std.math.clamp(a.elbow.at, 0, 1 - head / span);
+    return .{ .rt = stairs.Route.init(t, h, at, flip), .flip = flip, .head = head };
+}
+
+/// Where the router or a pin may put the middle segment of `a` (image px)
+/// with the first axis given by `flip`: the `at` range with full corners
+/// and the head stretch kept, or {0.5, 0.5} when there is no room. Null:
+/// that orientation is not open (a straight arrow, a flip with no room).
+pub fn elbowRange(a: ann_mod.Arrow, flip: bool) ?[2]f32 {
+    var b = a;
+    b.elbow = .{ .flip = flip };
+    const p = stairsPlan(b, .identity) orelse return null;
+    if (p.flip != flip) return null;
+    const r = @min(stairs.cornerRadius(a.width), p.rt.rise * 0.5);
+    return stairs.bendRange(p.rt.span(), r, p.head) orelse .{ 0.5, 0.5 };
+}
+
 pub fn arrowShape(a: ann_mod.Arrow, xf: Xform) ArrowShape {
     const t = xf.apply(a.tail);
     const h = xf.apply(a.head);
     const hw = @max(1, a.width * xf.scale) * 0.5;
-    const hl = headLength(a.width) * xf.scale;
-    // A stairs arrow with a rise under the stroke width is a straight one:
-    // a jog that small would only show as a dent.
-    const straight = a.style == .straight or stairs.Route.of(t, h).rise < 2 * hw;
-    switch (if (straight) ann_mod.ArrowStyle.straight else .stairs) {
-        .straight => {
-            const d = h.sub(t);
-            const l = d.len();
-            const dir = d.normalize();
-            const head = @min(hl, l * 0.75);
-            const shaft_end = h.sub(dir.scale(head * shaft_back));
-            return .{ .straight = .{ .a = .{ .a = t, .b = if (l > head) shaft_end else t, .r = hw }, .b = headShape(h, dir, head) } };
-        },
-        .stairs => {
-            // The head sits on the last segment and points along it.
-            const rt = stairs.Route.of(t, h);
-            const head = @min(hl, rt.run * 0.75);
-            const path = stairs.Path.init(rt, head * shaft_back, head, stairs.cornerRadius(a.width) * xf.scale, hw);
-            return .{ .stairs = .{ .a = path, .b = headShape(h, rt.u, head) } };
-        },
+    if (stairsPlan(a, xf)) |p| {
+        // The head sits on the last segment and points along it.
+        const path = stairs.Path.init(p.rt, p.head * shaft_back, p.head, stairs.cornerRadius(a.width) * xf.scale, hw);
+        return .{ .stairs = .{ .a = path, .b = headShape(h, p.rt.u, p.head) } };
     }
+    const hl = headLength(a.width) * xf.scale;
+    const d = h.sub(t);
+    const l = d.len();
+    const dir = d.normalize();
+    const head = @min(hl, l * 0.75);
+    const shaft_end = h.sub(dir.scale(head * shaft_back));
+    return .{ .straight = .{ .a = .{ .a = t, .b = if (l > head) shaft_end else t, .r = hw }, .b = headShape(h, dir, head) } };
+}
+
+/// The stairs path of an arrow or a callout pointer, as an arrow (image
+/// px), or null: none, or straight.
+pub fn stairsArrow(a: Annotation) ?ann_mod.Arrow {
+    const ar = switch (a) {
+        .arrow => |x| x,
+        .callout => |c| calloutPointer(c) orelse return null,
+        else => return null,
+    };
+    return if (ar.style == .stairs) ar else null;
+}
+
+/// The box of a label (text, callout box, number bubble; image px), or null.
+pub fn labelBox(ctx: Ctx, a: Annotation) ?Bounds {
+    return switch (a) {
+        .text => |t| textGeom(ctx, t, .identity).box.bounds(),
+        .callout => |c| calloutGeom(ctx, c, .identity).box.bounds(),
+        .number => |n| blk: {
+            const d = numberDisc(n, .identity);
+            break :blk d.bounds().expand(numberRing(d));
+        },
+        else => null,
+    };
 }
 
 // ---- rect ----------------------------------------------------------------
@@ -478,7 +533,9 @@ const CalloutGeom = struct {
 pub fn calloutPointer(c: ann_mod.Callout) ?ann_mod.Arrow {
     const t = c.target orelse return null;
     if (t.dist(c.anchor) < headLength(c.width)) return null;
-    return .{ .tail = c.anchor, .head = t, .width = c.width, .color = c.color, .style = c.style };
+    var e = c.elbow;
+    e.flip = false;
+    return .{ .tail = c.anchor, .head = t, .width = c.width, .color = c.color, .style = c.style, .elbow = e };
 }
 
 fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
@@ -590,6 +647,35 @@ test "stairs arrow: the stroke follows the elbow path, the head points along the
     // Same body bounds for both: the path stays in the box of its ends.
     const sb = s.bounds();
     try std.testing.expect(sb.min.x >= -3 and sb.max.x <= 203 and sb.min.y >= -3 and sb.max.y <= 113);
+}
+
+test "stairs arrow: the elbow moves the middle segment and may flip the axes; the head keeps its size" {
+    var a = ann_mod.Arrow{ .tail = .{ .x = 0, .y = 0 }, .head = .{ .x = 300, .y = 100 }, .width = 4, .color = color.black, .style = .stairs };
+    const base = stairsPlan(a, .identity).?;
+    a.elbow.at = 0.25;
+    const s = arrowShape(a, .identity);
+    try std.testing.expect(s.dist(.{ .x = 75, .y = 50 }) < 0); // the middle segment at x 75
+    try std.testing.expect(s.dist(.{ .x = 150, .y = 50 }) > 5);
+    try std.testing.expectEqual(base.head, stairsPlan(a, .identity).?.head);
+    // A turn past the head stretch is clamped: the head stays on the last segment.
+    a.elbow.at = 1;
+    const p = stairsPlan(a, .identity).?;
+    try std.testing.expectApproxEqAbs(p.head, p.rt.run2, 1e-3);
+    // Flipped: vertical first, then across, then down into the head.
+    a.elbow = .{ .at = 0.5, .flip = true };
+    const f = arrowShape(a, .identity);
+    try std.testing.expect(stairsPlan(a, .identity).?.flip);
+    try std.testing.expect(f.dist(.{ .x = 0, .y = 25 }) < 0);
+    try std.testing.expect(f.dist(.{ .x = 150, .y = 50 }) < 0);
+    try std.testing.expect(f.dist(.{ .x = 300, .y = 75 }) < 0);
+    try std.testing.expect(elbowRange(a, true) != null);
+    // No room on the minor axis: no flip, the arrow runs as before.
+    a.head.y = 30;
+    try std.testing.expect(!stairsPlan(a, .identity).?.flip);
+    try std.testing.expectEqual(@as(?[2]f32, null), elbowRange(a, true));
+    // A callout pointer never flips.
+    const c = ann_mod.Callout{ .target = .{ .x = 0, .y = 0 }, .anchor = .{ .x = 300, .y = 200 }, .text = "x", .size = 10, .color = color.black, .width = 4, .style = .stairs, .elbow = .{ .flip = true } };
+    try std.testing.expect(!calloutPointer(c).?.elbow.flip);
 }
 
 test "callout pointer: an arrow from the middle of the box side that faces the target, under the box" {
