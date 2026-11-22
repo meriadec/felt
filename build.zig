@@ -66,6 +66,13 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| bench_run.addArgs(args);
     b.step("bench", "Measure startup and frame times, ReleaseFast (args after --: [--size WxH] [image])").dependOn(&bench_run.step);
 
+    // smoke-x11: drive the real window on $DISPLAY with xdotool.
+    const smoke = b.addSystemCommand(&.{"scripts/x11-smoke.sh"});
+    smoke.setCwd(b.path("."));
+    smoke.addArtifactArg(exe);
+    smoke.has_side_effects = true;
+    b.step("smoke-x11", "Open the window on $DISPLAY, draw with xdotool, save, quit, check (needs xdotool, ImageMagick)").dependOn(&smoke.step);
+
     // docs: regenerate docs/keymap.md from src/core/keymap.zig.
     const km = b.addRunArtifact(exe);
     km.addArg("--keymap-md");
