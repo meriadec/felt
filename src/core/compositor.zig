@@ -77,8 +77,9 @@ pub const Damage = struct {
 
 /// Scene rectangles to repaint in place (a move, a canvas change): a moved
 /// diagonal arrow is many slabs (draw.cover), not its bounding box. Two
-/// rects merge only when their union adds no pixel (a slab at the old and
-/// the new place), so no pixel is painted twice there and none for nothing.
+/// rects merge when their union is no bigger than both apart: a slab at
+/// the old and the new place, or a box moved by a pixel or two in both
+/// axes (its overlap would else be painted twice).
 const Fix = struct {
     const max = 64;
     rects: [max]Rect = undefined,
@@ -93,7 +94,7 @@ const Fix = struct {
         var i: usize = 0;
         while (i < f.len) {
             const o = f.rects[i];
-            if (o.unite(r).area() + o.intersect(r).area() <= o.area() + r.area()) {
+            if (o.unite(r).area() <= o.area() + r.area()) {
                 r = r.unite(o);
                 f.rects[i] = f.rects[f.len - 1];
                 f.len -= 1;
@@ -530,4 +531,14 @@ test "damage merges touching rects" {
     try std.testing.expectEqual(@as(usize, 2), d.len);
     d.add(Rect.fromSize(5, 5, 100, 100));
     try std.testing.expectEqual(@as(usize, 1), d.len);
+}
+
+test "fix merges a box moved by a pixel, not two far boxes" {
+    var f = Fix{};
+    f.add(Rect.fromSize(0, 0, 100, 20));
+    f.add(Rect.fromSize(1, 1, 100, 20)); // the same box, one pixel off in x and y
+    try std.testing.expectEqual(@as(usize, 1), f.len);
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 101, 21), f.rects[0]);
+    f.add(Rect.fromSize(300, 300, 10, 10));
+    try std.testing.expectEqual(@as(usize, 2), f.len);
 }
