@@ -1,0 +1,14 @@
+# Move a stairs callout (move tool): drag its box, the tip stays on its
+# target and the elbow re-routes; drag its tip down; undo and redo the tip
+# move. The pointer rests on the pointer's middle segment: the outline
+# follows the elbow and the box, the tip handle shows.
+size 900 500
+key c c
+drag 150 100 500 250
+type Move me
+key enter
+key m
+drag 550 250 600 330
+drag 151 101 201 381
+key ctrl+z ctrl+y
+move 375 355
