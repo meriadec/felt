@@ -167,12 +167,15 @@ fn candidateCost(o: *const Obstacles, ar: ann.Arrow, p: draw.StairsPlan) f32 {
 /// Most annotations `settle` re-routes at once.
 pub const max_settle = 64;
 
+/// An annotation `settle` re-routed, and its geometry before.
+pub const Rerouted = struct { index: usize, before: Annotation };
+
 /// Re-route the auto stairs paths of `items` near `region` (the old and
 /// new bounds of a change, image px), in creation order, twice: a path
 /// that moved out of the way can let an earlier one settle back. Writes
-/// the new geometry in `items` and the indices that changed in `changed`
-/// (no duplicates); returns how many.
-pub fn settle(ctx: draw.Ctx, items: []Annotation, region: Bounds, changed: *[max_settle]usize) usize {
+/// the new geometry in `items` and what changed in `changed` (each index
+/// once, with its geometry from before the first pass); returns how many.
+pub fn settle(ctx: draw.Ctx, items: []Annotation, region: Bounds, changed: *[max_settle]Rerouted) usize {
     var near: [max_settle]usize = undefined;
     var n_near: usize = 0;
     for (items, 0..) |a, i| {
@@ -188,11 +191,14 @@ pub fn settle(ctx: draw.Ctx, items: []Annotation, region: Bounds, changed: *[max
         for (near[0..n_near]) |i| {
             const r = best(ctx, items, i, items[i]);
             if (std.meta.eql(r, items[i])) continue;
-            items[i] = r;
-            if (std.mem.indexOfScalar(usize, changed[0..n], i) == null) {
-                changed[n] = i;
+            const seen = for (changed[0..n]) |c| {
+                if (c.index == i) break true;
+            } else false;
+            if (!seen) {
+                changed[n] = .{ .index = i, .before = items[i] };
                 n += 1;
             }
+            items[i] = r;
         }
     }
     return n;
@@ -387,10 +393,11 @@ test "settle: a change re-routes the auto paths near it, not the pinned or far o
         stairsArrow(v(2000, 100), v(2300, 400)),
     };
     items[0].arrow.elbow.pinned = true;
-    var changed: [max_settle]usize = undefined;
+    const b1 = items[1];
+    var changed: [max_settle]Rerouted = undefined;
     const n = settle(tc.ctx(), &items, .{ .min = v(0, 0), .max = v(600, 500) }, &changed);
     try std.testing.expectEqual(@as(usize, 1), n);
-    try std.testing.expectEqual(@as(usize, 1), changed[0]);
+    try std.testing.expectEqual(Rerouted{ .index = 1, .before = b1 }, changed[0]);
     try std.testing.expect(items[0].arrow.elbow.at == 0.5);
     try std.testing.expect(items[1].arrow.elbow.at > 0.5);
     try std.testing.expectEqual(ann.Elbow{}, items[2].arrow.elbow);

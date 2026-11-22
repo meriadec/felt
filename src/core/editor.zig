@@ -10,6 +10,7 @@ const color = @import("color.zig");
 const ann = @import("annotation.zig");
 const extent = @import("extent.zig");
 const draw = @import("draw.zig");
+const route = @import("route.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
 const Font = @import("font.zig").Font;
@@ -228,22 +229,72 @@ pub const Editor = struct {
         return !std.meta.eql(before, self.hover);
     }
 
-    /// Move the grabbed part to follow the pointer at image point `ip`.
+    /// `a` (not in the document) with its stairs path routed around the
+    /// annotations of the document (route.zig).
+    fn routed(self: *const Editor, a: Annotation) Annotation {
+        return route.best(self.ctx(), self.doc.items.items, null, a);
+    }
+
+    /// Move the grabbed part to follow the pointer at image point `ip`; a
+    /// moved stairs path re-routes around the others.
     /// A position that would hide the annotation (past the reach, or out of
     /// a later crop) is skipped: the annotation stays at the last good one.
     fn moveTo(self: *Editor, ip: Vec2) void {
         const m = self.mode.moving;
-        const a = m.before.moved(m.grab.part, ip.sub(m.start));
+        const a = route.best(self.ctx(), self.doc.items.items, m.grab.index, m.before.moved(m.grab.part, ip.sub(m.start)));
         if (!extent.showsAs(self.ctx(), self.doc, self.image_w, self.image_h, m.grab.index, a)) return;
         if (std.meta.eql(a, self.doc.items.items[m.grab.index])) return;
         self.doc.setLive(m.grab.index, a);
     }
 
-    /// Record the move in progress as one undo step.
+    /// Record the move in progress as one undo step, with the re-routes of
+    /// the stairs paths around it.
     fn finishMove(self: *Editor) !void {
         const m = self.mode.moving;
         self.mode = .idle;
-        try self.doc.commitMove(self.gpa, m.grab.index, m.before);
+        const i = m.grab.index;
+        if (std.meta.eql(m.before, self.doc.items.items[i])) return;
+        var changed: [route.max_settle]route.Rerouted = undefined;
+        const n = self.settle(i, m.before, &changed);
+        const step = try self.doc.commitMove(self.gpa, i, m.before);
+        try self.commitRerouted(changed[0..n], i, step);
+    }
+
+    /// Re-route the auto stairs paths around annotation `i`, just added or
+    /// changed (`before`: its geometry before a move). See route.settle.
+    fn settle(self: *Editor, i: usize, before: ?Annotation, out: *[route.max_settle]route.Rerouted) usize {
+        const items = self.doc.items.items;
+        var region = draw.bodyBounds(self.ctx(), items[i], .identity).toBounds();
+        if (before) |b| region = region.unite(draw.bodyBounds(self.ctx(), b, .identity).toBounds());
+        return route.settle(self.ctx(), items, region, out);
+    }
+
+    /// Record re-routes as chained moves of the last step (`step`: the
+    /// change recorded one); without a step the first re-route opens one.
+    /// `skip`: an index the step already holds.
+    fn commitRerouted(self: *Editor, changed: []const route.Rerouted, skip: ?usize, step: bool) !void {
+        var open = step;
+        for (changed) |c| {
+            if (skip != null and skip.? == c.index) continue;
+            if (open) {
+                try self.doc.commitChained(self.gpa, c.index, c.before);
+            } else open = try self.doc.commitMove(self.gpa, c.index, c.before);
+        }
+    }
+
+    /// Add `a` as one undo step, with the re-routes of the stairs paths
+    /// around it (its own included).
+    fn addSettled(self: *Editor, a: Annotation) !void {
+        try self.doc.add(self.gpa, a);
+        try self.settleAdded();
+    }
+
+    /// Re-route the stairs paths around the annotation just added, as part
+    /// of its step.
+    fn settleAdded(self: *Editor) !void {
+        var changed: [route.max_settle]route.Rerouted = undefined;
+        const n = self.settle(self.doc.items.items.len - 1, null, &changed);
+        try self.commitRerouted(changed[0..n], null, true);
     }
 
     /// The point is on the dock or the top bar: a click there never draws.
@@ -356,7 +407,7 @@ pub const Editor = struct {
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c } },
-                .callout => .{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } },
+                .callout => self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             },
         };
     }
@@ -364,10 +415,10 @@ pub const Editor = struct {
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
         const c = self.currentColor();
         return switch (d.tool) {
-            .arrow => .{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } },
+            .arrow => self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
-            .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } },
+            .callout => self.routed(.{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             .text, .number, .move, .crop => null,
         };
     }
@@ -484,7 +535,7 @@ pub const Editor = struct {
         }
         switch (self.tool) {
             .number => {
-                try self.doc.add(self.gpa, .{ .number = .{ .center = ip, .value = self.doc.nextNumber(), .size = self.fontImg(), .color = self.currentColor() } });
+                try self.addSettled(.{ .number = .{ .center = ip, .value = self.doc.nextNumber(), .size = self.fontImg(), .color = self.currentColor() } });
             },
             .text => self.startTyping(.{ .kind = .text, .pos = ip.sub(.{ .x = 0, .y = self.fontImg() * 0.5 }) }),
             else => self.mode = .{ .drag = .{ .tool = self.tool, .start = ip, .cur = ip, .start_screen = sp, .cur_screen = sp } },
@@ -520,7 +571,7 @@ pub const Editor = struct {
         var fin = d;
         fin.cur = ip;
         if (self.shapeFromDrag(fin)) |a| {
-            if (extent.fits(self.ctx(), self.kept_key, a)) try self.doc.add(self.gpa, a) else self.tooFar();
+            if (extent.fits(self.ctx(), self.kept_key, a)) try self.addSettled(a) else self.tooFar();
         }
         return .{ .redraw = true };
     }
@@ -547,14 +598,17 @@ pub const Editor = struct {
         defer self.cancel();
         if (std.mem.trim(u8, self.draft.items, " \t\n").len == 0) return;
         var a = self.preview().?;
-        const owned = try self.gpa.dupe(u8, self.draft.items);
-        errdefer self.gpa.free(owned);
-        switch (a) {
-            .text => |*t| t.text = owned,
-            .callout => |*c| c.text = owned,
-            else => unreachable,
+        {
+            const owned = try self.gpa.dupe(u8, self.draft.items);
+            errdefer self.gpa.free(owned); // the document owns it once added
+            switch (a) {
+                .text => |*t| t.text = owned,
+                .callout => |*c| c.text = owned,
+                else => unreachable,
+            }
+            try self.doc.add(self.gpa, a);
         }
-        try self.doc.add(self.gpa, a);
+        try self.settleAdded();
     }
 
     fn onKey(self: *Editor, k: input.KeyEvent, was_armed: bool) !Effect {
@@ -680,8 +734,12 @@ const T = struct {
     ed: Editor = undefined,
 
     fn init(self: *T) void {
+        self.initSize(200, 100);
+    }
+    /// A w x h image on a w x h screen (1:1).
+    fn initSize(self: *T, w: u32, h: u32) void {
         self.font = Font.init(std.testing.allocator, @import("root.zig").font_ttf) catch unreachable;
-        self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, 200, 100, 200, 100);
+        self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, w, h, w, h);
         // The panels would cover most of a 200x100 screen; tests that click
         // them show them.
         self.ed.dock_visible = false;
@@ -1065,7 +1123,7 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     try std.testing.expectEqual(ann.ArrowStyle.stairs, a.style);
     try std.testing.expect(draw.hitDist(t.ed.ctx(), t.doc.items.items[0], t.ed.view.xf, .{ .x = 95, .y = 35 }) < 0); // new middle x 95
     // The body: both ends move.
-    try t.drag(95, 35, 100, 40);
+    try t.drag(50, 10, 55, 15);
     a = t.doc.items.items[0].arrow;
     try std.testing.expectEqual(Vec2.init(15, 15), a.tail);
     try std.testing.expectEqual(Vec2.init(185, 65), a.head);
@@ -1138,7 +1196,7 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 115, .y = 52 })); // the straight line
     try std.testing.expectEqual(Grab{ .index = 0, .part = .tip }, t.ed.grabAt(.{ .x = 11, .y = 11 }).?);
     // The box by its middle segment: the box moves, the tip stays, the elbow re-routes.
-    try t.drag(80, 40, 90, 50);
+    try t.drag(80, 25, 90, 35);
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqual(Vec2.init(10, 10), c.target.?);
     try std.testing.expectEqual(Vec2.init(160, 80), c.anchor);
@@ -1151,4 +1209,54 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     _ = try t.key("ctrl+z");
     try std.testing.expectEqual(Vec2.init(150, 70), t.doc.items.items[0].callout.anchor);
     try std.testing.expectEqual(Vec2.init(10, 10), t.doc.items.items[0].callout.target.?);
+}
+
+test "stairs arrows drawn side by side nest, in both orders; undo takes the new one only" {
+    for ([_]bool{ false, true }) |swap| {
+        var t = T{};
+        t.initSize(700, 450);
+        defer t.deinit();
+        _ = try t.key("a"); // stairs
+        // Vertical first, tails at the top, heads lower left (the user's case).
+        const left = [4]f32{ 495, 60, 260, 360 };
+        const right = [4]f32{ 557, 60, 435, 360 };
+        const first = if (swap) right else left;
+        const second = if (swap) left else right;
+        try t.drag(first[0], first[1], first[2], first[3]);
+        try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
+        try t.drag(second[0], second[1], second[2], second[3]);
+        const e = t.doc.items.items[1].arrow.elbow;
+        // The one whose head is farther left turns higher.
+        try std.testing.expect(if (swap) e.at < 0.5 else e.at > 0.5);
+        try std.testing.expect(!e.pinned);
+        try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
+        _ = try t.key("ctrl+z");
+        try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    }
+}
+
+test "a commit re-routes the stairs paths around it in the same undo step; undo and redo are exact" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("a"); // stairs
+    try t.drag(10, 10, 190, 90); // the middle segment at x 100
+    _ = try t.key("a"); // straight
+    try t.drag(90, 50, 120, 50); // across that middle segment
+    const moved = t.doc.items.items[0].arrow;
+    try std.testing.expect(moved.elbow.at < (90.0 - 10.0) / 180.0 or moved.elbow.at > (120.0 - 10.0) / 180.0);
+    try std.testing.expectEqual(@as(usize, 3), t.doc.history.items.len); // add, add, the chained re-route
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
+    _ = try t.key("ctrl+y");
+    try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
+    try std.testing.expectEqual(moved, t.doc.items.items[0].arrow);
+    // A move of the straight arrow away: the stairs path settles back, one step.
+    _ = try t.key("m");
+    try t.drag(105, 50, 35, 50);
+    try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(moved, t.doc.items.items[0].arrow);
+    try std.testing.expectEqual(@as(f32, 120), t.doc.items.items[1].arrow.head.x);
 }

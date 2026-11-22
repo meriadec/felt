@@ -106,12 +106,13 @@ pub const Document = struct {
 
     /// Record the move of annotation `i` from `before` (its geometry when the
     /// move started) to its current geometry as one undo step. Nothing if it
-    /// did not change. Clears the redo stack.
-    pub fn commitMove(self: *Document, gpa: std.mem.Allocator, i: usize, before: Annotation) !void {
-        if (std.meta.eql(before, self.items.items[i])) return;
+    /// did not change. Clears the redo stack. Returns whether it recorded a step.
+    pub fn commitMove(self: *Document, gpa: std.mem.Allocator, i: usize, before: Annotation) !bool {
+        if (std.meta.eql(before, self.items.items[i])) return false;
         try self.history.append(gpa, .{ .move = .{ .index = i, .other = before } });
         self.clearRedo(gpa);
         self.revision += 1;
+        return true;
     }
 
     /// Record that annotation `i` changed from `before` to its current
@@ -254,8 +255,8 @@ test "a move is one undo step: undo and redo swap the geometry back and forth" {
     const before = doc.items.items[0];
     doc.setLive(0, at(10));
     doc.setLive(0, at(20));
-    try doc.commitMove(gpa, 0, before);
-    try doc.commitMove(gpa, 1, doc.items.items[1]); // no change: no step
+    try std.testing.expect(try doc.commitMove(gpa, 0, before));
+    try std.testing.expect(!try doc.commitMove(gpa, 1, doc.items.items[1])); // no change: no step
     try std.testing.expectEqual(@as(usize, 3), doc.history.items.len);
     try std.testing.expect(try doc.undo(gpa));
     try std.testing.expectEqual(@as(f32, 0), doc.items.items[0].number.center.x);
@@ -272,7 +273,7 @@ test "a move is one undo step: undo and redo swap the geometry back and forth" {
     t.text.pos.x = 30;
     const tb = doc.items.items[2];
     doc.setLive(2, t);
-    try doc.commitMove(gpa, 2, tb);
+    _ = try doc.commitMove(gpa, 2, tb);
     try std.testing.expect(try doc.undo(gpa));
 }
 
@@ -310,7 +311,7 @@ test "chained moves undo and redo with their step, in order, exactly" {
     const m0 = doc.items.items[2];
     const c1 = doc.items.items[1];
     doc.setLive(2, at(30));
-    try doc.commitMove(gpa, 2, m0);
+    _ = try doc.commitMove(gpa, 2, m0);
     doc.setLive(1, at(31));
     try doc.commitChained(gpa, 1, c1);
     try std.testing.expect(try doc.undo(gpa));
