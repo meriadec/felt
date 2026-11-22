@@ -25,6 +25,30 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
+## Canvas background switch (2026-11)
+
+Min of 3 to 6 runs each, before (commit "docs: the arrow tool help says a
+stairs path routes around the others") and after the light / dark canvas
+background, its config file, and per-panel chrome damage:
+
+| Metric | 1080p | 4K |
+|---|---|---|
+| frame, canvas bg switch (`b`, grown canvas, zoomed out) | avg 0.16 ms, p95 0.19 | avg 0.84 ms, p95 1.27 |
+| config read (startup, window mode only) | 0.003 ms | 0.003 ms |
+| config write (atomic, on a switch) | 0.012 ms | 0.014 ms |
+| startup total | 13.0 -> 12.5 ms (noise) | 12.3 -> 12.3 ms |
+| frame, drag crop | avg 0.32 -> 0.11 ms | avg 0.74 -> 0.21 ms |
+
+A switch repaints the scene only in the bands of canvas around the image
+(the annotations there with it, a pixelate across the edge grown to hold
+all of it) and the toast: 14% of a 1080p screen. Before per-panel chrome
+damage it took 1.6 ms at 4K: the new toast repainted the dock and the top
+bar too. The crop drag gains the same way (its "Crop to W x H" toast
+changes each frame). `--smoke` on the 4K display: config read 0.03-0.06 ms
+on the main thread while the image decodes; first frame on screen 29-34 ms
+(before: 34-41 ms, noise). All other cases within noise (+-5%; undo
+rebuild at 1080p 2.3-3.6 ms before, 2.9-3.2 after: one sample per run).
+
 ## Auto-routing (2026-11)
 
 Min of 3 runs each, before (commit "test: a callout grows the canvas to
@@ -133,8 +157,11 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
 - Crop keeps the decoded image: the `scaled` layer downscales only the kept
   rectangle, once per zoom level or crop; at 1:1 the image is copied as is,
   above 1:1 sampled (nearest) only where visible. The export copies it.
-- The canvas grows by bands: a drag past the image damages only the white
+- The canvas grows by bands: a drag past the image damages only the
   bands it adds or removes; a commit fills them in the scene and appends.
+  A canvas background switch repaints only the bands around the image.
+- Chrome panels repaint one by one (`State.panelSig`): a changing toast
+  does not repaint the dock.
 - A move repaints the scene only under the old and the new place, and
   for thin shapes (arrow, callout pointer, rect outline) only slabs along
   them (`draw.cover`, on a fixed grid); a stairs arrow or stairs callout

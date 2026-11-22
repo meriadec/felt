@@ -7,9 +7,10 @@ backend (x11.zig | headless.zig + script.zig)
    | core.input.Event
    v
 app.zig  App.handle ──> editor.zig (state machine) ──> document.zig (annotations, undo)
-   |                        | Command: save / copy / quit
+   |                        | Command: save / copy / quit / save_settings
    |                        v
    |                    App runs IO: exporter + image_io.savePng | clipboard.zig (xclip)
+   |                                 | config.zig (settings file, window mode only)
    | App.render
    v
 compositor.zig: scene (image + committed annotations) + preview + chrome
@@ -42,16 +43,17 @@ image files. Build: `coreModule` in build.zig.
 | `document.zig` | Annotation list, crop stack, undo/redo of both, number counter |
 | `extent.zig` | Canvas of the document: the kept rectangle grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
+| `settings.zig` | User settings, not document state: the canvas background (light, dark grey); the config file text (`parse`, `write`) |
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md; a tool key pressed again (`ToolInfo.again`) |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
 | `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it (arrow and callout tools) |
-| `topbar.zig` | Top bar geometry and hit test: Undo and Redo buttons (only these: save and copy stay on keys) |
-| `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops) |
+| `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch (save and copy stay on keys) |
+| `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
-| `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, white outside the image) |
+| `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, the canvas background outside the image) |
 
 `src/` (the `annotate` executable module):
 
@@ -59,7 +61,8 @@ image files. Build: `coreModule` in build.zig.
 |---|---|
 | `main.zig` | Entry point, dispatch by mode |
 | `cli.zig` | Argument parsing, `--help` text |
-| `app.zig` | One open image: font + document + editor + compositor; runs save/copy |
+| `app.zig` | One open image: font + document + editor + compositor; runs save/copy and writes the settings |
+| `config.zig` | Settings file `$XDG_CONFIG_HOME/annotate/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
 | `clipboard.zig` | Pipe a PNG to xclip |
 | `backend/x11.zig` | Xlib window, event translation, MIT-SHM present |
 | `backend/headless.zig` | Replay a script, write frame/export PNGs |
@@ -79,7 +82,8 @@ image files. Build: `coreModule` in build.zig.
 - The canvas (`extent.canvas`) is the kept rectangle (the image, or the last
   crop) grown by the annotations made since: a side grows when the body of a
   shape crosses it, to the shape's full bounds plus `extent.pad` (16 image
-  px). Canvas outside the image is white, on screen and in the export. Each
+  px). Canvas outside the image takes the canvas background (light or
+  dark grey, see Settings), on screen and in the export. Each
   annotation draws only inside its own clip (`extent.itemClip`): a pure
   function of its current geometry, the kept rectangle when it was made, and
   the crops made after it. Adding an annotation never changes another's
@@ -175,7 +179,7 @@ image files. Build: `coreModule` in build.zig.
   with a toast.
 - A crop never touches the image or the annotations: `Document.crops` is a
   stack of kept rectangles, each with the number of annotations it clips.
-  A crop may keep white canvas. Undo pops it. The view refits when the kept
+  A crop may keep grown canvas. Undo pops it. The view refits when the kept
   rectangle changes; a canvas that grows or shrinks with annotations keeps
   the view (no jumps while drawing).
 - The user zooms (Ctrl+wheel about the pointer, `-` `=` `0`) and pans (middle
@@ -189,19 +193,40 @@ image files. Build: `coreModule` in build.zig.
   incremental frame equals a full repaint.
 - Pixels are opaque 0xAARRGGBB, the X11 24/32-bit TrueColor layout on
   little-endian. Loaded images with alpha are flattened over white.
-- The editor does no IO and never draws. Commands (save, copy, quit) go to the
-  App. Keys come only from `keymap.zig`.
+- The editor does no IO and never draws. Commands (save, copy, quit,
+  save_settings) go to the App. Keys come only from `keymap.zig`.
+- Settings vs. document (settings.zig): the document holds what the user
+  drew (annotations, crops) and its undo history; `Editor.settings` holds
+  how the canvas looks. Today one setting: the canvas background, light
+  (nord4 #D8DEE9) or dark (nord3 #4C566A), the color of the canvas outside
+  the image on screen and in the export. `b` or the top bar switch toggles
+  it with a toast ("Canvas: dark"). It is not an undo step: it changes no
+  annotation, no clip and no canvas size, so undo keeps walking the
+  drawing, and it stays for the next sessions. But when the canvas holds
+  some outside the image, the export changes color: the switch counts as
+  an unsaved change (`Editor.dirty`, against `saved_bg`) until a save or a
+  switch back. The editor returns `Command.save_settings`; the App writes the file
+  (config.zig) only if it has a path: only the window mode has one.
+  Startup: file, then `--canvas-bg` on top; headless runs, the bench and
+  tests start from the defaults plus the flag and never read or write the
+  file. Both colors stay apart from the screen background (nord0) and the
+  panels (nord1), so the canvas edge and the dock stay visible; every
+  palette color reads on both (the dark palette color on dark grey and
+  white on light grey are the weakest, kept visible by their shadow).
 - Text is UTF-8. Font sizes round to whole pixels (glyph cache key).
 
 ## Compositor layers
 
 `scaled` (the kept part of the image at the view scale, only below 1:1;
-rebuilt on zoom or crop), `scene` (background + white canvas + image +
+rebuilt on zoom or crop), `scene` (background + canvas background + image +
 committed annotations; appended in place; repainted in place where an
-annotation moved or the canvas grew or shrank; repainted in full after the
+annotation moved or the canvas grew or shrank, and in the bands around the
+image when the canvas background changes; repainted in full after the
 undo of an add or a crop, resize or zoom), `frame` (scene +
-white canvas the shape in progress adds + crop dimming + move outline +
-chrome + preview). A
+canvas the shape in progress adds + crop dimming + move outline +
+chrome + preview). Each chrome panel (dock, style switch, top bar, help,
+toast) repaints only when its rect or its signature changes: a toast that
+changes each frame does not repaint the dock. A
 move repaints the scene only in slabs along the old and the new place
 (`draw.cover`), merged where that adds no pixel. A
 crop drag damages only the bands between the old and the new crop rectangle;
