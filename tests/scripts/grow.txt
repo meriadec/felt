@@ -1,0 +1,15 @@
+# Grow: a small wide image (480x57) at 1:1 in the middle of the screen.
+# An arrow comes from the top left, a callout box sits below, a blue arrow
+# goes out on the right: the canvas grows white on those sides, with a pad.
+# Undo takes the blue arrow back: the right side shrinks back to the image.
+image tests/fixtures/strip.png
+size 900 500
+key a
+drag 150 140 280 245
+key c
+drag 600 255 560 380
+type Click here
+key enter
+key 5 a
+drag 600 250 860 230
+key ctrl+z

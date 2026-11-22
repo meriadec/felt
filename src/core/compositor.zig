@@ -1,12 +1,14 @@
 //! Compositor: builds screen frames with caching and damage tracking.
-//! Layers: `base` = background + downscaled image (rebuilt on resize or crop),
-//! `scene` = base + committed annotations (appended in place, rebuilt after
-//! undo), `frame` = scene + crop dimming + chrome + preview, repainted only in
-//! damaged rects.
+//! Layers: `scaled` = the kept part of the image at the view scale (rebuilt on
+//! zoom or crop), `scene` = background + white canvas + image + committed
+//! annotations (appended in place, repainted after undo), `frame` = scene +
+//! white canvas of the shape in progress + crop dimming + chrome + preview,
+//! repainted only in damaged rects.
 const std = @import("std");
 const geom = @import("geom.zig");
 const color = @import("color.zig");
 const draw = @import("draw.zig");
+const extent = @import("extent.zig");
 const chrome = @import("chrome.zig");
 const resample = @import("resample.zig");
 const Canvas = @import("canvas.zig").Canvas;
@@ -60,28 +62,36 @@ pub const Damage = struct {
 
 pub const Compositor = struct {
     gpa: std.mem.Allocator,
-    /// Background + image only; built lazily on the first scene rebuild
-    /// (undo), so startup draws the image straight into `scene`.
-    base: ?Canvas = null,
+    /// The kept part of the image at the view scale, when the scale is
+    /// below 1:1. Built when the scale or the crop changes; scene rebuilds
+    /// (undo) only copy it.
+    scaled: ?Canvas = null,
+    scaled_key: Rect = Rect.empty,
+    scaled_pic: Rect = Rect.empty,
     scene: ?Canvas = null,
     frame: ?Canvas = null,
     /// false: `frame` is a borrowed buffer (e.g. X11 shared memory).
     owns_frame: bool = true,
     view_key: ?View = null,
+    pic_key: Rect = Rect.empty,
     scene_valid: bool = false,
     scene_count: usize = 0,
     scene_removals: u64 = 0,
+    /// Canvas (image px) the scene was painted with.
+    scene_canvas: Rect = Rect.empty,
     prev_preview: Rect = Rect.empty,
+    /// Screen rectangle of the canvas with the shape in progress.
+    prev_live: Rect = Rect.empty,
     prev_crop: ?Rect = null,
     prev_chrome: [3]Rect = .{ Rect.empty, Rect.empty, Rect.empty },
     prev_chrome_sig: u64 = 0,
     force_full: bool = true,
 
     pub fn deinit(self: *Compositor) void {
-        if (self.base) |*cv| cv.deinit(self.gpa);
+        if (self.scaled) |*cv| cv.deinit(self.gpa);
         if (self.scene) |*cv| cv.deinit(self.gpa);
         if (self.owns_frame) if (self.frame) |*cv| cv.deinit(self.gpa);
-        self.base = null;
+        self.scaled = null;
         self.scene = null;
         self.frame = null;
     }
@@ -108,31 +118,51 @@ pub const Compositor = struct {
         slot.* = try Canvas.init(self.gpa, w, h);
     }
 
-    /// Background around the image, downscaled kept part inside `view.dst`.
-    fn drawBase(self: *Compositor, cv: *Canvas, image: *const Canvas, ed: *const Editor) !void {
-        const dst = ed.view.dst;
-        const src = ed.view.src;
-        const full = cv.bounds();
-        // Background only where the image is not.
-        cv.fillRect(.{ .x0 = 0, .y0 = 0, .x1 = full.x1, .y1 = dst.y0 }, background);
-        cv.fillRect(.{ .x0 = 0, .y0 = dst.y1, .x1 = full.x1, .y1 = full.y1 }, background);
-        cv.fillRect(.{ .x0 = 0, .y0 = dst.y0, .x1 = dst.x0, .y1 = dst.y1 }, background);
-        cv.fillRect(.{ .x0 = dst.x1, .y0 = dst.y0, .x1 = full.x1, .y1 = dst.y1 }, background);
-        if (dst.width() == src.width() and dst.height() == src.height()) {
-            cv.blitRect(image, src, dst.x0, dst.y0); // 1:1, no copy
-            return;
+    /// Paint the scene in `r`: background, white canvas, image, then the
+    /// first `n` annotations, each in its own clip.
+    fn paintScene(self: *Compositor, s: *const Scene, r_in: Rect, n: usize) !void {
+        const cv = &self.scene.?;
+        const r = r_in.intersect(cv.bounds());
+        if (r.isEmpty()) return;
+        for (r.minus(s.canvas_dst)) |b| cv.fillRect(b, background);
+        for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, extent.fill);
+        try self.paintImage(cv, s, r);
+        for (s.doc.items.items[0..n], 0..) |a, i| {
+            const clip = s.itemClip(i);
+            try draw.annotation(s.ctx, cv, r.intersect(clip), a, s.xf, .{ .area = clip });
         }
-        var scaled = try resample.downscaleRect(self.gpa, image, src, @intCast(dst.width()), @intCast(dst.height()));
-        defer scaled.deinit(self.gpa);
-        cv.blit(&scaled, dst.x0, dst.y0);
+    }
+
+    /// The kept part of the image, in `r` of its screen rectangle.
+    fn paintImage(self: *Compositor, cv: *Canvas, s: *const Scene, r: Rect) !void {
+        const pd = s.pic_dst;
+        const q = r.intersect(pd);
+        if (q.isEmpty()) return;
+        const pic = s.pic;
+        if (pd.width() == pic.width() and pd.height() == pic.height()) {
+            cv.blitRect(s.image, q.offset(pic.x0 - pd.x0, pic.y0 - pd.y0), q.x0, q.y0); // 1:1
+        } else if (pd.width() > pic.width() or pd.height() > pic.height()) {
+            resample.nearestInto(cv, q, s.image, pic, pd);
+        } else {
+            const key = Rect.fromSize(0, 0, pd.width(), pd.height());
+            if (self.scaled == null or !std.meta.eql(self.scaled_key, key) or !std.meta.eql(self.scaled_pic, pic)) {
+                if (self.scaled) |*old| old.deinit(self.gpa);
+                self.scaled = null;
+                self.scaled = try resample.downscaleRect(self.gpa, s.image, pic, @intCast(pd.width()), @intCast(pd.height()));
+                self.scaled_key = key;
+                self.scaled_pic = pic;
+            }
+            cv.blitRect(&self.scaled.?, q.offset(-pd.x0, -pd.y0), q.x0, q.y0);
+        }
     }
 
     /// Bring `frame` up to date; returns the screen rectangles that changed.
     pub fn render(self: *Compositor, ctx: draw.Ctx, image: *const Canvas, doc: *const Document, ed: *const Editor) !Damage {
         var dmg = Damage{};
-        const w = ed.view.screen_w;
-        const h = ed.view.screen_h;
-        const full_rect = Rect.fromSize(0, 0, @intCast(w), @intCast(h));
+        const v = ed.view;
+        const w = v.screen_w;
+        const h = v.screen_h;
+        const full_rect = v.screen();
         var full = self.force_full;
         self.force_full = false;
 
@@ -141,51 +171,70 @@ pub const Compositor = struct {
         } else if (self.frame.?.width != w or self.frame.?.height != h) {
             return error.FrameBufferSizeMismatch;
         }
-        if (self.view_key == null or !std.meta.eql(ed.view, self.view_key.?)) {
-            if (self.base) |*b| b.deinit(self.gpa);
-            self.base = null;
+        const pic = doc.kept(image.width, image.height).intersect(image.bounds());
+        const s = Scene{
+            .ctx = ctx,
+            .doc = doc,
+            .image = image,
+            .xf = v.xf,
+            .view = v,
+            .pic = pic,
+            .pic_dst = v.rect(pic),
+            .canvas_dst = v.rect(ed.canvas),
+        };
+        if (self.view_key == null or !std.meta.eql(v, self.view_key.?) or !std.meta.eql(pic, self.pic_key)) {
             try self.ensureCanvas(&self.scene, w, h);
-            self.view_key = ed.view;
+            self.view_key = v;
+            self.pic_key = pic;
             self.scene_valid = false;
         }
         const scene = &self.scene.?;
         const frame = &self.frame.?;
-        const xf = ed.view.xf;
         const items = doc.items.items;
-        // Annotations show only over the image, as in the export.
-        const img = ed.view.dst.intersect(full_rect);
-        const base_opts = draw.Options{ .area = ed.view.dst };
 
-        // Scene: append new annotations, or rebuild after a removal.
-        if (!self.scene_valid) {
-            try self.drawBase(scene, image, ed);
-            for (items) |a| try draw.annotation(ctx, scene, img, a, xf, base_opts);
+        // Scene: append new annotations (the canvas may grow), or repaint
+        // after a removal or a shrink.
+        if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count or !ed.canvas.contains(self.scene_canvas)) {
+            try self.paintScene(&s, full_rect, items.len);
             full = true;
-        } else if (doc.removals != self.scene_removals or items.len < self.scene_count) {
-            if (self.base == null) {
-                try self.ensureCanvas(&self.base, w, h);
-                try self.drawBase(&self.base.?, image, ed);
+        } else {
+            if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
+                // Grown: the new canvas bands were background, nothing drawn there.
+                for (s.canvas_dst.minus(v.rect(self.scene_canvas))) |b| {
+                    scene.fillRect(b, extent.fill);
+                    dmg.add(b.intersect(full_rect));
+                }
             }
-            scene.copyRect(&self.base.?, full_rect);
-            for (items) |a| try draw.annotation(ctx, scene, img, a, xf, base_opts);
-            full = true;
-        } else if (items.len > self.scene_count) {
-            for (items[self.scene_count..]) |a| {
-                try draw.annotation(ctx, scene, img, a, xf, base_opts);
-                dmg.add(draw.bounds(ctx, a, xf, base_opts).intersect(img));
+            for (items[self.scene_count..], self.scene_count..) |a, i| {
+                const clip = s.itemClip(i);
+                try draw.annotation(ctx, scene, clip, a, v.xf, .{ .area = clip });
+                dmg.add(draw.bounds(ctx, a, v.xf, .{}).intersect(clip));
             }
         }
         self.scene_valid = true;
         self.scene_count = items.len;
         self.scene_removals = doc.removals;
+        self.scene_canvas = ed.canvas;
 
-        // Overlay damage: old and new preview, chrome if it changed.
+        // Overlay damage: old and new preview, the white canvas it adds,
+        // chrome if it changed.
         const preview = ed.preview();
-        const opts = draw.Options{ .preview = true, .area = ed.view.dst };
-        const cur_preview = if (preview) |p| draw.bounds(ctx, p, xf, opts).intersect(img) else Rect.empty;
+        var preview_clip = Rect.empty;
+        var live = s.canvas_dst;
+        if (preview) |p| {
+            preview_clip = v.rect(extent.grow(ctx, doc.kept(image.width, image.height), p)).intersect(full_rect);
+            live = live.unite(preview_clip);
+        }
+        const cur_preview = if (preview) |p| draw.bounds(ctx, p, v.xf, .{ .preview = true }).intersect(preview_clip) else Rect.empty;
         dmg.add(self.prev_preview);
         dmg.add(cur_preview);
         self.prev_preview = cur_preview;
+        if (!std.meta.eql(live, self.prev_live)) {
+            for (live.minus(self.prev_live)) |b| dmg.add(b.intersect(full_rect));
+            for (self.prev_live.minus(live)) |b| dmg.add(b.intersect(full_rect));
+            self.prev_live = live;
+        }
+        const extra = live.minus(s.canvas_dst);
 
         // Crop in progress: everything outside is dimmed. Damage only the
         // bands between the old and the new rectangle.
@@ -215,12 +264,33 @@ pub const Compositor = struct {
         for (dmg.slice()) |r_raw| {
             const r = r_raw.intersect(full_rect);
             frame.copyRect(scene, r);
+            for (extra) |b| frame.fillRect(b.intersect(r), extent.fill);
             if (crop) |c| drawCropOverlay(frame, r, c);
             try chrome.draw(ctx, frame, r, &lay);
             // The shape in progress goes over the chrome: what you type stays visible.
-            if (preview) |p| try draw.annotation(ctx, frame, r.intersect(img), p, xf, opts);
+            if (preview) |p| try draw.annotation(ctx, frame, r.intersect(preview_clip), p, v.xf, .{ .preview = true, .area = preview_clip });
         }
         return dmg;
+    }
+};
+
+/// What a scene paint needs: the document, the image and where both go.
+const Scene = struct {
+    ctx: draw.Ctx,
+    doc: *const Document,
+    image: *const Canvas,
+    xf: geom.Xform,
+    view: View,
+    /// Kept part of the image (image px) and its screen rectangle.
+    pic: Rect,
+    pic_dst: Rect,
+    /// Screen rectangle of the canvas.
+    canvas_dst: Rect,
+
+    /// Screen clip of annotation `i`.
+    fn itemClip(s: *const Scene, i: usize) Rect {
+        const r = extent.itemClip(s.ctx, s.doc, s.image.width, s.image.height, i);
+        return s.view.rect(r).intersect(s.view.screen());
     }
 };
 

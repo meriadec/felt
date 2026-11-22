@@ -48,7 +48,7 @@ pub const App = struct {
             .comp = .{ .gpa = gpa },
             .cfg = cfg,
         };
-        self.editor = Editor.init(gpa, &self.doc, core.view.View.fit(image.width, image.height, w, h));
+        self.editor = Editor.init(gpa, &self.font, &self.doc, image.width, image.height, w, h);
         return self;
     }
 

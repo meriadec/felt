@@ -1,0 +1,12 @@
+# Grow live: the white canvas follows the shape in progress, before the
+# release. The first arrow is committed (grows the left side); the second
+# drag stops past the bottom right: the frame shows the live white area,
+# the export only the committed one.
+image tests/fixtures/strip.png
+size 900 500
+key a
+drag 300 250 120 300
+key 4
+down 500 250
+move 600 300
+move 760 420

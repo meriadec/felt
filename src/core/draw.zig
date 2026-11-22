@@ -93,6 +93,25 @@ pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
     return b.toRect();
 }
 
+/// Target-pixel rectangle of the shape itself: no shadow, no anti-aliasing
+/// margin. The canvas grows on a side only when this crosses it (extent.zig).
+pub fn bodyBounds(ctx: Ctx, ann: Annotation, xf: Xform) Rect {
+    const b: Bounds = switch (ann) {
+        .arrow => |a| arrowShape(a, xf).bounds(),
+        .rect => |r| boxShape(r, xf).bounds(),
+        .highlight => |h| highlightShape(h, xf).bounds(),
+        .pixelate => |p| sortedBounds(xf.apply(p.a), xf.apply(p.b)),
+        .text => |t| textGeom(ctx, t, xf).box.bounds(),
+        .number => |n| blk: {
+            const d = numberDisc(n, xf);
+            break :blk d.bounds().expand(numberRing(d));
+        },
+        .callout => |c| calloutGeom(ctx, c, xf).shape().bounds(),
+    };
+    // Round inward by a hair: a shape that ends on a pixel edge does not cross it.
+    return (Bounds{ .min = b.min.add(.{ .x = 0.01, .y = 0.01 }), .max = b.max.sub(.{ .x = 0.01, .y = 0.01 }) }).toRect();
+}
+
 fn drawWithShadow(cv: *Canvas, clip: Rect, shape: anytype, c: Color, sh: Shadow) void {
     raster.fill(cv, clip, shape, .{ .solid = shadow_color }, .{ .offset = sh.offset, .soft = sh.soft });
     raster.fill(cv, clip, shape, .{ .solid = c }, .{});
@@ -214,9 +233,13 @@ fn numberDisc(n: ann_mod.Number, xf: Xform) sdf.Disc {
     return .{ .c = xf.apply(n.center), .r = n.size * 0.8 * xf.scale };
 }
 
+fn numberRing(disc: sdf.Disc) f32 {
+    return @max(1.5, disc.r * 0.12);
+}
+
 fn drawNumber(ctx: Ctx, cv: *Canvas, clip: Rect, n: ann_mod.Number, xf: Xform) !void {
     const disc = numberDisc(n, xf);
-    const ring = @max(1.5, disc.r * 0.12);
+    const ring = numberRing(disc);
     const outer = sdf.Disc{ .c = disc.c, .r = disc.r + ring };
     drawWithShadow(cv, clip, outer, color.white, Shadow.of(n.size * xf.scale * 0.2));
     raster.fill(cv, clip, disc, .{ .solid = n.color }, .{});

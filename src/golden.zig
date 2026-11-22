@@ -229,6 +229,49 @@ test "crop exports the kept part at original resolution; undo restores" {
     try std.testing.expectEqual(red, full.at(40, 150));
 }
 
+test "drawing past the image grows the exported PNG with white; undo shrinks it" {
+    const gpa = std.testing.allocator;
+    var image = try Canvas.init(gpa, 100, 50);
+    image.fill(core.color.Color.rgb(0x808080));
+    image.fillRect(core.geom.Rect.fromSize(0, 0, 10, 10), core.color.Color.rgb(0x102030));
+    std.fs.cwd().makePath(out_dir) catch {};
+    const path = out_dir ++ "/grow-test.png";
+    const app = try App.create(gpa, image, 400, 300, .{ .output_path = path, .clipboard = .none });
+    defer app.destroy();
+    // Image at 1:1 in (150, 125)..(250, 175). Arrow from inside to 60 px past the right edge.
+    _ = try app.handle(.{ .mouse_down = .{ .x = 200, .y = 150 } });
+    _ = try app.handle(.{ .mouse_move = .{ .x = 310, .y = 150 } });
+    _ = try app.handle(.{ .mouse_up = .{ .x = 310, .y = 150 } });
+    _ = try app.render();
+    const canvas = app.editor.canvas;
+    try std.testing.expectEqual(@as(i32, 0), canvas.x0);
+    try std.testing.expectEqual(@as(i32, 0), canvas.y0);
+    try std.testing.expectEqual(@as(i32, 50), canvas.y1);
+    try std.testing.expect(canvas.x1 >= 160 + core.extent.pad);
+
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 's' }, .mods = .{ .ctrl = true } } });
+    var saved = try core.image_io.load(gpa, path);
+    defer saved.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, @intCast(canvas.width())), saved.width);
+    try std.testing.expectEqual(@as(u32, @intCast(canvas.height())), saved.height);
+    // Image pixels unchanged away from the arrow; the extension is white.
+    try std.testing.expectEqual(app.image.at(5, 5), saved.at(5, 5));
+    try std.testing.expectEqual(app.image.at(50, 10), saved.at(50, 10));
+    try std.testing.expectEqual(@as(u32, 0xffffffff), saved.at(@intCast(canvas.x1 - 2), 2));
+    try std.testing.expectEqual(@as(u32, 0xffffffff), saved.at(105, 45));
+    try std.testing.expectEqual(core.color.palette[0].color.toPixel(), saved.at(130, 25)); // the arrow, past the edge
+    // On screen too: white past the image edge, background past the canvas.
+    try std.testing.expectEqual(@as(u32, 0xffffffff), app.frame().at(255, 130));
+    try std.testing.expectEqual(core.compositor.background.toPixel(), app.frame().at(150 + canvas.x1 + 2, 130));
+
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    var out = try app.exportImage();
+    defer out.deinit(gpa);
+    try std.testing.expectEqual(@as(u32, 100), out.width);
+    try std.testing.expectEqual(@as(u32, 50), out.height);
+    try std.testing.expect(std.mem.eql(u32, app.image.pixels, out.pixels));
+}
+
 test "docs/keymap.md is up to date" {
     const gpa = std.testing.allocator;
     var buf: [16 * 1024]u8 = undefined;

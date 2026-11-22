@@ -87,6 +87,27 @@ pub fn downscaleRect(gpa: std.mem.Allocator, src: *const Canvas, r: Rect, dw: u3
     return job.out;
 }
 
+/// Nearest-neighbour scale of the part `sr` of `src` onto the target
+/// rectangle `dr` of `dst` (any sizes; used above 1:1). Writes only `clip`.
+pub fn nearestInto(dst: *Canvas, clip: Rect, src: *const Canvas, sr: Rect, dr: Rect) void {
+    const q = clip.intersect(dr).intersect(dst.bounds());
+    if (q.isEmpty() or sr.isEmpty()) return;
+    const sw: i64 = sr.width();
+    const sh: i64 = sr.height();
+    const dw: i64 = dr.width();
+    const dh: i64 = dr.height();
+    var y = q.y0;
+    while (y < q.y1) : (y += 1) {
+        const sy: i32 = sr.y0 + @as(i32, @intCast(@divFloor((y - dr.y0) * sh, dh)));
+        const srow = src.row(sy, 0, @intCast(src.width));
+        const drow = dst.row(y, q.x0, q.x1);
+        for (drow, 0..) |*d, i| {
+            const x: i64 = q.x0 + @as(i64, @intCast(i));
+            d.* = srow[@intCast(sr.x0 + @divFloor((x - dr.x0) * sw, dw))];
+        }
+    }
+}
+
 const max_threads = 8;
 
 const Job = struct {
@@ -195,4 +216,15 @@ test "a source rectangle downscales only that part" {
     defer out.deinit(gpa);
     try std.testing.expectEqual(@as(u32, 0xffffffff), out.pixels[0]);
     try std.testing.expectEqual(@as(u32, 0xffffffff), out.pixels[1]);
+}
+
+test "nearest doubles pixels" {
+    const gpa = std.testing.allocator;
+    var src = try Canvas.init(gpa, 2, 1);
+    defer src.deinit(gpa);
+    src.pixels[0..2].* = .{ 0xff000000, 0xffffffff };
+    var dst = try Canvas.init(gpa, 4, 2);
+    defer dst.deinit(gpa);
+    nearestInto(&dst, dst.bounds(), &src, src.bounds(), dst.bounds());
+    try std.testing.expectEqual([4]u32{ 0xff000000, 0xff000000, 0xffffffff, 0xffffffff }, dst.pixels[4..8].*);
 }

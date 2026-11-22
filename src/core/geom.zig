@@ -118,6 +118,28 @@ pub const Rect = struct {
         if (r.isEmpty()) return r;
         return .{ .x0 = r.x0 - n, .y0 = r.y0 - n, .x1 = r.x1 + n, .y1 = r.y1 + n };
     }
+    pub fn offset(r: Rect, dx: i32, dy: i32) Rect {
+        return .{ .x0 = r.x0 + dx, .y0 = r.y0 + dy, .x1 = r.x1 + dx, .y1 = r.y1 + dy };
+    }
+    pub fn contains(a: Rect, b: Rect) bool {
+        return b.isEmpty() or (b.x0 >= a.x0 and b.y0 >= a.y0 and b.x1 <= a.x1 and b.y1 <= a.y1);
+    }
+    /// The parts of `a` outside `b`: top, bottom, left, right bands (some empty).
+    pub fn minus(a: Rect, b: Rect) [4]Rect {
+        if (a.isEmpty()) return .{ empty, empty, empty, empty };
+        if (!a.intersects(b)) return .{ a, empty, empty, empty };
+        const my0 = @max(a.y0, b.y0);
+        const my1 = @min(a.y1, b.y1);
+        const parts = [4]Rect{
+            .{ .x0 = a.x0, .y0 = a.y0, .x1 = a.x1, .y1 = my0 },
+            .{ .x0 = a.x0, .y0 = my1, .x1 = a.x1, .y1 = a.y1 },
+            .{ .x0 = a.x0, .y0 = my0, .x1 = @max(a.x0, b.x0), .y1 = my1 },
+            .{ .x0 = @min(a.x1, b.x1), .y0 = my0, .x1 = a.x1, .y1 = my1 },
+        };
+        var out: [4]Rect = undefined;
+        for (parts, 0..) |p, i| out[i] = if (p.isEmpty()) empty else p;
+        return out;
+    }
     pub fn toBounds(r: Rect) Bounds {
         return .{
             .min = .{ .x = @floatFromInt(r.x0), .y = @floatFromInt(r.y0) },
@@ -150,6 +172,17 @@ test "rect ops" {
     try std.testing.expectEqual(Rect{ .x0 = 5, .y0 = 5, .x1 = 10, .y1 = 10 }, a.intersect(b));
     try std.testing.expectEqual(Rect{ .x0 = 0, .y0 = 0, .x1 = 15, .y1 = 15 }, a.unite(b));
     try std.testing.expect(a.intersect(Rect.fromSize(20, 20, 1, 1)).isEmpty());
+}
+
+test "rect minus" {
+    const a = Rect.fromSize(0, 0, 10, 10);
+    const parts = a.minus(Rect.fromSize(2, 3, 4, 4));
+    var sum: u64 = 0;
+    for (parts) |p| sum += p.area();
+    try std.testing.expectEqual(@as(u64, 100 - 16), sum);
+    try std.testing.expectEqual(a, a.minus(Rect.fromSize(20, 0, 5, 5))[0]);
+    for (a.minus(Rect.fromSize(-5, -5, 30, 30))) |p| try std.testing.expect(p.isEmpty());
+    try std.testing.expectEqual(Rect{ .x0 = 0, .y0 = 0, .x1 = 10, .y1 = 5 }, a.minus(Rect.fromSize(-1, 5, 12, 10))[0]);
 }
 
 test "xform round trip" {

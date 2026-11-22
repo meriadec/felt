@@ -8,8 +8,11 @@ const keymap = @import("keymap.zig");
 const style = @import("style.zig");
 const color = @import("color.zig");
 const ann = @import("annotation.zig");
+const extent = @import("extent.zig");
+const draw = @import("draw.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
+const Font = @import("font.zig").Font;
 const Dock = @import("dock.zig").Dock;
 
 const Vec2 = geom.Vec2;
@@ -49,8 +52,17 @@ pub const Mode = union(enum) {
 
 pub const Editor = struct {
     gpa: std.mem.Allocator,
+    /// Measures text for the canvas extent; the editor never draws.
+    font: *Font,
     doc: *Document,
+    image_w: u32,
+    image_h: u32,
     view: View,
+    /// Canvas of the document (image px, see extent.zig), for `canvas_rev`.
+    canvas: geom.Rect,
+    canvas_rev: u64,
+    /// Kept rectangle the view was fitted for: a crop, its undo or redo refits.
+    kept_key: geom.Rect,
     tool: Tool = .arrow,
     /// Tool to go back to after a crop.
     tool_before_crop: Tool = .arrow,
@@ -68,8 +80,26 @@ pub const Editor = struct {
     toast_len: usize = 0,
     hint_buf: [96]u8 = undefined,
 
-    pub fn init(gpa: std.mem.Allocator, doc: *Document, view: View) Editor {
-        return .{ .gpa = gpa, .doc = doc, .view = view, .saved_revision = doc.revision };
+    /// Fit the canvas of `doc` over an image_w x image_h image to the screen.
+    pub fn init(gpa: std.mem.Allocator, font: *Font, doc: *Document, image_w: u32, image_h: u32, screen_w: u32, screen_h: u32) Editor {
+        const dctx = draw.Ctx{ .gpa = gpa, .font = font };
+        const canvas = extent.canvas(dctx, doc, image_w, image_h);
+        return .{
+            .gpa = gpa,
+            .font = font,
+            .doc = doc,
+            .image_w = image_w,
+            .image_h = image_h,
+            .view = View.fit(canvas, screen_w, screen_h),
+            .canvas = canvas,
+            .canvas_rev = doc.revision,
+            .kept_key = doc.kept(image_w, image_h),
+            .saved_revision = doc.revision,
+        };
+    }
+
+    pub fn ctx(self: *const Editor) draw.Ctx {
+        return .{ .gpa = self.gpa, .font = self.font };
     }
 
     pub fn deinit(self: *Editor) void {
@@ -117,18 +147,25 @@ pub const Editor = struct {
     }
 
     pub fn resize(self: *Editor, w: u32, h: u32) void {
-        self.view = View.fitRect(self.view.image_w, self.view.image_h, self.view.src, w, h);
+        self.view = View.fit(self.canvas, w, h);
     }
 
-    /// Refit the view when the document crop changed (crop, undo, redo).
+    /// Follow document changes: recompute the canvas, and refit the view
+    /// when the kept rectangle changed (crop, its undo or redo). A canvas
+    /// that grows or shrinks with annotations keeps the view: no jumps.
     fn syncView(self: *Editor) bool {
-        const want = self.doc.kept(self.view.image_w, self.view.image_h);
-        if (std.meta.eql(want, self.view.src)) return false;
-        self.view = View.fitRect(self.view.image_w, self.view.image_h, want, self.view.screen_w, self.view.screen_h);
+        if (self.doc.revision == self.canvas_rev) return false;
+        self.canvas_rev = self.doc.revision;
+        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
+        const kept = self.doc.kept(self.image_w, self.image_h);
+        if (std.meta.eql(kept, self.kept_key)) return false;
+        self.kept_key = kept;
+        self.view = View.fit(self.canvas, self.view.screen_w, self.view.screen_h);
         return true;
     }
 
-    /// Image rectangle a crop drag selects: whole pixels, inside the kept part.
+    /// Image rectangle a crop drag selects: whole pixels, inside the canvas
+    /// (white areas included).
     fn cropRectOf(self: *const Editor, a: Vec2, b: Vec2) geom.Rect {
         const lo = a.min(b);
         const hi = a.max(b);
@@ -138,7 +175,7 @@ pub const Editor = struct {
             .x1 = @intFromFloat(@round(hi.x)),
             .y1 = @intFromFloat(@round(hi.y)),
         };
-        return r.intersect(self.view.src);
+        return r.intersect(self.canvas);
     }
 
     /// The crop in progress, in image pixels.
@@ -402,14 +439,17 @@ pub const Editor = struct {
 
 const T = struct {
     doc: Document = .{},
+    font: Font = undefined,
     ed: Editor = undefined,
 
     fn init(self: *T) void {
-        self.ed = Editor.init(std.testing.allocator, &self.doc, View.fit(200, 100, 200, 100));
+        self.font = Font.init(std.testing.allocator, @import("root.zig").font_ttf) catch unreachable;
+        self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, 200, 100, 200, 100);
     }
     fn deinit(self: *T) void {
         self.ed.deinit();
         self.doc.deinit(std.testing.allocator);
+        self.font.deinit();
     }
     fn key(self: *T, chord: []const u8) !Effect {
         return self.ed.handle(.{ .key = try input.parseChord(chord) });
@@ -495,14 +535,14 @@ test "crop drag crops, refits the view, goes back to the tool; undo restores" {
     try std.testing.expect(t.ed.toast() != null);
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = 120, .y = 60 } });
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.doc.crop().?.rect);
-    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.view.src);
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.canvas);
     try std.testing.expectEqual(Tool.rect, t.ed.tool);
     // Screen (50, 25) is the image point (20, 10) after the refit (centered 1:1).
     try std.testing.expectEqual(Vec2.init(20, 10), t.ed.view.toImage(.{ .x = 50, .y = 25 }));
     _ = try t.key("ctrl+z");
-    try std.testing.expectEqual(@as(u32, 200), @as(u32, @intCast(t.ed.view.src.width())));
+    try std.testing.expectEqual(@as(i32, 200), t.ed.canvas.width());
     _ = try t.key("ctrl+y");
-    try std.testing.expectEqual(@as(u32, 100), @as(u32, @intCast(t.ed.view.src.width())));
+    try std.testing.expectEqual(@as(i32, 100), t.ed.canvas.width());
 }
 
 test "dock clicks pick tools and colors and never draw; help closes on click and Esc" {

@@ -213,6 +213,6 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.8, .y = H * 0.8 } });
     t.reset();
     _ = try app.render();
-    try w.print("{s:<26} {d:>7.3} ms ({d}x{d} image px kept)\n", .{ "frame: crop (refit)", ms(t.read()), app.editor.view.src.width(), app.editor.view.src.height() });
+    try w.print("{s:<26} {d:>7.3} ms ({d}x{d} image px kept)\n", .{ "frame: crop (refit)", ms(t.read()), app.editor.canvas.width(), app.editor.canvas.height() });
     try w.flush();
 }
