@@ -337,6 +337,10 @@ pub const Editor = struct {
         if (self.mode == .drag) self.mode = .idle; // lost release: start over
         const sp = Vec2.init(x, y);
         const ip = self.view.toImage(sp);
+        if (!extent.reachable(self.kept_key, ip)) {
+            self.tooFar();
+            return .{ .redraw = true };
+        }
         switch (self.tool) {
             .number => {
                 try self.doc.add(self.gpa, .{ .number = .{ .center = ip, .value = self.doc.nextNumber(), .size = self.fontImg(), .color = self.currentColor() } });
@@ -369,8 +373,14 @@ pub const Editor = struct {
         }
         var fin = d;
         fin.cur = ip;
-        if (self.shapeFromDrag(fin)) |a| try self.doc.add(self.gpa, a);
+        if (self.shapeFromDrag(fin)) |a| {
+            if (extent.fits(self.ctx(), self.kept_key, a)) try self.doc.add(self.gpa, a) else self.tooFar();
+        }
         return .{ .redraw = true };
+    }
+
+    fn tooFar(self: *Editor) void {
+        self.setToast("Too far from the image. The canvas grows only so far.", .{});
     }
 
     fn startTyping(self: *Editor, t: Typing) void {
@@ -664,6 +674,17 @@ test "zoom out keeps sizes and the point under the pointer; 0 refits; middle dra
     _ = try t.key("0");
     try std.testing.expect(t.ed.fitted);
     try std.testing.expect(t.ed.view.xf.scale < 1);
+}
+
+test "a click too far from the image adds nothing and says why" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("n");
+    t.ed.view = t.ed.view.panBy(5000, 0);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+    try std.testing.expect(std.mem.startsWith(u8, t.ed.toast().?, "Too far"));
 }
 
 test "callout drag then type" {

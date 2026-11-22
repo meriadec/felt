@@ -23,17 +23,33 @@ pub const pad = 16;
 pub const fill = color.white;
 
 /// A canvas grows at most this far past the kept rectangle on each side:
-/// the larger kept side, clamped to [min_reach, max_reach] (memory bound).
-const min_reach = 1024;
+/// the larger kept side, clamped to [min_reach, max_reach]. It bounds the
+/// memory of the export; min_reach covers a 4K screen around a small image
+/// at 1:1.
+const min_reach = 2048;
 const max_reach = 4096;
 
-fn limit(kept: Rect) Rect {
+/// How far the canvas can grow around `kept`.
+pub fn limit(kept: Rect) Rect {
     return kept.expand(std.math.clamp(@max(kept.width(), kept.height()), min_reach, max_reach));
+}
+
+/// The point (image px) is close enough to `kept` to draw there.
+pub fn reachable(kept: Rect, p: geom.Vec2) bool {
+    const l = limit(kept);
+    return p.x >= @as(f32, @floatFromInt(l.x0)) and p.y >= @as(f32, @floatFromInt(l.y0)) and
+        p.x < @as(f32, @floatFromInt(l.x1)) and p.y < @as(f32, @floatFromInt(l.y1));
+}
+
+/// The body of `a` touches the reach of `kept`: it can be added.
+pub fn fits(ctx: draw.Ctx, kept: Rect, a: Annotation) bool {
+    return draw.bodyBounds(ctx, a, .identity).intersects(limit(kept));
 }
 
 /// Clip of `a` made while `kept` was the kept rectangle.
 pub fn grow(ctx: draw.Ctx, kept: Rect, a: Annotation) Rect {
     const body = draw.bodyBounds(ctx, a, .identity);
+    if (!body.intersects(limit(kept))) return kept; // out of reach: never added
     const full = draw.bounds(ctx, a, .identity, .{});
     var r = kept;
     if (body.x0 < kept.x0) r.x0 = @min(r.x0, full.x0 - pad);
@@ -91,6 +107,10 @@ test "a shape grows the canvas only on the sides its body crosses" {
     _ = try doc.undo(gpa);
     try std.testing.expectEqual(img, canvas(ctx, &doc, 200, 100));
     // Far away: the reach limit bounds the canvas.
-    try doc.add(gpa, .{ .arrow = .{ .tail = .{ .x = 100, .y = 50 }, .head = .{ .x = -1e6, .y = 50 }, .width = 6, .color = red } });
+    const far = Annotation{ .arrow = .{ .tail = .{ .x = 100, .y = 50 }, .head = .{ .x = -1e6, .y = 50 }, .width = 6, .color = red } };
+    try std.testing.expect(fits(ctx, img, far));
+    try doc.add(gpa, far);
     try std.testing.expectEqual(@as(i32, -min_reach), canvas(ctx, &doc, 200, 100).x0);
+    try std.testing.expect(!fits(ctx, img, .{ .arrow = .{ .tail = .{ .x = 1e5, .y = 50 }, .head = .{ .x = 1e5 + 50, .y = 50 }, .width = 6, .color = red } }));
+    try std.testing.expect(!reachable(img, .{ .x = 0, .y = -3000 }));
 }
