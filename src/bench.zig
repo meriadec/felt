@@ -41,6 +41,12 @@ const Stats = struct {
     fn deinit(s: *Stats, gpa: std.mem.Allocator) void {
         s.samples.deinit(gpa);
     }
+    fn reportMin(s: *Stats, w: *std.Io.Writer, name: []const u8) !void {
+        const v = s.samples.items;
+        std.mem.sort(u64, v, {}, std.sort.asc(u64));
+        try w.print("{s:<26} min {d:>7.3} ms  median {d:>7.3}\n", .{ name, ms(v[0]), ms(v[v.len / 2]) });
+    }
+
     fn report(s: *Stats, w: *std.Io.Writer, name: []const u8) !void {
         const v = s.samples.items;
         std.mem.sort(u64, v, {}, std.sort.asc(u64));
@@ -51,6 +57,8 @@ const Stats = struct {
         });
     }
 };
+
+const startup_runs = 7;
 
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
@@ -69,20 +77,38 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         break :blk try core.image_io.encodePng(gpa, &syn);
     };
     defer gpa.free(png);
-    _ = t.lap();
-    const image = try core.image_io.decode(gpa, png);
-    const t_decode = t.lap();
-    try w.print("image {d}x{d} ({d} KiB PNG), screen {d}x{d}, optimize {s}\n\n", .{ image.width, image.height, png.len / 1024, opts.size[0], opts.size[1], @tagName(@import("builtin").mode) });
-    try w.print("{s:<26} {d:>7.3} ms\n", .{ "decode PNG", ms(t_decode) });
-
-    const app = try App.create(gpa, image, opts.size[0], opts.size[1], .{ .output_path = null, .clipboard = .none });
+    // Startup, repeated: desktop timings are noisy, so report min and median.
+    var dec = Stats{};
+    defer dec.deinit(gpa);
+    var ini = Stats{};
+    defer ini.deinit(gpa);
+    var first = Stats{};
+    defer first.deinit(gpa);
+    var total = Stats{};
+    defer total.deinit(gpa);
+    var app: *App = undefined;
+    for (0..startup_runs) |run_i| {
+        t.reset();
+        const image = try core.image_io.decode(gpa, png);
+        const t_decode = t.lap();
+        app = try App.create(gpa, image, opts.size[0], opts.size[1], .{ .output_path = null, .clipboard = .none });
+        const t_create = t.lap();
+        _ = try app.render();
+        const t_first = t.lap();
+        try dec.add(gpa, t_decode);
+        try ini.add(gpa, t_create);
+        try first.add(gpa, t_first);
+        try total.add(gpa, t_decode + t_create + t_first);
+        if (run_i + 1 < startup_runs) app.destroy(); // keep the last one
+    }
     defer app.destroy();
-    const t_create = t.lap();
-    try w.print("{s:<26} {d:>7.3} ms\n", .{ "app init (font, view)", ms(t_create) });
-    _ = try app.render();
-    const t_first = t.lap();
-    try w.print("{s:<26} {d:>7.3} ms\n", .{ "first frame render", ms(t_first) });
-    try w.print("{s:<26} {d:>7.3} ms\n\n", .{ "startup total", ms(t_decode + t_create + t_first) });
+    try w.print("image {d}x{d} ({d} KiB PNG), screen {d}x{d}, optimize {s}\n", .{ app.image.width, app.image.height, png.len / 1024, opts.size[0], opts.size[1], @tagName(@import("builtin").mode) });
+    try w.print("startup x{d}: min / median (desktop noise is +-30%: compare mins)\n\n", .{startup_runs});
+    try dec.reportMin(w, "decode PNG");
+    try ini.reportMin(w, "app init (font, view)");
+    try first.reportMin(w, "first frame render");
+    try total.reportMin(w, "startup total");
+    try w.writeAll("\n");
 
     const W: f32 = @floatFromInt(opts.size[0]);
     const H: f32 = @floatFromInt(opts.size[1]);
