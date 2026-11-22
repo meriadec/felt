@@ -26,3 +26,4 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-22: `perf record` is not allowed (perf_event_paranoid), no sudo. Profile with micro-benchmarks or timers instead; open.
 - 2026-11-22: `-Dupdate-goldens=true` rewrote every golden after an encoder change (same pixels). Fix: rewrite only on a pixel change.
 - 2026-11-23: checking the chrome at 1080p and 4K took ad hoc `--headless --size` commands. Fix: `zig build shot -Dsize=WxH`.
+- 2026-11-23: a zoom crop written to a reused /tmp path showed an old unrelated image in the agent's image reader. Fix: docs/testing.md writes zooms under test-out/ with a new name and `+repage`.

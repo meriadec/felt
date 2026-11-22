@@ -27,10 +27,11 @@ chrome scales with the screen height, so check it at real sizes too:
 zig build shot -Dscript=help -Dsize=3840x2160   # test-out/shots/help.3840x2160.frame.png
 ```
 
-To check anti-aliasing, zoom a crop:
+To check anti-aliasing, zoom a crop. Write it under test-out/ with a new name
+each time (an image viewer may cache a reused path), and `+repage`:
 
 ```sh
-convert test-out/shots/arrow.export.png -crop 140x120+740+380 -filter point -resize 400% /tmp/zoom.png
+convert test-out/shots/arrow.export.png -crop 140x120+740+380 +repage -filter point -resize 400% test-out/zoom-arrow-1.png
 ```
 
 Ad hoc, without a script file:
