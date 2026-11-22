@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # X11 smoke test on a real display (needs DISPLAY, xdotool, ImageMagick `import`).
 # Opens annotate on a copy of the fixture, draws an arrow, two numbers and a
-# text with xdotool, captures the window, saves with Ctrl+S, quits with Esc,
-# then checks the saved PNG. Run through `zig build smoke-x11`.
+# text with xdotool, zooms out (Ctrl+wheel), pans (middle drag), drops a
+# number past the image edge, captures the window, saves with Ctrl+S, quits
+# with Esc, then checks the saved PNG: the canvas grew to the right. Run through `zig build smoke-x11`.
 # Takes about 3 s and grabs the pointer and the screen meanwhile.
 set -euo pipefail
 bin=${1:-zig-out/bin/annotate}
@@ -37,18 +38,24 @@ xdotool key n mousemove $((cx + 100)) $((cy - 100)) click 1 mousemove $((cx + 20
 xdotool key t mousemove $((cx - 250)) $((cy + 200)) click 1
 xdotool type --delay 5 "x11 smoke"
 xdotool key Return
+xdotool mousemove --sync $cx $cy keydown ctrl click 5 keyup ctrl
+xdotool mousedown 2 mousemove $((cx + 50)) $((cy + 25)) mousemove $((cx + 100)) $((cy + 50)) mouseup 2
+xdotool key n mousemove $((cx + 700)) $cy click 1
 sleep 0.3
 import -window "$wid" "$out/window.png"
 xdotool key ctrl+s
-sleep 0.5
+for _ in $(seq 50); do [ -s "$out/saved.png" ] && break; sleep 0.1; done
+sleep 0.2
 xdotool key Escape
 for _ in $(seq 30); do kill -0 $pid 2>/dev/null || break; sleep 0.1; done
 if kill -0 $pid 2>/dev/null; then echo "x11-smoke: annotate did not quit on Esc after save" >&2; exit 1; fi
 trap - EXIT
 
 [ -f "$out/saved.png" ] || { echo "x11-smoke: Ctrl+S wrote nothing" >&2; exit 1; }
-want=$(identify -format '%wx%h' "$out/input.png")
-got=$(identify -format '%wx%h' "$out/saved.png")
-[ "$want" = "$got" ] || { echo "x11-smoke: saved $got, expected $want" >&2; exit 1; }
+want=$(identify -format '%w %h' "$out/input.png")
+got=$(identify -format '%w %h' "$out/saved.png")
+read -r ww wh <<<"$want"
+read -r gw gh <<<"$got"
+[ "$gw" -gt "$ww" ] && [ "$gh" -eq "$wh" ] || { echo "x11-smoke: saved ${gw}x${gh}, expected wider than ${ww}x${wh} (number past the right edge)" >&2; exit 1; }
 cat "$out/log.txt"
 echo "x11-smoke: OK. Look at $out/window.png (screen) and $out/saved.png (export)."
