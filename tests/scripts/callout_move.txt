@@ -1,7 +1,8 @@
 # Move a stairs callout (move tool): drag its box, the tip stays on its
 # target and the elbow re-routes; drag its tip down; undo and redo the tip
-# move. The pointer rests on the pointer's middle segment: the outline
-# follows the elbow and the box, the tip handle shows.
+# move. The pointer rests on the bend handle in the middle of the
+# pointer's middle segment: a thin outline follows the elbow and the box,
+# the tip handle shows, the bend handle is active.
 size 900 500
 key c c
 drag 150 100 500 250

@@ -62,8 +62,10 @@ pub const Annotation = union(enum) {
         if (self.ownedText()) |t| gpa.free(t);
     }
 
-    /// The annotation with `part` shifted by `d` (image px). It shares the text.
+    /// The annotation with `part` shifted by `d` (image px). It shares the
+    /// text. The bend is no shift (the editor sets the elbow).
     pub fn moved(self: Annotation, part: Part, d: Vec2) Annotation {
+        if (part == .bend) return self;
         var a = self;
         switch (a) {
             .arrow => |*x| {
@@ -89,11 +91,24 @@ pub const Annotation = union(enum) {
         }
         return a;
     }
+
+    /// The annotation with the elbow `e` on its arrow path (an arrow or a
+    /// callout); others unchanged.
+    pub fn withElbow(self: Annotation, e: Elbow) Annotation {
+        var a = self;
+        switch (a) {
+            .arrow => |*x| x.elbow = e,
+            .callout => |*x| x.elbow = e,
+            else => {},
+        }
+        return a;
+    }
 };
 
 /// What a move drags: the whole annotation (a callout: its box), one end of
-/// an arrow, or the tip of a callout pointer.
-pub const Part = enum { whole, tail, head, tip };
+/// an arrow, the tip of a callout pointer, or the bend (the middle segment
+/// of a stairs path: it pins the elbow).
+pub const Part = enum { whole, tail, head, tip, bend };
 
 test "moved shifts the dragged part only" {
     const c = Color{ .r = 0, .g = 0, .b = 0 };

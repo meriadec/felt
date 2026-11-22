@@ -467,6 +467,8 @@ const Outline = struct {
     /// Screen px at 1080p to screen px.
     ui: f32,
     rect: Rect,
+    /// The bend handle on the middle segment of a stairs path (screen px).
+    bend: ?geom.Vec2,
 
     const line = color.nord.n8;
     const handle_edge = color.nord.n0;
@@ -475,8 +477,8 @@ const Outline = struct {
         const g = ed.outlined() orelse return null;
         const a = doc.items.items[g.index];
         const ui = @import("style.zig").uiScale(ed.view.screen_h);
-        var o = Outline{ .ann = a, .part = g.part, .ui = ui, .rect = draw.outlineBounds(ctx, a, ed.view.xf, lineStyle(ui, g.part)) };
-        var hs: [2]?geom.Vec2 = undefined;
+        var o = Outline{ .ann = a, .part = g.part, .ui = ui, .rect = draw.outlineBounds(ctx, a, ed.view.xf, lineStyle(ui, g.part)), .bend = ed.bendHandle(a) };
+        var hs: [3]?geom.Vec2 = undefined;
         for (o.handles(ed.view.xf, &hs)) |h| if (h) |c| {
             o.rect = o.rect.unite((geom.Bounds{ .min = c, .max = c }).expand(o.handleR(true) + 2).toRect());
         };
@@ -491,11 +493,15 @@ const Outline = struct {
         return (if (active) @as(f32, 6) else 4.5) * o.ui;
     }
 
-    /// Screen points of the handles: arrow tail and head, callout tip.
-    fn handles(o: Outline, xf: geom.Xform, out: *[2]?geom.Vec2) []const ?geom.Vec2 {
-        out.* = .{ null, null };
+    /// Screen points of the handles: arrow tail and head, callout tip, the
+    /// bend of a stairs path.
+    fn handles(o: Outline, xf: geom.Xform, out: *[3]?geom.Vec2) []const ?geom.Vec2 {
+        out.* = .{ null, null, o.bend };
         switch (o.ann) {
-            .arrow => |a| out.* = .{ xf.apply(a.tail), xf.apply(a.head) },
+            .arrow => |a| {
+                out[0] = xf.apply(a.tail);
+                out[1] = xf.apply(a.head);
+            },
             .callout => |c| if (c.target) |t| {
                 out[0] = xf.apply(t);
             },
@@ -507,11 +513,12 @@ const Outline = struct {
     fn paint(o: Outline, ctx: draw.Ctx, cv: *Canvas, r: Rect, xf: geom.Xform) void {
         if (!o.rect.intersects(r)) return;
         draw.outline(ctx, cv, r, o.ann, xf, lineStyle(o.ui, o.part));
-        var hs: [2]?geom.Vec2 = undefined;
+        var hs: [3]?geom.Vec2 = undefined;
         for (o.handles(xf, &hs), 0..) |h, i| if (h) |c| {
             const active = switch (o.part) {
                 .tail, .tip => i == 0,
                 .head => i == 1,
+                .bend => i == 2,
                 .whole => false,
             };
             const disc = sdf.Disc{ .c = c, .r = o.handleR(active) };

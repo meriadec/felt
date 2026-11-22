@@ -209,6 +209,7 @@ pub const Editor = struct {
                 },
                 else => {},
             }
+            if (self.bendHandle(a)) |b| if (p.dist(b) <= hr) return .{ .index = i, .part = .bend };
             if (draw.hitDist(self.ctx(), a, xf, p) <= tol) return .{ .index = i, .part = .whole };
         }
         return null;
@@ -229,6 +230,31 @@ pub const Editor = struct {
         return !std.meta.eql(before, self.hover);
     }
 
+    /// The bend handle of `a` on screen: the middle of the middle segment
+    /// of its stairs path, when that segment is long enough to grab apart
+    /// from the rest. Dragging it pins the elbow (`bentTo`).
+    pub fn bendHandle(self: *const Editor, a: Annotation) ?Vec2 {
+        const ar = draw.stairsArrow(a) orelse return null;
+        const p = draw.stairsPlan(ar, self.view.xf) orelse return null;
+        if (p.rt.rise < 3 * handle_radius * style.uiScale(self.view.screen_h)) return null;
+        return p.rt.c1.add(p.rt.c2).scale(0.5);
+    }
+
+    /// `a` with the middle segment of its stairs path through image point
+    /// `ip` (along the first axis, inside the room for full corners), its
+    /// elbow pinned. Within a handle radius of the midpoint it snaps back
+    /// to the default and auto-routes again.
+    fn bentTo(self: *const Editor, a: Annotation, ip: Vec2) Annotation {
+        const ar = draw.stairsArrow(a) orelse return a;
+        const p = draw.stairsPlan(ar, .identity) orelse return a;
+        const span = p.rt.span();
+        const raw = ip.sub(p.rt.t).dot(p.rt.u) / span;
+        const snap = handle_radius * style.uiScale(self.view.screen_h) / self.view.xf.scale;
+        if (@abs(raw - 0.5) * span <= snap) return a.withElbow(.{});
+        const r = draw.elbowRange(ar, p.flip) orelse [2]f32{ 0.5, 0.5 };
+        return a.withElbow(.{ .at = std.math.clamp(raw, r[0], r[1]), .flip = p.flip, .pinned = true });
+    }
+
     /// `a` (not in the document) with its stairs path routed around the
     /// annotations of the document (route.zig).
     fn routed(self: *const Editor, a: Annotation) Annotation {
@@ -236,12 +262,15 @@ pub const Editor = struct {
     }
 
     /// Move the grabbed part to follow the pointer at image point `ip`; a
-    /// moved stairs path re-routes around the others.
+    /// moved stairs path re-routes around the others, a dragged bend pins.
     /// A position that would hide the annotation (past the reach, or out of
     /// a later crop) is skipped: the annotation stays at the last good one.
     fn moveTo(self: *Editor, ip: Vec2) void {
         const m = self.mode.moving;
-        const a = route.best(self.ctx(), self.doc.items.items, m.grab.index, m.before.moved(m.grab.part, ip.sub(m.start)));
+        const a = if (m.grab.part == .bend)
+            self.bentTo(m.before, ip)
+        else
+            route.best(self.ctx(), self.doc.items.items, m.grab.index, m.before.moved(m.grab.part, ip.sub(m.start)));
         if (!extent.showsAs(self.ctx(), self.doc, self.image_w, self.image_h, m.grab.index, a)) return;
         if (std.meta.eql(a, self.doc.items.items[m.grab.index])) return;
         self.doc.setLive(m.grab.index, a);
@@ -258,6 +287,11 @@ pub const Editor = struct {
         const n = self.settle(i, m.before, &changed);
         const step = try self.doc.commitMove(self.gpa, i, m.before);
         try self.commitRerouted(changed[0..n], i, step);
+        if (m.grab.part == .bend) {
+            if (draw.stairsArrow(self.doc.items.items[i])) |ar| {
+                if (ar.elbow.pinned) self.setToast("Bend pinned. Drag it back to the middle: auto again.", .{}) else self.setToast("Bend: auto", .{});
+            }
+        }
     }
 
     /// Re-route the auto stairs paths around annotation `i`, just added or
@@ -1112,7 +1146,8 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     try t.drag(10, 10, 190, 90); // right along y 10 to x 100, down to y 90, right to x 190
     _ = try t.key("m");
     try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 50, .y = 10 }).?);
-    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 100, .y = 50 }).?);
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 100, .y = 30 }).?);
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .bend }, t.ed.grabAt(.{ .x = 100, .y = 50 }).?); // the middle: the bend handle
     try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 55, .y = 30 })); // the straight line
     try std.testing.expectEqual(Grab{ .index = 0, .part = .head }, t.ed.grabAt(.{ .x = 188, .y = 89 }).?);
     // The head alone: the path re-routes, the style stays.
@@ -1191,7 +1226,8 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     _ = try t.key("H");
     _ = try t.key("enter");
     _ = try t.key("m");
-    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 80, .y = 40 }).?); // middle segment
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 80, .y = 25 }).?); // middle segment
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .bend }, t.ed.grabAt(.{ .x = 80, .y = 40 }).?); // its middle
     try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 120, .y = 70 }).?); // first segment
     try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 115, .y = 52 })); // the straight line
     try std.testing.expectEqual(Grab{ .index = 0, .part = .tip }, t.ed.grabAt(.{ .x = 11, .y = 11 }).?);
@@ -1259,4 +1295,41 @@ test "a commit re-routes the stairs paths around it in the same undo step; undo 
     _ = try t.key("ctrl+z");
     try std.testing.expectEqual(moved, t.doc.items.items[0].arrow);
     try std.testing.expectEqual(@as(f32, 120), t.doc.items.items[1].arrow.head.x);
+}
+
+test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back to the middle frees it" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("a"); // stairs
+    try t.drag(10, 10, 190, 90); // the middle segment at x 100, its handle at (100, 50)
+    _ = try t.key("m");
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 100, .y = 50 } });
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .bend }, t.ed.outlined().?);
+    try t.drag(100, 50, 60, 70);
+    var a = t.doc.items.items[0].arrow;
+    try std.testing.expect(a.elbow.pinned);
+    try std.testing.expectApproxEqAbs(@as(f32, 50.0 / 180.0), a.elbow.at, 1e-4);
+    try std.testing.expectEqual(Vec2.init(10, 10), a.tail); // the ends stay
+    try std.testing.expectEqual(Vec2.init(190, 90), a.head);
+    try std.testing.expect(std.mem.startsWith(u8, t.ed.toast().?, "Bend pinned"));
+    try std.testing.expect(draw.hitDist(t.ed.ctx(), t.doc.items.items[0], t.ed.view.xf, .{ .x = 60, .y = 50 }) < 0);
+    // A straight arrow across the pinned middle segment: it stays.
+    _ = try t.key("a");
+    _ = try t.key("a"); // straight
+    try t.drag(50, 30, 75, 30);
+    try std.testing.expectEqual(a, t.doc.items.items[0].arrow);
+    // Undo the pin: the elbow is auto again.
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
+    _ = try t.key("ctrl+y");
+    _ = try t.key("ctrl+y");
+    // The bend back to the middle: auto, and it routes off the straight arrow.
+    _ = try t.key("m");
+    try t.drag(60, 50, 101, 50);
+    a = t.doc.items.items[0].arrow;
+    try std.testing.expect(!a.elbow.pinned);
+    try std.testing.expect(a.elbow.at > (75.0 - 10.0) / 180.0);
+    try std.testing.expectEqualStrings("Bend: auto", t.ed.toast().?);
 }

@@ -248,7 +248,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     try reportProf(w, app.comp.prof, n_moves + 1);
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
 
-    // Move tool: drag a long stairs arrow by its middle segment among 32
+    // Move tool: drag a long stairs arrow by its first segment among 32
     // annotations. The repaint covers its segments and corners only.
     var mvs = Stats{};
     defer mvs.deinit(gpa);
@@ -261,18 +261,18 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.75, .y = H * 0.4 } });
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
     _ = try app.render();
-    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.45, .y = H * 0.3 } });
-    if (app.editor.mode != .moving) return error.BenchMoveMissedTheStairsArrow;
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.25, .y = H * 0.2 } });
+    if (app.editor.mode != .moving or app.editor.mode.moving.grab.part != .whole) return error.BenchMoveMissedTheStairsArrow;
     app.comp.prof = .{};
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
-        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.45 + 0.1 * f), .y = H * (0.3 + 0.1 * f) } });
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.25 + 0.1 * f), .y = H * (0.2 + 0.1 * f) } });
         t.reset();
         const d = try app.render();
         try mvs.add(gpa, t.read());
         damage_px += d.area();
     }
-    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.55, .y = H * 0.4 } });
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.35, .y = H * 0.3 } });
     _ = try app.render();
     try mvs.report(w, "frame: move drag (stairs)");
     try reportProf(w, app.comp.prof, n_moves + 1);

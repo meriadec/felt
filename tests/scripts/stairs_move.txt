@@ -1,11 +1,12 @@
 # Move a stairs arrow (move tool): drag its head, the elbow re-routes; drag
-# its body by the middle segment, both ends follow; undo the body move.
-# The pointer rests on the middle segment: the outline follows the elbow.
+# its body by the middle segment (above its bend handle), both ends
+# follow; undo the body move. The pointer rests on the middle segment
+# near the bend handle: the outline follows the elbow, the three handles show.
 size 900 500
 key a
 drag 150 100 600 300
 key m
 drag 600 300 700 380
-drag 425 240 385 200
+drag 425 160 385 120
 key ctrl+z
 move 425 250
