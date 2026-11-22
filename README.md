@@ -27,7 +27,10 @@ The image fits the screen (never upscaled). A small icon dock at the bottom
 center shows the tools (each with its key letter), the colors and the size;
 click it or use the keys. Tab and Shift+Tab cycle the tools. Space hides or
 shows the dock; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
-drag; undo restores it. The UI and the default sizes scale with the screen
+drag; undo restores it. Draw past the image edge and the canvas grows white
+to hold the shape (the saved PNG too); undo shrinks it back. Around a
+full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
+middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
 height (2x at 4K). Esc quits; with unsaved changes, press Esc twice. Ctrl+C
 counts as saved, because xclip keeps the image in the clipboard after annotate
 exits.

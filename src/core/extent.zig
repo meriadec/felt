@@ -7,6 +7,7 @@
 //! touches the edge. The canvas is the union of the kept rectangle and these
 //! clips. Canvas areas outside the image are `fill` (white), on screen and in
 //! the export. Clips never change once made, so the compositor can append.
+//! The canvas grows at most to `limit`; the editor refuses shapes beyond it.
 const std = @import("std");
 const geom = @import("geom.zig");
 const draw = @import("draw.zig");

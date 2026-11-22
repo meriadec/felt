@@ -79,6 +79,9 @@ image files. Build: `coreModule` in build.zig.
   px). Canvas outside the image is white, on screen and in the export. Each
   annotation draws only inside its own clip (`extent.itemClip`), which never
   changes after it is made, so appending to the scene equals a repaint.
+  The canvas grows at most `extent.limit` past the kept rectangle (2048 to
+  4096 px a side, a memory bound); the editor refuses a shape out of reach
+  with a toast.
 - A crop never touches the image or the annotations: `Document.crops` is a
   stack of kept rectangles, each with the number of annotations it clips.
   A crop may keep white canvas. Undo pops it. The view refits when the kept
