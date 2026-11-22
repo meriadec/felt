@@ -6,7 +6,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
-| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again changes it for new arrows, for the rest of the session. |
+| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows, for the rest of the session. |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
@@ -60,7 +60,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Middle drag | Pan the view |
 | Drawing past the image | The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
-| Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help |
+| Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow tool, the switch above the dock picks the arrow style |
 | Click on the top bar | Undo or redo (a dim button has nothing to do) |
 | Esc or q while drawing | Cancel the shape in progress |
 | Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |

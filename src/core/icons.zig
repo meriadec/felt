@@ -8,6 +8,8 @@ const raster = @import("raster.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Color = @import("color.zig").Color;
 const Tool = @import("keymap.zig").Tool;
+const ArrowStyle = @import("annotation.zig").ArrowStyle;
+const stairs = @import("stairs.zig");
 
 const Vec2 = geom.Vec2;
 const Rect = geom.Rect;
@@ -100,6 +102,21 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
     }
 }
 
+/// An arrow style: the arrow tool icon, or a stairs arrow (elbow with
+/// round corners, the real stairs path).
+pub fn drawArrowStyle(cv: *Canvas, clip: Rect, st: ArrowStyle, c: Vec2, size: f32, color: Color) void {
+    switch (st) {
+        .straight => draw(cv, clip, .arrow, c, size, color),
+        .stairs => {
+            const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) };
+            const head = 0.62 * pen.k;
+            const rt = stairs.Route.of(pen.p(-0.9, 0.8), pen.p(0.95, -0.55));
+            pen.fill(stairs.Path.init(rt, head * 0.5, head, 0.4 * pen.k, pen.w * 0.5), 1);
+            pen.fill(pen.tri(.{ 0.95, -0.55 }, .{ 0.33, -0.95 }, .{ 0.33, -0.15 }), 1);
+        },
+    }
+}
+
 /// Undo (curved arrow to the left) or, with `redo`, its mirror.
 pub fn drawUndo(cv: *Canvas, clip: Rect, redo: bool, c: Vec2, size: f32, color: Color) void {
     const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11), .sx = if (redo) -1 else 1 };
@@ -126,6 +143,16 @@ test "every icon draws inside its box" {
             const x = i % 40;
             const y = i / 40;
             try std.testing.expect(x >= 6 and x < 34 and y >= 6 and y < 34);
+        };
+        try std.testing.expect(ink > 20);
+    }
+    for ([_]ArrowStyle{ .straight, .stairs }) |st| {
+        cv.fill(.{ .r = 0, .g = 0, .b = 0 });
+        drawArrowStyle(&cv, cv.bounds(), st, .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
+        var ink: usize = 0;
+        for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
+            ink += 1;
+            try std.testing.expect(i % 40 >= 6 and i % 40 < 34 and i / 40 >= 6 and i / 40 < 34);
         };
         try std.testing.expect(ink > 20);
     }

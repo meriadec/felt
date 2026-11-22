@@ -33,7 +33,7 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
     for (script.events.items) |step| switch (step) {
         .event => |ev| if (try feed(app, ev)) break,
         .ui => |t| {
-            const p = uiPoint(app, t);
+            const p = try uiPoint(app, t);
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },
@@ -48,11 +48,11 @@ fn feed(app: *App, ev: core.input.Event) !bool {
     return r.quit;
 }
 
-/// Screen center of a chrome item at the current screen size.
-fn uiPoint(app: *App, t: script_mod.UiTarget) core.geom.Vec2 {
+/// Screen center of a chrome item at the current screen size and tool.
+fn uiPoint(app: *App, t: script_mod.UiTarget) !core.geom.Vec2 {
     const w = app.editor.view.screen_w;
     const h = app.editor.view.screen_h;
-    const d = core.dock.Dock.of(w, h);
+    const d = core.dock.Dock.of(w, h, app.editor.tool);
     const bar = core.topbar.TopBar.of(w, h);
     const mid = struct {
         fn f(b: core.geom.Bounds) core.geom.Vec2 {
@@ -68,6 +68,16 @@ fn uiPoint(app: *App, t: script_mod.UiTarget) core.geom.Vec2 {
         .help => mid(d.help),
         .undo => mid(bar.slots[0]),
         .redo => mid(bar.slots[1]),
+        .arrow_style => |want| {
+            if (d.switch_panel == null) {
+                std.log.err("script: ui arrow-style: the switch shows only with the arrow tool", .{});
+                return error.UiItemHidden;
+            }
+            const cur = app.editor.arrow_style;
+            const st = want orelse (if (cur == .straight) core.annotation.ArrowStyle.stairs else .straight);
+            for (core.dock.arrow_styles, d.styles) |s, b| if (s == st) return mid(b);
+            unreachable;
+        },
     };
 }
 

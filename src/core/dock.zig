@@ -1,12 +1,15 @@
 //! Dock geometry: the floating tool bar at the bottom center. One slot per
 //! tool (in key map order), the color swatches, the size slot and the help
-//! button. Pure layout from the screen size, no font: chrome.zig draws it and
-//! the editor hit-tests clicks with the same numbers.
+//! button. With the arrow tool active, a small switch floats above the
+//! dock's left end, over the arrow slot: one slot per arrow style. Pure
+//! layout from the screen size and the tool, no font: chrome.zig draws it
+//! and the editor hit-tests clicks with the same numbers.
 const std = @import("std");
 const geom = @import("geom.zig");
 const keymap = @import("keymap.zig");
 const color = @import("color.zig");
 const style = @import("style.zig");
+const ArrowStyle = @import("annotation.zig").ArrowStyle;
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -16,7 +19,11 @@ pub const Hit = union(enum) {
     color: u8,
     size,
     help,
+    arrow_style: ArrowStyle,
 };
+
+/// The styles in the switch, left to right.
+pub const arrow_styles = [_]ArrowStyle{ .straight, .stairs };
 
 const n_tools: comptime_int = keymap.tools.len;
 const n_colors: comptime_int = color.palette.len;
@@ -29,6 +36,10 @@ const sep_w = 17.0;
 const swatch_pitch = 22.0;
 const help_w = 34.0;
 const margin = 14.0;
+// Arrow style switch.
+const sw_slot = 32.0;
+const sw_pad = 4.0;
+const sw_gap = 6.0;
 
 pub const Dock = struct {
     /// Px per 1080p px (the UI scale, shrunk if the screen is too narrow).
@@ -41,12 +52,16 @@ pub const Dock = struct {
     help: Bounds,
     /// x of the two separator lines.
     seps: [2]f32,
+    /// The arrow style switch panel (null: another tool is active).
+    switch_panel: ?Bounds,
+    styles: [arrow_styles.len]Bounds,
 
     fn naturalWidth() f32 {
         return 2 * pad + n_tools * slot + (n_tools - 1) * slot_gap + sep_w + n_colors * swatch_pitch + sep_w + slot + slot_gap + help_w;
     }
 
-    pub fn of(w: u32, h: u32) Dock {
+    /// The dock on a w x h screen while `tool` is active.
+    pub fn of(w: u32, h: u32, tool: keymap.Tool) Dock {
         const W: f32 = @floatFromInt(w);
         const H: f32 = @floatFromInt(h);
         var s = style.uiScale(h);
@@ -80,11 +95,25 @@ pub const Dock = struct {
         d.size = .{ .min = .{ .x = x, .y = top }, .max = .{ .x = x + slot * s, .y = top + slot * s } };
         x += (slot + slot_gap) * s;
         d.help = .{ .min = .{ .x = x, .y = top + (slot - help_w) * s / 2 }, .max = .{ .x = x + help_w * s, .y = top + (slot + help_w) * s / 2 } };
+
+        const sw_n: f32 = arrow_styles.len;
+        const sy1 = y0 - sw_gap * s;
+        const sy0 = sy1 - (sw_slot + 2 * sw_pad) * s;
+        d.switch_panel = if (tool == .arrow) .{ .min = .{ .x = x0, .y = sy0 }, .max = .{ .x = x0 + (2 * sw_pad + sw_n * sw_slot + (sw_n - 1) * slot_gap) * s, .y = sy1 } } else null;
+        var sx = x0 + sw_pad * s;
+        for (&d.styles) |*b| {
+            b.* = .{ .min = .{ .x = sx, .y = sy0 + sw_pad * s }, .max = .{ .x = sx + sw_slot * s, .y = sy1 - sw_pad * s } };
+            sx += (sw_slot + slot_gap) * s;
+        }
         return d;
     }
 
     /// What a click at `p` hits, or null outside the dock.
     pub fn hit(d: *const Dock, p: Vec2) ?Hit {
+        if (d.switch_panel) |sp| if (inside(sp, p)) {
+            for (d.styles, arrow_styles) |b, st| if (inside(b, p)) return .{ .arrow_style = st };
+            return null;
+        };
         if (!inside(d.panel, p)) return null;
         for (d.tools, 0..) |b, i| if (inside(b, p)) return .{ .tool = keymap.tools[i].tool };
         for (d.swatches, 0..) |c, i| if (p.dist(c) <= swatch_pitch * d.s / 2) return .{ .color = @intCast(i) };
@@ -93,8 +122,9 @@ pub const Dock = struct {
         return null;
     }
 
-    /// True if `p` is on the dock panel (clicks there never draw).
+    /// True if `p` is on the dock panel or the style switch (clicks there never draw).
     pub fn contains(d: *const Dock, p: Vec2) bool {
+        if (d.switch_panel) |sp| if (inside(sp, p)) return true;
         return inside(d.panel, p);
     }
 };
@@ -104,7 +134,7 @@ fn inside(b: Bounds, p: Vec2) bool {
 }
 
 test "dock is centered at the bottom and hit-tests its slots" {
-    const d = Dock.of(1920, 1080);
+    const d = Dock.of(1920, 1080, .rect);
     try std.testing.expectEqual(@as(f32, 1), d.s);
     try std.testing.expectApproxEqAbs(1920 - d.panel.max.x, d.panel.min.x, 1);
     try std.testing.expect(d.panel.max.y < 1080);
@@ -114,7 +144,23 @@ test "dock is centered at the bottom and hit-tests its slots" {
     try std.testing.expectEqual(Hit.help, d.hit(d.help.min.add(d.help.max).scale(0.5)).?);
     try std.testing.expectEqual(@as(?Hit, null), d.hit(.{ .x = 10, .y = 10 }));
     // 4K: twice as big. Narrow screen: shrunk to fit.
-    try std.testing.expectEqual(@as(f32, 2), Dock.of(3840, 2160).s);
-    const narrow = Dock.of(300, 1080);
+    try std.testing.expectEqual(@as(f32, 2), Dock.of(3840, 2160, .rect).s);
+    const narrow = Dock.of(300, 1080, .rect);
     try std.testing.expect(narrow.panel.min.x >= 0 and narrow.panel.max.x <= 300);
+}
+
+test "the arrow style switch shows above the dock with the arrow tool only" {
+    const other = Dock.of(1920, 1080, .rect);
+    try std.testing.expectEqual(@as(?Bounds, null), other.switch_panel);
+    const d = Dock.of(1920, 1080, .arrow);
+    const sp = d.switch_panel.?;
+    try std.testing.expect(sp.max.y < d.panel.min.y);
+    try std.testing.expectEqual(d.panel.min.x, sp.min.x);
+    for (d.styles, arrow_styles) |b, st| {
+        const c = b.min.add(b.max).scale(0.5);
+        try std.testing.expectEqual(Hit{ .arrow_style = st }, d.hit(c).?);
+        try std.testing.expect(d.contains(c));
+        try std.testing.expectEqual(@as(?Hit, null), other.hit(c));
+        try std.testing.expect(!other.contains(c));
+    }
 }

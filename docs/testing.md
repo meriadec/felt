@@ -74,7 +74,7 @@ One command per line, screen coordinates, `#` starts a comment.
 | `move X Y` | Pointer motion |
 | `drag X0 Y0 X1 Y1 [steps]` | Press, `steps` moves (default 8), release |
 | `wheel up\|down [n] [at X Y] [ctrl]` | Wheel steps at a point (size; with `ctrl`: zoom about the point) |
-| `ui tool NAME`, `ui color N`, `ui size`, `ui help`, `ui undo`, `ui redo` | Click a dock or top bar item at its place for the screen size (scripts survive layout changes) |
+| `ui tool NAME`, `ui color N`, `ui size`, `ui help`, `ui undo`, `ui redo`, `ui arrow-style [straight\|stairs]` | Click a dock or top bar item at its place for the screen size (scripts survive layout changes). `arrow-style` with no name clicks the style not in use; the switch shows only with the arrow tool |
 | `resize W H` | Window resize |
 
 The replay renders after each event that asks for a redraw, like the X11

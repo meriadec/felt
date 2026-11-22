@@ -172,7 +172,7 @@ pub const Editor = struct {
         if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.panning != null) return .{};
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return .{ .dock = Dock.of(w, h).hit(p), .bar = TopBar.of(w, h).hit(p) };
+        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p) };
     }
 
     /// The annotation part a press at screen point `p` would move: the
@@ -250,7 +250,7 @@ pub const Editor = struct {
         if (!self.dock_visible) return false;
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return Dock.of(w, h).contains(p) or TopBar.of(w, h).contains(p);
+        return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p);
     }
 
     pub fn dirty(self: *const Editor) bool {
@@ -445,8 +445,9 @@ pub const Editor = struct {
         self.pointer = p;
         if (self.mode != .drag and self.mode != .moving and self.onChrome(p)) {
             if (button == .left) {
-                if (Dock.of(self.view.screen_w, self.view.screen_h).hit(p)) |h| switch (h) {
+                if (Dock.of(self.view.screen_w, self.view.screen_h, self.tool).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
+                    .arrow_style => |st| self.setArrowStyle(st),
                     .color => |i| self.color_idx = i,
                     .size => self.size_idx = @intCast((@as(usize, self.size_idx) + 1) % style.sizes.len),
                     .help => self.help_visible = true,
@@ -809,7 +810,7 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     defer t.deinit();
     t.ed.resize(1920, 1080);
     t.ed.dock_visible = true;
-    const d = Dock.of(1920, 1080);
+    const d = Dock.of(1920, 1080, t.ed.tool);
     const tb = d.tools[2];
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
@@ -1019,4 +1020,26 @@ test "a again switches the arrow style of new arrows, for the session; an arrow 
     _ = try t.key("ctrl+z");
     _ = try t.key("ctrl+y");
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
+}
+
+test "the arrow style switch above the dock: a click picks a style; with another tool it is not there" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.resize(1920, 1080);
+    t.ed.dock_visible = true;
+    const d = Dock.of(1920, 1080, .arrow);
+    const c = d.styles[1].min.add(d.styles[1].max).scale(0.5);
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = c.x, .y = c.y } });
+    try std.testing.expectEqual(@import("dock.zig").Hit{ .arrow_style = .stairs }, t.ed.chromeHover().dock.?);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = c.x, .y = c.y } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = c.x, .y = c.y } });
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    try std.testing.expectEqualStrings("Arrow: stairs", t.ed.toast().?);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+    // Another tool: no switch, a drag there draws.
+    _ = try t.key("r");
+    try t.drag(c.x - 30, c.y - 30, c.x + 30, c.y + 30);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
 }

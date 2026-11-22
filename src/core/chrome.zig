@@ -1,5 +1,5 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
-//! colors, size, help button; geometry in dock.zig), the top bar (undo,
+//! colors, size, help button, the arrow style switch; geometry in dock.zig), the top bar (undo,
 //! redo; geometry in topbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
@@ -22,6 +22,7 @@ const TopBar = topbar.TopBar;
 const Canvas = @import("canvas.zig").Canvas;
 const Ctx = @import("draw.zig").Ctx;
 const Editor = @import("editor.zig").Editor;
+const ArrowStyle = @import("annotation.zig").ArrowStyle;
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -33,6 +34,7 @@ pub const State = struct {
     tool: keymap.Tool,
     color_idx: u8,
     size_idx: u8,
+    arrow_style: ArrowStyle = .straight,
     help_visible: bool,
     /// The dock and the top bar (Space hides both).
     dock_visible: bool = true,
@@ -46,6 +48,7 @@ pub const State = struct {
             .tool = ed.tool,
             .color_idx = ed.color_idx,
             .size_idx = ed.size_idx,
+            .arrow_style = ed.arrow_style,
             .help_visible = ed.help_visible,
             .dock_visible = ed.dock_visible,
             .toast = ed.toast(),
@@ -57,7 +60,7 @@ pub const State = struct {
 
     pub fn signature(s: State) u64 {
         var h = std.hash.Wyhash.init(0);
-        h.update(std.mem.asBytes(&[_]u8{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible), @intFromBool(s.dock_visible), @intFromBool(s.can_undo), @intFromBool(s.can_redo) }));
+        h.update(std.mem.asBytes(&[_]u8{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromEnum(s.arrow_style), @intFromBool(s.help_visible), @intFromBool(s.dock_visible), @intFromBool(s.can_undo), @intFromBool(s.can_redo) }));
         h.update(std.mem.asBytes(&s.hover.key()));
         h.update(s.toast orelse "\x00");
         return h.final();
@@ -76,6 +79,7 @@ pub const Hover = struct {
             .color => |i| 64 + @as(u32, i),
             .size => 128,
             .help => 129,
+            .arrow_style => |st| 130 + @as(u32, @intFromEnum(st)),
         } else 0;
         const b: u32 = if (h.bar) |x| 1 + @as(u32, @intFromEnum(x)) else 0;
         return d | b << 16;
@@ -98,13 +102,14 @@ const Op = union(enum) {
     /// Text centered on `c` by its ink (badges, single glyphs).
     glyph: struct { c: Vec2, s: []const u8, px: u16, color: Color },
     icon: struct { tool: keymap.Tool, c: Vec2, size: f32, color: Color },
+    arrow_style: struct { style: ArrowStyle, c: Vec2, size: f32, color: Color },
     undo: struct { redo: bool, c: Vec2, size: f32, color: Color },
 };
 
 const max_ops = 256;
 
-/// Dock, top bar, help overlay, toast.
-pub const max_panels = 4;
+/// Dock, arrow style switch, top bar, help overlay, toast.
+pub const max_panels = 5;
 
 pub const Layout = struct {
     ops: [max_ops]Op = undefined,
@@ -189,6 +194,20 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const help_hover = if (st.hover.dock) |hd| hd == .help else false;
     l.push(.{ .disc = .{ .c = hc, .r = hr * 0.72, .color = if (st.help_visible) accent else if (help_hover) nord.n3 else nord.n2 } });
     l.push(.{ .glyph = .{ .c = hc, .s = "?", .px = px(14 * s), .color = if (st.help_visible) nord.n0 else nord.n5 } });
+
+    // Arrow style switch: the active style filled like the active tool.
+    if (d.switch_panel) |sp| {
+        l.panel(sp, 10 * s);
+        for (d.styles, dock.arrow_styles) |b, as| {
+            const active = as == st.arrow_style;
+            const hovered = if (st.hover.dock) |hd| hd == .arrow_style and hd.arrow_style == as else false;
+            if (active or hovered) {
+                const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
+                l.push(.{ .rrect = .{ .b = hb, .radius = 7 * s, .color = if (active) accent else hover_bg } });
+            }
+            l.push(.{ .arrow_style = .{ .style = as, .c = center(b), .size = 18 * s, .color = if (active) nord.n0 else nord.n4 } });
+        }
+    }
 }
 
 // ---- top bar -----------------------------------------------------------
@@ -396,7 +415,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f
 
 pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
     var l = Layout{};
-    const d = Dock.of(w, h);
+    const d = Dock.of(w, h, st.tool);
     const bar = TopBar.of(w, h);
     if (st.dock_visible) {
         layoutDock(&l, st, &d);
@@ -427,6 +446,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .disc => |d| raster.fill(cv, clip, sdf.Disc{ .c = d.c, .r = d.r }, .{ .solid = d.color }, .{}),
         .disc_ring => |d| raster.fill(cv, clip, sdf.ring(sdf.Disc{ .c = d.c, .r = d.r }, d.w), .{ .solid = d.color }, .{}),
         .icon => |i| icons.draw(cv, clip, i.tool, i.c, i.size, i.color),
+        .arrow_style => |i| icons.drawArrowStyle(cv, clip, i.style, i.c, i.size, i.color),
         .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
         .text => |t| {
             var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, false);

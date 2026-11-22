@@ -16,6 +16,8 @@ pub const UiTarget = union(enum) {
     help,
     undo,
     redo,
+    /// A slot of the arrow style switch (null: the style not in use, a toggle).
+    arrow_style: ?core.annotation.ArrowStyle,
 };
 
 pub const Step = union(enum) {
@@ -160,6 +162,9 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
             const k = try num(err, &it);
             if (k < 1 or k > core.color.palette.len) return fail(err, "ui color: 1 to the palette size");
             break :blk .{ .color = @intFromFloat(k - 1) };
+        } else if (std.mem.eql(u8, what, "arrow-style")) blk: {
+            const name = it.next() orelse break :blk .{ .arrow_style = null };
+            break :blk .{ .arrow_style = std.meta.stringToEnum(core.annotation.ArrowStyle, name) orelse return fail(err, "ui arrow-style: straight or stairs (none: the other one)") };
         } else if (std.mem.eql(u8, what, "size")) .size else if (std.mem.eql(u8, what, "help")) .help else if (std.mem.eql(u8, what, "undo")) .undo else if (std.mem.eql(u8, what, "redo")) .redo else return fail(err, ui_help);
         try s.events.append(gpa, .{ .ui = t });
     } else if (std.mem.eql(u8, cmd, "resize")) {
@@ -169,7 +174,7 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     }
 }
 
-const ui_help = "ui needs: tool NAME, color N, size, help, undo or redo";
+const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo or arrow-style [straight|stairs]";
 
 test "parse script" {
     const gpa = std.testing.allocator;
@@ -186,11 +191,16 @@ test "parse script" {
         \\ui tool crop
         \\ui color 3
         \\ui redo
+        \\ui arrow-style
+        \\ui arrow-style stairs
     , &err);
     defer s.deinit(gpa);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
     try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
-    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1 + 3), s.events.items.len);
+    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1 + 3 + 2), s.events.items.len);
+    try std.testing.expectEqual(UiTarget{ .arrow_style = null }, s.events.items[s.events.items.len - 2].ui);
+    try std.testing.expectEqual(UiTarget{ .arrow_style = .stairs }, s.events.items[s.events.items.len - 1].ui);
+    s.events.shrinkRetainingCapacity(s.events.items.len - 2);
     const z = s.events.items[s.events.items.len - 4].event.wheel;
     try std.testing.expect(z.mods.ctrl and z.delta == -1 and z.x == 10 and z.y == 20);
     try std.testing.expectError(error.BadScript, parse(gpa, "key a\nfly 1 2", &err));
@@ -198,4 +208,5 @@ test "parse script" {
     try std.testing.expectEqual(UiTarget{ .tool = .crop }, s.events.items[s.events.items.len - 3].ui);
     try std.testing.expectEqual(UiTarget{ .color = 2 }, s.events.items[s.events.items.len - 2].ui);
     try std.testing.expectError(error.BadScript, parse(gpa, "ui tool lasso", &err));
+    try std.testing.expectError(error.BadScript, parse(gpa, "ui arrow-style curly", &err));
 }
