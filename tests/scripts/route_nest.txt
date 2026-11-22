@@ -1,0 +1,9 @@
+# Auto-routing, the user's case: two stairs arrows side by side, vertical
+# first, tails at the top, heads lower left. The second one (right) turns
+# below the first one's middle segment: they nest, nothing crosses, and
+# the first keeps its midpoint turn. Same pair drawn the other way round:
+# route_nest_swap.txt.
+size 900 500
+key a
+drag 495 100 260 400
+drag 557 100 435 400

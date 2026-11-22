@@ -1,0 +1,11 @@
+# Auto-routing with a callout: a stairs callout whose pointer runs left
+# from its box, up, and left to its target; then a stairs arrow whose
+# midpoint turn would cross the pointer's middle segment. The arrow turns
+# right of that segment instead, clear of it: nothing crosses.
+size 900 500
+key c c
+drag 250 190 600 360
+type Pointer
+key enter
+key a
+drag 580 240 260 100

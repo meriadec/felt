@@ -1,0 +1,11 @@
+# Auto-routing with no clean way: a long straight arrow across the whole
+# width, then two stairs arrows in an X across it. Each stairs arrow must
+# cross the line once, and the two must cross each other once: the second
+# one keeps it to that (no collinear run on the first one's middle
+# segment, no extra crossing) and its middle segment stays clear of the
+# first one's, so each crossing is clean.
+size 900 500
+drag 80 250 820 250
+key a
+drag 300 120 600 380
+drag 250 350 650 150

@@ -1,0 +1,13 @@
+# A move that re-routes a neighbour, then its undo: a stairs arrow, a
+# straight arrow across its middle segment (the stairs arrow turns off
+# it), then the move tool drags the straight arrow far left: the stairs
+# arrow settles back to its midpoint turn in the same step. Undo: both
+# back in place (the scene repaints both in place, no rebuild).
+size 900 500
+key a
+drag 150 120 650 380
+key a
+drag 340 250 460 250
+key m
+drag 400 250 160 300
+key ctrl+z

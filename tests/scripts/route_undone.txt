@@ -1,0 +1,8 @@
+# route_undo.txt, ending undone: the straight arrow is gone and the
+# stairs arrow is back at its midpoint turn, in the same undo step.
+size 900 500
+key a
+drag 150 120 650 380
+key a
+drag 340 250 460 250
+key ctrl+z

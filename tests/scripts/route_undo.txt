@@ -1,0 +1,13 @@
+# Undo and redo of a commit that re-routed a neighbour: a stairs arrow,
+# then a straight arrow across its middle segment. On the commit the
+# stairs arrow turns off the straight one (same undo step). Undo: both
+# back (the stairs arrow at its midpoint); redo: both again, exactly.
+# Undo, redo once more, and end redone.
+size 900 500
+key a
+drag 150 120 650 380
+key a
+drag 340 250 460 250
+key ctrl+z
+key ctrl+y
+key ctrl+z ctrl+y
