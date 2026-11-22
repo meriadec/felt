@@ -9,9 +9,12 @@ const Event = input.Event;
 pub const Script = struct {
     events: std.ArrayList(Event) = .empty,
     size: ?[2]u32 = null,
+    /// Image to replay on (path from the repo root); wins over the CLI image.
+    image: ?[]const u8 = null,
 
     pub fn deinit(self: *Script, gpa: std.mem.Allocator) void {
         self.events.deinit(gpa);
+        if (self.image) |p| gpa.free(p);
     }
 };
 
@@ -52,7 +55,11 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     var it = std.mem.tokenizeScalar(u8, trimmed, ' ');
     const cmd = it.next().?;
     const ev = &s.events;
-    if (std.mem.eql(u8, cmd, "size")) {
+    if (std.mem.eql(u8, cmd, "image")) {
+        const path = it.next() orelse return fail(err, "image needs a path");
+        if (s.image) |old| gpa.free(old);
+        s.image = try gpa.dupe(u8, path);
+    } else if (std.mem.eql(u8, cmd, "size")) {
         s.size = .{ @intFromFloat(try num(err, &it)), @intFromFloat(try num(err, &it)) };
     } else if (std.mem.eql(u8, cmd, "move")) {
         try ev.append(gpa, .{ .mouse_move = .{ .x = try num(err, &it), .y = try num(err, &it) } });
@@ -105,7 +112,7 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     } else if (std.mem.eql(u8, cmd, "resize")) {
         try ev.append(gpa, .{ .resize = .{ .w = @intFromFloat(try num(err, &it)), .h = @intFromFloat(try num(err, &it)) } });
     } else {
-        return fail(err, "unknown command (size, move, down, up, click, drag, key, type, wheel, resize)");
+        return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize)");
     }
 }
 
@@ -114,6 +121,7 @@ test "parse script" {
     var err: ParseError = undefined;
     var s = try parse(gpa,
         \\# comment
+        \\image tests/fixtures/strip.png
         \\size 800 500
         \\key a
         \\drag 10 10 100 100 4
@@ -122,6 +130,7 @@ test "parse script" {
     , &err);
     defer s.deinit(gpa);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
+    try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
     try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2), s.events.items.len);
     try std.testing.expectError(error.BadScript, parse(gpa, "key a\nfly 1 2", &err));
     try std.testing.expectEqual(@as(usize, 2), err.line);

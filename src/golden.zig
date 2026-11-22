@@ -1,5 +1,5 @@
 //! Golden tests: replay every tests/scripts/*.txt on tests/fixtures/screenshot.png
-//! and compare the UI frame and the export with tests/golden/<name>.{frame,export}.png.
+//! (or the script's `image`) and compare the UI frame and the export with tests/golden/<name>.{frame,export}.png.
 //! Mismatches write <name>.*.{actual,expected,diff}.png to test-out/golden/.
 //! Update goldens: `zig build test -Dupdate-goldens=true`.
 //! Also checks that incremental (damage-tracked) frames equal a full repaint.
@@ -119,7 +119,7 @@ fn replayScript(gpa: std.mem.Allocator, name: []const u8) !*App {
     defer gpa.free(path);
     var script = try headless.loadScript(gpa, path);
     defer script.deinit(gpa);
-    const image = try core.image_io.load(gpa, fixture);
+    const image = try core.image_io.load(gpa, script.image orelse fixture);
     return headless.replay(gpa, image, &script, null, .{ .output_path = null, .clipboard = .none });
 }
 

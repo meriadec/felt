@@ -62,7 +62,11 @@ fn save(gpa: std.mem.Allocator, cv: *const Canvas, path: []const u8) !void {
 pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var script = if (opts.script_path) |p| try loadScript(gpa, p) else script_mod.Script{};
     defer script.deinit(gpa);
-    const image = try core.image_io.load(gpa, opts.image_path);
+    const image_path = script.image orelse opts.image_path;
+    const image = core.image_io.load(gpa, image_path) catch |err| {
+        std.debug.print("annotate: cannot load {s}: {s}\n", .{ image_path, @errorName(err) });
+        return error.WriteReported;
+    };
     const app = try replay(gpa, image, &script, opts.size, .{
         .output_path = opts.output_path,
         .clipboard = if (opts.clipboard_out) |p| .{ .file = p } else .none,

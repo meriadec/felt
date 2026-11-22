@@ -5,7 +5,7 @@
 1. Core unit tests (`test` blocks in `src/core/*.zig`).
 2. App tests: CLI, script parser, export mapping, keymap doc freshness.
 3. Golden replays (`src/golden.zig`): every `tests/scripts/*.txt` is replayed on
-   `tests/fixtures/screenshot.png` (1200x750). For each script it compares the
+   `tests/fixtures/screenshot.png` (1200x750), or on the script's `image`. For each script it compares the
    final UI frame and the export with `tests/golden/<name>.frame.png` and
    `<name>.export.png`, and checks that the damage-tracked frame equals a full
    repaint.
@@ -62,6 +62,7 @@ One command per line, screen coordinates, `#` starts a comment.
 
 | Command | Effect |
 |---|---|
+| `image PATH` | Replay on this image (repo-relative), e.g. `tests/fixtures/strip.png` (480x57); wins over the CLI image |
 | `size W H` | Screen size (CLI `--size` wins; default 1280x720) |
 | `key CHORD...` | Key presses: `a`, `5`, `]`, `?`, `ctrl+z`, `ctrl+shift+z`, `enter`, `shift+enter`, `esc`, `backspace`, `f1`, `space` |
 | `type TEXT` | Types the rest of the line literally; `\n` is Shift+Enter |
