@@ -54,7 +54,7 @@ pub const App = struct {
             .cfg = cfg,
         };
         self.editor = Editor.init(gpa, &self.font, &self.doc, image.width, image.height, w, h);
-        self.editor.settings = cfg.settings;
+        self.editor.startWith(cfg.settings);
         return self;
     }
 
@@ -194,4 +194,34 @@ test "a config file that cannot be written keeps the setting and says so" {
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'b' } } });
     try std.testing.expectEqual(core.settings.CanvasBg.dark, app.editor.settings.canvas_bg);
     try std.testing.expect(std.mem.startsWith(u8, app.editor.toast().?, "Canvas: dark (not saved: "));
+}
+
+test "a canvas switch over a grown canvas is an unsaved change until saved or switched back" {
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(dir);
+    const out = try std.fs.path.join(gpa, &.{ dir, "out.png" });
+    defer gpa.free(out);
+    const image = try Canvas.init(gpa, 100, 50);
+    const app = try App.create(gpa, image, 400, 300, .{ .output_path = out, .clipboard = .none, .settings = .{ .canvas_bg = .dark } });
+    defer app.destroy();
+    const b = core.input.Event{ .key = .{ .key = .{ .char = 'b' } } };
+    // Image at (150, 125)..(250, 175): an arrow out past the right edge grows the canvas.
+    _ = try app.handle(.{ .mouse_down = .{ .x = 200, .y = 150 } });
+    _ = try app.handle(.{ .mouse_move = .{ .x = 310, .y = 150 } });
+    _ = try app.handle(.{ .mouse_up = .{ .x = 310, .y = 150 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 's' }, .mods = .{ .ctrl = true } } });
+    try std.testing.expect(!app.editor.dirty());
+    _ = try app.handle(b);
+    try std.testing.expect(app.editor.dirty()); // the export would be light now
+    _ = try app.handle(b);
+    try std.testing.expect(!app.editor.dirty()); // back to what was saved
+    _ = try app.handle(b);
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 's' }, .mods = .{ .ctrl = true } } });
+    try std.testing.expect(!app.editor.dirty());
+    var saved = try core.image_io.load(gpa, out);
+    defer saved.deinit(gpa);
+    try std.testing.expectEqual(core.settings.color_light.toPixel(), saved.at(@as(i32, @intCast(saved.width)) - 2, 2));
 }

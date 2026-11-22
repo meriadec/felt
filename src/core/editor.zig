@@ -119,6 +119,8 @@ pub const Editor = struct {
     draft: std.ArrayList(u8) = .empty,
     quit_armed: bool = false,
     saved_revision: u64 = 0,
+    /// Canvas background of the last save (or of the start).
+    saved_bg: settings.CanvasBg = .light,
     toast_buf: [256]u8 = undefined,
     toast_len: usize = 0,
     hint_buf: [96]u8 = undefined,
@@ -349,12 +351,25 @@ pub const Editor = struct {
         return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p);
     }
 
+    /// Unsaved changes: the document changed, or the canvas background
+    /// changed while the canvas holds some outside the image (the export
+    /// would differ; the switch itself is no undo step).
     pub fn dirty(self: *const Editor) bool {
-        return self.doc.revision != self.saved_revision;
+        if (self.doc.revision != self.saved_revision) return true;
+        if (self.settings.canvas_bg == self.saved_bg) return false;
+        const pic = geom.Rect.fromSize(0, 0, @intCast(self.image_w), @intCast(self.image_h));
+        return !pic.contains(self.canvas);
     }
 
     pub fn markSaved(self: *Editor) void {
         self.saved_revision = self.doc.revision;
+        self.saved_bg = self.settings.canvas_bg;
+    }
+
+    /// Start with `s` (config file, command line): nothing to save yet.
+    pub fn startWith(self: *Editor, s: Settings) void {
+        self.settings = s;
+        self.saved_bg = s.canvas_bg;
     }
 
     pub fn setToast(self: *Editor, comptime fmt: []const u8, args: anytype) void {
