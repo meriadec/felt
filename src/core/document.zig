@@ -1,7 +1,9 @@
 //! Document: the ordered list of annotations, the crops, and the undo/redo
-//! history of both. Every change bumps `revision`; every removal of an
-//! annotation also bumps `removals`, which tells the compositor that
-//! appending on top of its cache is not enough.
+//! history of both, moves included. Every change bumps `revision`; every
+//! removal of an annotation also bumps `removals`, which tells the compositor
+//! that appending on top of its cache is not enough. A move changes an
+//! annotation in place (same index, same text): the compositor finds it by
+//! comparing with what it painted.
 const std = @import("std");
 const Annotation = @import("annotation.zig").Annotation;
 const Rect = @import("geom.zig").Rect;
@@ -11,13 +13,19 @@ const Rect = @import("geom.zig").Rect;
 /// crop clips those; later annotations can grow the canvas again.
 pub const Crop = struct { rect: Rect, first: usize };
 
+/// A move of annotation `index`: `other` is its geometry on the other side
+/// of the step (before the move in the history, after it in the redo stack).
+/// `other` shares the text of the annotation; it never owns it.
+pub const Move = struct { index: usize, other: Annotation };
+
 /// One undoable step.
-const Change = enum { add, crop };
+const Change = union(enum) { add, crop, move: Move };
 
 /// One undone step for redo.
 const Undone = union(enum) {
     add: Annotation,
     crop: Crop,
+    move: Move,
 
     fn deinit(u: Undone, gpa: std.mem.Allocator) void {
         if (u == .add) u.add.deinit(gpa);
@@ -85,6 +93,30 @@ pub const Document = struct {
         self.revision += 1;
     }
 
+    /// Replace annotation `i` by `a` (same kind and text, new geometry)
+    /// without a history step: a move in progress.
+    pub fn setLive(self: *Document, i: usize, a: Annotation) void {
+        self.items.items[i] = a;
+        self.revision += 1;
+    }
+
+    /// Record the move of annotation `i` from `before` (its geometry when the
+    /// move started) to its current geometry as one undo step. Nothing if it
+    /// did not change. Clears the redo stack.
+    pub fn commitMove(self: *Document, gpa: std.mem.Allocator, i: usize, before: Annotation) !void {
+        if (std.meta.eql(before, self.items.items[i])) return;
+        try self.history.append(gpa, .{ .move = .{ .index = i, .other = before } });
+        self.clearRedo(gpa);
+        self.revision += 1;
+    }
+
+    /// Swap annotation `m.index` with `m.other`: the step seen from the other side.
+    fn swapMove(self: *Document, m: Move) Move {
+        const cur = self.items.items[m.index];
+        self.items.items[m.index] = m.other;
+        return .{ .index = m.index, .other = cur };
+    }
+
     /// Keep only `r` (image pixels) of the canvas. Clears the redo stack.
     pub fn setCrop(self: *Document, gpa: std.mem.Allocator, r: Rect) !void {
         try self.history.ensureUnusedCapacity(gpa, 1);
@@ -103,6 +135,7 @@ pub const Document = struct {
                 self.removals += 1;
             },
             .crop => self.undone.appendAssumeCapacity(.{ .crop = self.crops.pop().? }),
+            .move => |m| self.undone.appendAssumeCapacity(.{ .move = self.swapMove(m) }),
         }
         self.revision += 1;
         return true;
@@ -113,11 +146,17 @@ pub const Document = struct {
         try self.crops.ensureUnusedCapacity(gpa, 1);
         try self.history.ensureUnusedCapacity(gpa, 1);
         const u = self.undone.pop() orelse return false;
-        switch (u) {
-            .add => |a| self.items.appendAssumeCapacity(a),
-            .crop => |c| self.crops.appendAssumeCapacity(c),
-        }
-        self.history.appendAssumeCapacity(if (u == .add) .add else .crop);
+        self.history.appendAssumeCapacity(switch (u) {
+            .add => |a| blk: {
+                self.items.appendAssumeCapacity(a);
+                break :blk .add;
+            },
+            .crop => |c| blk: {
+                self.crops.appendAssumeCapacity(c);
+                break :blk .crop;
+            },
+            .move => |m| .{ .move = self.swapMove(m) },
+        });
         self.revision += 1;
         return true;
     }
@@ -173,6 +212,42 @@ test "crop is undone and redone in order with annotations" {
     try std.testing.expectEqual(r, doc.crop().?.rect);
     try std.testing.expect(try doc.redo(gpa));
     try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+}
+
+test "a move is one undo step: undo and redo swap the geometry back and forth" {
+    const gpa = std.testing.allocator;
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    const at = struct {
+        fn f(x: f32) Annotation {
+            return .{ .number = .{ .center = .{ .x = x, .y = 0 }, .value = 1, .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } };
+        }
+    }.f;
+    try doc.add(gpa, at(0));
+    try doc.add(gpa, at(5));
+    const before = doc.items.items[0];
+    doc.setLive(0, at(10));
+    doc.setLive(0, at(20));
+    try doc.commitMove(gpa, 0, before);
+    try doc.commitMove(gpa, 1, doc.items.items[1]); // no change: no step
+    try std.testing.expectEqual(@as(usize, 3), doc.history.items.len);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(f32, 0), doc.items.items[0].number.center.x);
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(@as(f32, 20), doc.items.items[0].number.center.x);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expect(try doc.undo(gpa)); // the second number
+    try std.testing.expectEqual(@as(usize, 1), doc.items.items.len);
+    try doc.add(gpa, at(7)); // clears the redo stack (the move and the add)
+    try std.testing.expect(!try doc.redo(gpa));
+    // A moved text keeps its text: the move shares it, deinit frees it once.
+    try doc.add(gpa, .{ .text = .{ .pos = .{ .x = 0, .y = 0 }, .text = try gpa.dupe(u8, "hi"), .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } });
+    var t = doc.items.items[2];
+    t.text.pos.x = 30;
+    const tb = doc.items.items[2];
+    doc.setLive(2, t);
+    try doc.commitMove(gpa, 2, tb);
+    try std.testing.expect(try doc.undo(gpa));
 }
 
 test "an annotation is clipped by every later crop" {
