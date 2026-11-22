@@ -1,20 +1,36 @@
 # annotate
 
-Fast full-screen screenshot annotation tool for X11 (replaces ksnip in i3).
-Zig 0.15.2 (pinned in `mise.toml`). Run zig as `mise exec -- zig ...`.
+Full-screen screenshot annotation tool for X11 (replaces ksnip in i3). Zig 0.15.2.
+A pure core (document, tools, editor state machine, software renderer) with
+two thin backends: X11 window and headless script replay.
 
 ## Dev loop
 
+Run zig as `mise exec -- zig build <step>` (fresh clone: `mise trust` first).
+`zig build --help` lists all steps.
+
 ```sh
-mise exec -- zig build              # build zig-out/bin/annotate
-mise exec -- zig build test         # unit tests
-mise exec -- zig build fmt          # format
+zig build check                       # fmt-check + unit tests + golden replays: before every commit
+zig build shot -Dscript=arrow         # render tests/scripts/arrow.txt to test-out/shots/*.png, then read the PNGs
+zig build test -Dupdate-goldens=true  # accept new rendering (look at the shots first)
+zig build bench                       # ReleaseFast timings; compare with docs/perf.md
+DISPLAY=:0 zig build smoke-x11        # real window, driven by xdotool
 ```
 
 ## Rules
 
 - Self-improvement: every hiccup (confusing error, slow or missing command,
-  repeated manual step, missing doc) is a harness bug. Fix it in the repo in
-  its own small commit.
-- Commits: conventional (`feat:`, `fix:`, `docs:`, `test:`, `build:`, `chore:`,
-  `perf:`, `refactor:`), atomic, green (`zig build test` passes).
+  repeated manual step, missing doc) is a harness bug. Fix it in the repo
+  (tool, flag, build step, script, doc) in its own small commit, and add one
+  line to docs/friction.md.
+- Commits: conventional (`feat:`, `fix:`, `perf:`, `refactor:`, `test:`,
+  `docs:`, `build:`, `chore:`), one concern each, green (`zig build check`).
+- One concept per file, with a `//!` doc comment that states its role.
+- Do not edit docs/keymap.md: `zig build docs` writes it from src/core/keymap.zig.
+
+## Read before you act
+
+- docs/architecture.md: before you change src/core or a backend, or add a tool.
+- docs/testing.md: before you add or change a script, a golden or a test.
+- docs/perf.md: before you change the renderer, the compositor, image IO or the X11 loop.
+- docs/friction.md: when you hit a hiccup, and before you finish a task.
