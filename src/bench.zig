@@ -141,6 +141,29 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     try drag.report(w, "frame: drag arrow");
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
 
+    // Drag a stairs arrow the same way (`a` again: stairs), then cancel it
+    // and switch back to straight.
+    var drag_st = Stats{};
+    defer drag_st.deinit(gpa);
+    damage_px = 0;
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
+    if (app.editor.arrow_style != .stairs) return error.BenchNoStairsStyle;
+    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
+    for (0..n_moves) |i| {
+        const f = @as(f32, @floatFromInt(i)) / n_moves;
+        _ = try app.handle(.{ .mouse_move = .{ .x = W * (0.2 + 0.6 * f), .y = H * (0.7 - 0.5 * f) } });
+        t.reset();
+        const d = try app.render();
+        try drag_st.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .escape } } });
+    _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.8, .y = H * 0.2 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
+    _ = try app.render();
+    try drag_st.report(w, "frame: drag stairs arrow");
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
+
     // Drag a big pixelate region (the most expensive preview).
     var pix = Stats{};
     defer pix.deinit(gpa);
@@ -236,6 +259,14 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.render();
     try mvs.report(w, "frame: move drag (stairs)");
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
+    // Take the stairs arrow back (the move, then the add): the cases below
+    // keep the scene they had before it.
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    // Straight arrows again, the move tool active again.
+    for ("aam") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    if (app.editor.arrow_style != .straight or app.editor.tool != .move) return error.BenchStateNotRestored;
+    _ = try app.render();
 
     // Export.
     t.reset();
@@ -273,6 +304,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     // Zoom out (room around the image), then drag an arrow from the image
     // out past its edge: the canvas grows white, live.
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
+    if (app.editor.arrow_style != .straight or app.editor.tool != .arrow) return error.BenchNotStraightArrow;
     _ = try app.handle(.{ .key = .{ .key = .{ .char = '-' } } });
     t.reset();
     _ = try app.render();
