@@ -1,7 +1,8 @@
 //! Golden tests: replay every tests/scripts/*.txt on tests/fixtures/screenshot.png
 //! (or the script's `image`) and compare the UI frame and the export with tests/golden/<name>.{frame,export}.png.
 //! Mismatches write <name>.*.{actual,expected,diff}.png to test-out/golden/.
-//! Update goldens: `zig build test -Dupdate-goldens=true`.
+//! Update goldens: `zig build test -Dupdate-goldens=true`. Prove a change
+//! keeps every pixel: `zig build test -Dexact-goldens=true` (no tolerance).
 //! Also checks that incremental (damage-tracked) frames equal a full repaint.
 const std = @import("std");
 const core = @import("core");
@@ -24,10 +25,16 @@ fn updating() bool {
     return std.process.hasEnvVarConstant("ANNOTATE_UPDATE_GOLDENS");
 }
 
+/// No tolerance: any changed pixel fails.
+fn exact() bool {
+    return std.process.hasEnvVarConstant("ANNOTATE_EXACT_GOLDENS");
+}
+
 const Diff = struct { bad: usize, max_delta: u32 };
 
 fn compare(a: *const Canvas, b: *const Canvas, diff_img: ?*Canvas) Diff {
     var d = Diff{ .bad = 0, .max_delta = 0 };
+    const tol: u32 = if (exact()) 0 else channel_tolerance;
     for (a.pixels, b.pixels, 0..) |pa, pb, i| {
         var m: u32 = 0;
         inline for (.{ 0, 8, 16 }) |sh| {
@@ -36,7 +43,7 @@ fn compare(a: *const Canvas, b: *const Canvas, diff_img: ?*Canvas) Diff {
             m = @max(m, @abs(x - y));
         }
         d.max_delta = @max(d.max_delta, m);
-        const bad = m > channel_tolerance;
+        const bad = m > tol;
         if (bad) d.bad += 1;
         if (diff_img) |img| {
             const g = (((pb >> 16) & 0xff) + ((pb >> 8) & 0xff) + (pb & 0xff)) / 12; // dim gray
@@ -83,7 +90,7 @@ pub fn check(gpa: std.mem.Allocator, name: []const u8, actual: *const Canvas) !b
     var diff = try Canvas.init(gpa, actual.width, actual.height);
     defer diff.deinit(gpa);
     const d = compare(actual, &expected, &diff);
-    const limit: usize = @intFromFloat(@as(f64, @floatFromInt(actual.pixels.len)) * max_bad_fraction);
+    const limit: usize = if (exact()) 0 else @intFromFloat(@as(f64, @floatFromInt(actual.pixels.len)) * max_bad_fraction);
     if (d.bad <= limit) return true;
     std.debug.print("golden {s}: {d} pixels differ (limit {d}, max channel delta {d}). See {s}/{s}.{{actual,expected,diff}}.png\n", .{ name, d.bad, limit, d.max_delta, out_dir, name });
     writeOut(gpa, actual, name, "actual");

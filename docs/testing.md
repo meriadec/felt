@@ -55,6 +55,12 @@ zig build test -Dupdate-goldens=true
 ```
 
 Tolerance: a channel may differ by 8; at most 0.05% of the pixels may differ.
+To prove that a change keeps every golden pixel (a refactor, a new
+parameter whose default must look the same), run with no tolerance:
+
+```sh
+zig build test -Dexact-goldens=true
+```
 
 Note: when a test fails, the Zig test runner may name another test in the
 "while executing test" line. The `error:` line above it names the real one.

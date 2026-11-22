@@ -5,6 +5,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const update_goldens = b.option(bool, "update-goldens", "With `test`: rewrite tests/golden/*.png from the current output") orelse false;
+    const exact_goldens = b.option(bool, "exact-goldens", "With `test`: no tolerance, any changed golden pixel fails") orelse false;
     const script = b.option([]const u8, "script", "With `shot`: script name in tests/scripts (default: all)");
     const shot_size = b.option([]const u8, "size", "With `shot`: screen size WxH, e.g. 3840x2160 (default: the script's); files get a .WxH suffix");
 
@@ -24,6 +25,7 @@ pub fn build(b: *std.Build) void {
         t_run.setCwd(b.path("."));
         t_run.has_side_effects = true; // tests read tests/ and docs/ from disk
         if (update_goldens) t_run.setEnvironmentVariable("ANNOTATE_UPDATE_GOLDENS", "1");
+        if (exact_goldens) t_run.setEnvironmentVariable("ANNOTATE_EXACT_GOLDENS", "1");
         test_step.dependOn(&t_run.step);
     }
 
