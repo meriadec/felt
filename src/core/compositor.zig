@@ -171,8 +171,9 @@ pub const Compositor = struct {
     prev_crop: ?Rect = null,
     /// Move tool outline last drawn, and its screen rectangle.
     prev_outline: ?Outline = null,
-    prev_chrome: [chrome.max_panels]Rect = @splat(Rect.empty),
-    prev_chrome_sig: u64 = 0,
+    /// Chrome panels last drawn: kind, rect and what they showed.
+    prev_chrome: [chrome.max_panels]PanelPaint = undefined,
+    prev_chrome_n: usize = 0,
     force_full: bool = true,
     prof: Prof = .{},
 
@@ -418,14 +419,22 @@ pub const Compositor = struct {
 
         const st = chrome.State.of(ed);
         const lay = chrome.layout(ctx, st, w, h);
-        const sig = st.signature();
-        if (sig != self.prev_chrome_sig) {
-            for (self.prev_chrome) |r| dmg.add(r);
-            for (chrome.rects(&lay)) |r| dmg.add(r);
-            self.prev_chrome_sig = sig;
+        // Chrome: repaint a panel where it was and where it is when it
+        // moved, changed or came or went; the others stay as painted.
+        var cur: [chrome.max_panels]PanelPaint = undefined;
+        for (chrome.rects(&lay), chrome.kinds(&lay), 0..) |r, k, i| cur[i] = .{ .kind = k, .rect = r, .sig = st.panelSig(k) };
+        const cur_n = chrome.rects(&lay).len;
+        for (cur[0..cur_n]) |p| {
+            const old = PanelPaint.find(self.prev_chrome[0..self.prev_chrome_n], p.kind);
+            if (old != null and std.meta.eql(old.?, p)) continue;
+            dmg.add(p.rect);
+            if (old) |o| dmg.add(o.rect);
         }
-        self.prev_chrome = @splat(Rect.empty);
-        for (chrome.rects(&lay), 0..) |r, i| self.prev_chrome[i] = r;
+        for (self.prev_chrome[0..self.prev_chrome_n]) |o| {
+            if (PanelPaint.find(cur[0..cur_n], o.kind) == null) dmg.add(o.rect);
+        }
+        self.prev_chrome = cur;
+        self.prev_chrome_n = cur_n;
 
         if (full) {
             dmg = .{};
@@ -447,6 +456,18 @@ pub const Compositor = struct {
         }
         self.prof.frame_ns += clock.read();
         return dmg;
+    }
+};
+
+/// A chrome panel as a frame painted it.
+const PanelPaint = struct {
+    kind: chrome.Panel,
+    rect: Rect,
+    sig: u64,
+
+    fn find(list: []const PanelPaint, kind: chrome.Panel) ?PanelPaint {
+        for (list) |p| if (p.kind == kind) return p;
+        return null;
     }
 };
 

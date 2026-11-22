@@ -388,3 +388,27 @@ test "an annotation changed in place repaints only its old and new area, like a 
         try std.testing.expectEqual(@as(usize, 0), compare(app.frame(), &fresh.frame.?, null).bad);
     }
 }
+
+test "a toast that changes each frame repaints the toast, not the dock or the top bar" {
+    const gpa = std.testing.allocator;
+    const image = try core.image_io.load(gpa, fixture);
+    const app = try App.create(gpa, image, 900, 500, .{ .output_path = null, .clipboard = .none });
+    defer app.destroy();
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'x' } } });
+    _ = try app.handle(.{ .mouse_down = .{ .x = 300, .y = 200 } });
+    _ = try app.handle(.{ .mouse_move = .{ .x = 400, .y = 250 } });
+    _ = try app.render();
+    // The crop grows by a few pixels: its toast ("Crop to W x H px") changes.
+    _ = try app.handle(.{ .mouse_move = .{ .x = 404, .y = 252 } });
+    const d = try app.render();
+    const dock = core.dock.Dock.of(900, 500, .crop).panel.toRect();
+    const bar = core.topbar.TopBar.of(900, 500).panel.toRect();
+    for (d.slice()) |r| {
+        try std.testing.expect(!r.intersects(dock));
+        try std.testing.expect(!r.intersects(bar));
+    }
+    var fresh = core.compositor.Compositor{ .gpa = gpa };
+    defer fresh.deinit();
+    _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+    try std.testing.expectEqual(@as(usize, 0), compare(app.frame(), &fresh.frame.?, null).bad);
+}

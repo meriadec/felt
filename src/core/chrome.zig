@@ -58,14 +58,34 @@ pub const State = struct {
         };
     }
 
-    pub fn signature(s: State) u64 {
-        var h = std.hash.Wyhash.init(0);
-        h.update(std.mem.asBytes(&[_]u8{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromEnum(s.arrow_style), @intFromBool(s.help_visible), @intFromBool(s.dock_visible), @intFromBool(s.can_undo), @intFromBool(s.can_redo) }));
-        h.update(std.mem.asBytes(&s.hover.key()));
-        h.update(s.toast orelse "\x00");
+    /// A value that changes when what panel `p` shows changes (its place
+    /// aside: the compositor compares rects too). A frame repaints only
+    /// the panels whose value or rect changed: a toast that changes each
+    /// frame (crop size) does not repaint the dock.
+    pub fn panelSig(s: State, p: Panel) u64 {
+        var h = std.hash.Wyhash.init(@intFromEnum(p));
+        switch (p) {
+            .dock => {
+                h.update(&.{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible) });
+                h.update(std.mem.asBytes(&s.hover.dockKey()));
+            },
+            .style_switch => {
+                h.update(&.{ @intFromEnum(s.tool), @intFromEnum(s.arrow_style) });
+                h.update(std.mem.asBytes(&s.hover.dockKey()));
+            },
+            .top_bar => {
+                h.update(&.{ @intFromBool(s.can_undo), @intFromBool(s.can_redo) });
+                h.update(std.mem.asBytes(&s.hover.barKey()));
+            },
+            .help => {}, // a fixed text, laid out from the screen size (its rect)
+            .toast => h.update(s.toast orelse ""),
+        }
         return h.final();
     }
 };
+
+/// The floating panels of the chrome, each damaged on its own.
+pub const Panel = enum { dock, style_switch, top_bar, help, toast };
 
 /// The chrome item under the pointer.
 pub const Hover = struct {
@@ -74,15 +94,21 @@ pub const Hover = struct {
 
     /// A small value that changes when the hovered item changes.
     pub fn key(h: Hover) u32 {
-        const d: u32 = if (h.dock) |x| switch (x) {
+        return h.dockKey() | h.barKey() << 16;
+    }
+
+    fn dockKey(h: Hover) u32 {
+        return if (h.dock) |x| switch (x) {
             .tool => |t| 1 + @as(u32, @intFromEnum(t)),
             .color => |i| 64 + @as(u32, i),
             .size => 128,
             .help => 129,
             .arrow_style => |st| 130 + @as(u32, @intFromEnum(st)),
         } else 0;
-        const b: u32 = if (h.bar) |x| 1 + @as(u32, @intFromEnum(x)) else 0;
-        return d | b << 16;
+    }
+
+    fn barKey(h: Hover) u32 {
+        return if (h.bar) |x| 1 + @as(u32, @intFromEnum(x)) else 0;
     }
 };
 
@@ -116,6 +142,7 @@ pub const Layout = struct {
     ops: [max_ops]Op = undefined,
     n: usize = 0,
     panels: [max_panels]Rect = undefined,
+    kinds: [max_panels]Panel = undefined,
     n_panels: usize = 0,
 
     fn push(l: *Layout, op: Op) void {
@@ -126,11 +153,12 @@ pub const Layout = struct {
     }
 
     /// A floating panel: flat nord1 fill and a 1 px nord2 border.
-    fn panel(l: *Layout, b: Bounds, radius: f32) void {
+    fn panel(l: *Layout, kind: Panel, b: Bounds, radius: f32) void {
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
         // Centered half a pixel inside the edge: one crisp pixel wide.
         l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = panel_border } });
         l.panels[l.n_panels] = b.expand(2).toRect();
+        l.kinds[l.n_panels] = kind;
         l.n_panels += 1;
     }
 };
@@ -151,7 +179,7 @@ fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
 
 fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const s = d.s;
-    l.panel(d.panel, 12 * s);
+    l.panel(.dock, d.panel, 12 * s);
 
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
@@ -198,7 +226,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
     // Arrow style switch: the active style filled like the active tool.
     if (d.switch_panel) |sp| {
-        l.panel(sp, 10 * s);
+        l.panel(.style_switch, sp, 10 * s);
         for (d.styles, dock.arrow_styles) |b, as| {
             const active = as == st.arrow_style;
             const hovered = if (st.hover.dock) |hd| hd == .arrow_style and hd.arrow_style == as else false;
@@ -215,7 +243,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
 fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     const s = b.s;
-    l.panel(b.panel, 12 * s);
+    l.panel(.top_bar, b.panel, 12 * s);
     for (b.slots, topbar.buttons) |r, btn| {
         const enabled = switch (btn) {
             .undo => st.can_undo,
@@ -366,7 +394,7 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
     }
     const x0 = @round((W - size.x) / 2);
     const y0 = @round(@max(0, (avail_h - size.y) / 2));
-    l.panel(.{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 12 * m.s);
+    l.panel(.help, .{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 12 * m.s);
 
     var x = x0 + m.pad;
     const head_y = y0 + m.pad;
@@ -419,7 +447,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f
     const x0 = @round((W - pw) / 2);
     const y0 = @round(top orelse 12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-    l.panel(b, ph / 2);
+    l.panel(.toast, b, ph / 2);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
 }
 
@@ -440,6 +468,11 @@ pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
 /// Screen rectangles the chrome covers.
 pub fn rects(l: *const Layout) []const Rect {
     return l.panels[0..l.n_panels];
+}
+
+/// The kind of each rect of `rects`.
+pub fn kinds(l: *const Layout) []const Panel {
+    return l.kinds[0..l.n_panels];
 }
 
 fn rrectShape(b: Bounds, radius: f32) sdf.RoundRect {
