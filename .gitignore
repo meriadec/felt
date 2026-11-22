@@ -1,3 +1,5 @@
 zig-out/
 .zig-cache/
 test-out/
+# A global gitignore may exclude mise.toml; this repo needs it (pins zig).
+!mise.toml
