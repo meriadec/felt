@@ -25,8 +25,11 @@ annotate -o out.png shot.png # Ctrl+S writes out.png
 
 The image fits the screen (never upscaled). A small icon dock at the bottom
 center shows the tools (each with its key letter), the colors and the size;
-click it or use the keys. A small bar at the top center has Undo and Redo
-buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
+click it or use the keys. At startup the callout tool (`c`) is active,
+with a stairs pointer: drag from the point of interest to the box and type.
+Arrows and callout pointers share one style (stairs or straight): `c` again,
+`a` again or the switch above the dock changes it. A small bar at the top
+center has Undo and Redo buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
 panels; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
 drag; undo restores it. Move (`m`) drags any annotation; it lights up
 under the pointer. A callout box moves alone (the tip stays) or its tip

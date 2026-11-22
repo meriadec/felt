@@ -6,11 +6,11 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
-| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too). |
+| `a` | arrow | Drag from the tail to the head. Style: stairs (an elbow with round corners, the start style) or straight; `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too). |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
-| `c` | callout | Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: straight or stairs, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
+| `c` | callout | The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
 | `m` | move | Point at an annotation: it lights up. Drag it to move it. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back. |
 | `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |

@@ -108,7 +108,10 @@ image files. Build: `coreModule` in build.zig.
   with these two tools, over the active tool's slot) sets it, with a toast
   in the words of the tool ("Arrow: stairs", "Pointer: stairs"); a shape
   in progress follows. It stays for the session, across tool switches (it
-  is not saved). A stairs arrow
+  is not saved). At startup: the callout tool with stairs
+  (`editor.default_tool`, `default_arrow_style`). Tests, golden scripts
+  and the bench set their start tool and style, so they keep their meaning
+  if the defaults change. A stairs arrow
   (stairs.zig) is an elbow connector: along the dominant axis to the
   midpoint, along the other axis, along the dominant axis into the head.
   Its `elbow` (annotation.Elbow) can move the turn off the midpoint (`at`,

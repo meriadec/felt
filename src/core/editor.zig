@@ -25,6 +25,11 @@ const Tool = keymap.Tool;
 const Annotation = ann.Annotation;
 const Part = ann.Part;
 
+/// The tool and the arrow style at startup: a callout with a stairs
+/// pointer. The style is shared, so new arrows start as stairs too.
+pub const default_tool: Tool = .callout;
+pub const default_arrow_style: ann.ArrowStyle = .stairs;
+
 pub const Command = enum {
     save,
     copy,
@@ -97,14 +102,14 @@ pub const Editor = struct {
     fitted: bool = true,
     /// Middle-button pan in progress: last pointer position.
     panning: ?Vec2 = null,
-    tool: Tool = .arrow,
+    tool: Tool = default_tool,
     /// Tool to go back to after a crop.
-    tool_before_crop: Tool = .arrow,
+    tool_before_crop: Tool = default_tool,
     color_idx: u8 = 0,
     size_idx: u8 = style.default_size,
     /// Style of new arrows and callout pointers (one setting for both). It
     /// stays for the session, across tool switches.
-    arrow_style: ann.ArrowStyle = .straight,
+    arrow_style: ann.ArrowStyle = default_arrow_style,
     /// User settings (settings.zig): not document state, not undo steps.
     settings: Settings = .{},
     /// The shortcut overlay (`?`/F1).
@@ -1038,6 +1043,25 @@ test "a click too far from the image adds nothing and says why" {
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
     try std.testing.expect(std.mem.startsWith(u8, t.ed.toast().?, "Too far"));
+}
+
+test "startup: the callout tool with a stairs pointer; a drag with no key draws one" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    // A fresh editor: T.init sets the tool and style of the other tests.
+    var ed = Editor.init(std.testing.allocator, &t.font, &t.doc, 200, 100, 200, 100);
+    defer ed.deinit();
+    try std.testing.expectEqual(Tool.callout, ed.tool);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, ed.arrow_style);
+    _ = try ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
+    _ = try ed.handle(.{ .mouse_move = .{ .x = 120, .y = 70 } });
+    _ = try ed.handle(.{ .mouse_up = .{ .x = 120, .y = 70 } });
+    _ = try ed.handle(.{ .key = try input.parseChord("x") });
+    _ = try ed.handle(.{ .key = try input.parseChord("enter") });
+    const c = t.doc.items.items[0].callout;
+    try std.testing.expectEqualStrings("x", c.text);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, c.style);
 }
 
 test "callout drag then type" {
