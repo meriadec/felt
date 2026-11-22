@@ -121,6 +121,21 @@ pub fn unite(a: anytype, b: anytype) Union(@TypeOf(a), @TypeOf(b)) {
     return .{ .a = a, .b = b };
 }
 
+/// `A` minus `B`. Exact inside, a lower bound outside: safe for tile culling.
+pub fn Subtract(comptime A: type, comptime B: type) type {
+    return struct {
+        a: A,
+        b: B,
+
+        pub fn dist(s: @This(), p: Vec2) f32 {
+            return @max(s.a.dist(p), -s.b.dist(p));
+        }
+        pub fn bounds(s: @This()) Bounds {
+            return s.a.bounds();
+        }
+    };
+}
+
 /// Shape grown by `r` (positive = bigger), e.g. for outlines.
 pub fn Grown(comptime S: type) type {
     return struct {

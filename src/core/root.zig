@@ -12,6 +12,12 @@ pub const resample = @import("resample.zig");
 pub const view = @import("view.zig");
 pub const font = @import("font.zig");
 pub const text = @import("text.zig");
+pub const style = @import("style.zig");
+pub const annotation = @import("annotation.zig");
+pub const document = @import("document.zig");
+pub const input = @import("input.zig");
+pub const keymap = @import("keymap.zig");
+pub const draw = @import("draw.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());
