@@ -30,8 +30,10 @@ buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
 panels; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
 drag; undo restores it. Move (`m`) drags any annotation; it lights up
 under the pointer. A callout box moves alone (the tip stays) or its tip
-alone; an arrow end moves alone. Draw past the image edge and the canvas grows white
-to hold the shape (the saved PNG too); undo shrinks it back. Around a
+alone; an arrow end moves alone. Draw past the image edge and the canvas grows
+to hold the shape (the saved PNG too); undo shrinks it back. The grown canvas is
+light grey or dark grey: `b` or the half-filled circle in the top bar switches
+it (a setting, not an undo step). Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
 middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
 height (2x at 4K). Esc or q quits (q is a letter while you type); with unsaved changes, press it twice. Ctrl+C
@@ -39,6 +41,20 @@ counts as saved, because xclip keeps the image in the clipboard after annotate
 exits.
 
 Full key map: [docs/keymap.md](docs/keymap.md).
+
+### Settings
+
+annotate keeps the canvas background for the next sessions in
+`$XDG_CONFIG_HOME/annotate/config` (default `~/.config/annotate/config`):
+
+```
+canvas_bg=dark
+```
+
+It writes the file when you switch (`b`), by atomic rename. A missing or
+broken file gives the default (`light`). `--canvas-bg light|dark` overrides
+the file for one run and does not change it. Headless runs (`--headless`,
+tests) never read or write the file.
 
 ## i3
 

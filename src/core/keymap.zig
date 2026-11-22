@@ -138,7 +138,7 @@ pub const extra = [_]Extra{
     .{ .input = "Mouse wheel", .effect = "Bigger / smaller stroke and text", .short = "size" },
     .{ .input = "Ctrl+wheel", .effect = "Zoom in / out about the pointer", .short = "zoom" },
     .{ .input = "Middle drag", .effect = "Pan the view", .short = "pan" },
-    .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
+    .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers)", .short = "pick" },
     .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`)", .short = "undo, redo, canvas" },

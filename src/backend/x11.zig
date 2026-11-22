@@ -5,6 +5,7 @@
 const std = @import("std");
 const core = @import("core");
 const app_mod = @import("../app.zig");
+const config = @import("../config.zig");
 
 const c = @cImport({
     @cInclude("X11/Xlib.h");
@@ -24,6 +25,10 @@ pub const Options = struct {
     timing: bool = false,
     /// Exit right after the first frame is on screen.
     smoke: bool = false,
+    /// Config file to read at startup and write on a settings change.
+    config_path: ?[]const u8 = null,
+    /// --canvas-bg: wins over the config file.
+    canvas_bg: ?core.settings.CanvasBg = null,
 };
 
 const xc_crosshair = 34;
@@ -157,6 +162,10 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const loader = try std.Thread.spawn(.{}, Load.run, .{ &load, gpa, opts.image_path });
     var joined = false;
     defer if (!joined) loader.join();
+    // The config file, while the image decodes (a few µs).
+    var t_cfg = try std.time.Timer.start();
+    const settings = config.resolve(if (opts.config_path) |p| config.load(p) else .{}, opts.canvas_bg);
+    const cfg_ns = t_cfg.read();
 
     const dpy = c.XOpenDisplay(null) orelse return error.NoDisplay;
     defer _ = c.XCloseDisplay(dpy);
@@ -207,7 +216,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const image = try load.image;
     const t_loaded = start.read();
 
-    const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path });
+    const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path });
     defer app.destroy();
     app.comp.setFrameBuffer(surf.canvas());
 
@@ -294,8 +303,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
             frames += 1;
             if (frames == 1 and opts.timing) {
                 std.debug.print(
-                    "timing: window mapped {d:.1} ms, image decoded {d:.1} ms (thread, {d:.1} ms), first frame on screen {d:.1} ms (render {d:.1} ms, present {d:.1} ms), {d}x{d}, shm={}\n",
-                    .{ ms(t_window), ms(t_loaded), ms(load.ns), ms(start.read()), ms(t_render), ms(t_present), app.editor.view.screen_w, app.editor.view.screen_h, use_shm },
+                    "timing: window mapped {d:.1} ms, image decoded {d:.1} ms (thread, {d:.1} ms), config read {d:.3} ms, first frame on screen {d:.1} ms (render {d:.1} ms, present {d:.1} ms), {d}x{d}, shm={}\n",
+                    .{ ms(t_window), ms(t_loaded), ms(load.ns), ms(cfg_ns), ms(start.read()), ms(t_render), ms(t_present), app.editor.view.screen_w, app.editor.view.screen_h, use_shm },
                 );
             }
             if (opts.smoke) break;

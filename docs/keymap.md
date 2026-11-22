@@ -60,7 +60,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Mouse wheel | Bigger / smaller stroke and text |
 | Ctrl+wheel | Zoom in / out about the pointer |
 | Middle drag | Pan the view |
-| Drawing past the image | The canvas grows to hold the shape, in light or dark grey (`b`); the export holds it all. Zoom out (`-`) for room around a full-screen image |
+| Drawing past the image | The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers) |
 | Click on the top bar | Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`) |

@@ -1,5 +1,6 @@
 //! Command line parsing. `usage` is the --help text.
 const std = @import("std");
+const core = @import("core");
 
 pub const usage =
     \\Usage: annotate [options] <image>
@@ -11,6 +12,9 @@ pub const usage =
     \\  -e <image>             Same as the <image> argument (ksnip compatible)
     \\  -o, --output <path>    Ctrl+S writes a PNG here (default: overwrite <image> if it
     \\                         is a .png, else <image stem>.annotated.png)
+    \\  --canvas-bg light|dark
+    \\                         Canvas background outside the image for this run
+    \\                         (wins over the config file; `b` switches it)
     \\  --timing               Print startup timings to stderr
     \\  --smoke                Open the window, show one frame, print timings, exit
     \\  --keymap-md            Print the key map as Markdown and exit
@@ -23,6 +27,11 @@ pub const usage =
     \\  --frame-out <png>      Write the final UI frame
     \\  --export-out <png>     Write the exported image (full resolution)
     \\  --clipboard-out <png>  Ctrl+C in the script writes here
+    \\  (headless never reads or writes the config file; --canvas-bg applies)
+    \\
+    \\Config file: $XDG_CONFIG_HOME/annotate/config (default ~/.config/annotate/config),
+    \\one line `canvas_bg=light` or `canvas_bg=dark`. annotate writes it when you
+    \\switch the canvas background; a missing or broken file gives the defaults.
     \\
     \\Benchmark:
     \\  --bench [<image>]      Measure decode, first frame, drag frames, export
@@ -43,6 +52,8 @@ pub const Options = struct {
     clipboard_out: ?[]const u8 = null,
     timing: bool = false,
     smoke: bool = false,
+    /// --canvas-bg: wins over the config file.
+    canvas_bg: ?core.settings.CanvasBg = null,
 };
 
 pub const Error = error{BadArgs};
@@ -96,6 +107,13 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
             o.export_out = try S.value(args, &i, msg, "--export-out needs a path");
         } else if (eq(u8, a, "--clipboard-out")) {
             o.clipboard_out = try S.value(args, &i, msg, "--clipboard-out needs a path");
+        } else if (eq(u8, a, "--canvas-bg")) {
+            const v = try S.value(args, &i, msg, "--canvas-bg needs light or dark");
+            o.canvas_bg = std.meta.stringToEnum(core.settings.CanvasBg, v) orelse {
+                msg.* = "--canvas-bg needs light or dark";
+                diag.arg = v;
+                return error.BadArgs;
+            };
         } else if (eq(u8, a, "--size")) {
             const v = try S.value(args, &i, msg, "--size needs WxH, e.g. 1920x1080");
             o.size = parseSize(v) orelse {
@@ -159,4 +177,9 @@ test "parse" {
     try std.testing.expectEqualStrings("--nope", msg.arg.?);
     try std.testing.expectError(error.BadArgs, parse(&.{}, &msg));
     try std.testing.expectEqual(Mode.bench, (try parse(&.{"--bench"}, &msg)).mode);
+    try std.testing.expectEqual(@as(?core.settings.CanvasBg, null), o.canvas_bg);
+    try std.testing.expectEqual(core.settings.CanvasBg.dark, (try parse(&.{ "--canvas-bg", "dark", "a.png" }, &msg)).canvas_bg.?);
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--canvas-bg", "white", "a.png" }, &msg));
+    try std.testing.expectEqualStrings("white", msg.arg.?);
+    try std.testing.expectError(error.BadArgs, parse(&.{"--canvas-bg"}, &msg));
 }

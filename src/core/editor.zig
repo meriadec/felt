@@ -25,7 +25,13 @@ const Tool = keymap.Tool;
 const Annotation = ann.Annotation;
 const Part = ann.Part;
 
-pub const Command = enum { save, copy, quit };
+pub const Command = enum {
+    save,
+    copy,
+    quit,
+    /// The settings changed: the app may persist them (the editor does no IO).
+    save_settings,
+};
 
 pub const Effect = struct {
     redraw: bool = false,
@@ -545,7 +551,10 @@ pub const Editor = struct {
                 if (TopBar.of(self.view.screen_w, self.view.screen_h).hit(p)) |b| switch (b) {
                     .undo => try self.undo(),
                     .redo => try self.redo(),
-                    .canvas_bg => self.setCanvasBg(self.settings.canvas_bg.other()),
+                    .canvas_bg => {
+                        self.setCanvasBg(self.settings.canvas_bg.other());
+                        return .{ .redraw = true, .command = .save_settings };
+                    },
                 };
             }
             return .{ .redraw = true };
@@ -729,7 +738,10 @@ pub const Editor = struct {
                 return self.run(ag.action, was_armed);
             } else try self.setTool(t),
             .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
-            .canvas_bg => self.setCanvasBg(self.settings.canvas_bg.other()),
+            .canvas_bg => {
+                self.setCanvasBg(self.settings.canvas_bg.other());
+                return .{ .redraw = true, .command = .save_settings };
+            },
             .next_tool => try self.setTool(keymap.cycleTool(self.tool, 1)),
             .prev_tool => try self.setTool(keymap.cycleTool(self.tool, -1)),
             .color => |i| self.color_idx = i,

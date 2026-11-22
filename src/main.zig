@@ -6,6 +6,7 @@ const cli = @import("cli.zig");
 const headless = @import("backend/headless.zig");
 const x11 = @import("backend/x11.zig");
 const bench = @import("bench.zig");
+const config = @import("config.zig");
 
 pub fn main() !u8 {
     var start = try std.time.Timer.start();
@@ -30,6 +31,9 @@ pub fn main() !u8 {
 
     var default_out: ?[]u8 = null;
     defer if (default_out) |p| gpa.free(p);
+    // Only the window reads and writes the config file (headless: hermetic).
+    const config_path = if (opts.mode == .window) try config.path(gpa, config.Env.ofProcess()) else null;
+    defer if (config_path) |p| gpa.free(p);
     switch (opts.mode) {
         .help => try writeStdout(cli.usage),
         .keymap_md => {
@@ -46,6 +50,7 @@ pub fn main() !u8 {
             .export_out = opts.export_out,
             .output_path = opts.output,
             .clipboard_out = opts.clipboard_out,
+            .canvas_bg = opts.canvas_bg,
         }) catch |err| return fail(err, opts.image.?),
         .window => x11.run(gpa, .{
             .image_path = opts.image.?,
@@ -55,6 +60,8 @@ pub fn main() !u8 {
             },
             .timing = opts.timing,
             .smoke = opts.smoke,
+            .config_path = config_path,
+            .canvas_bg = opts.canvas_bg,
         }, &start) catch |err| return fail(err, opts.image.?),
         .bench => bench.run(gpa, .{
             .image_path = opts.image,
@@ -89,5 +96,6 @@ test {
     std.testing.refAllDecls(@This());
     _ = @import("backend/script.zig");
     _ = @import("app.zig");
+    _ = @import("config.zig");
     _ = @import("golden.zig");
 }

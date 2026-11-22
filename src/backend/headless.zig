@@ -5,6 +5,7 @@ const std = @import("std");
 const core = @import("core");
 const app_mod = @import("../app.zig");
 const script_mod = @import("script.zig");
+const config = @import("../config.zig");
 
 const App = app_mod.App;
 const Canvas = core.canvas.Canvas;
@@ -21,6 +22,8 @@ pub const Options = struct {
     output_path: ?[]const u8 = null,
     /// Ctrl+C target inside the script (off when null).
     clipboard_out: ?[]const u8 = null,
+    /// --canvas-bg. Headless never reads or writes the config file.
+    canvas_bg: ?core.settings.CanvasBg = null,
 };
 
 /// Replay `script` on a new App that owns `image`. Renders after each event
@@ -125,6 +128,17 @@ fn save(gpa: std.mem.Allocator, cv: *const Canvas, path: []const u8) !void {
     };
 }
 
+/// The app config of a headless run: the defaults and the flag, no config
+/// file path, so a settings change (`b`) writes nothing.
+fn appConfig(opts: Options) app_mod.Config {
+    return .{
+        .output_path = opts.output_path,
+        .clipboard = if (opts.clipboard_out) |p| .{ .file = p } else .none,
+        .settings = config.resolve(.{}, opts.canvas_bg),
+        .settings_path = null,
+    };
+}
+
 pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var script = if (opts.script_path) |p| try loadScript(gpa, p) else script_mod.Script{};
     defer script.deinit(gpa);
@@ -133,10 +147,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         std.debug.print("annotate: cannot load {s}: {s}\n", .{ image_path, @errorName(err) });
         return error.WriteReported;
     };
-    const app = try replay(gpa, image, &script, opts.size, .{
-        .output_path = opts.output_path,
-        .clipboard = if (opts.clipboard_out) |p| .{ .file = p } else .none,
-    });
+    const app = try replay(gpa, image, &script, opts.size, appConfig(opts));
     defer app.destroy();
     if (opts.frame_out) |p| {
         try save(gpa, app.frame(), p);
@@ -150,5 +161,70 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     }
     if (opts.frame_out == null and opts.export_out == null) {
         std.debug.print("note: no --frame-out or --export-out given, nothing written\n", .{});
+    }
+}
+
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+
+/// An environment variable set for a test, put back by `restore`.
+const EnvSwap = struct {
+    name: [:0]const u8,
+    old: ?[:0]u8,
+
+    fn set(gpa: std.mem.Allocator, name: [:0]const u8, value: [:0]const u8) !EnvSwap {
+        const old = if (std.posix.getenv(name)) |v| try gpa.dupeZ(u8, v) else null;
+        _ = setenv(name, value, 1);
+        return .{ .name = name, .old = old };
+    }
+
+    fn restore(e: EnvSwap, gpa: std.mem.Allocator) void {
+        if (e.old) |v| {
+            _ = setenv(e.name, v, 1);
+            gpa.free(v);
+        } else _ = unsetenv(e.name);
+    }
+};
+
+test "headless never reads or writes the config file" {
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(dir);
+    const dir_z = try gpa.dupeZ(u8, dir);
+    defer gpa.free(dir_z);
+    // XDG_CONFIG_HOME and HOME both point at the tmp dir, each with a dark config.
+    const cfg = "canvas_bg=dark\n";
+    try tmp.dir.makePath("annotate");
+    try tmp.dir.makePath(".config/annotate");
+    try tmp.dir.writeFile(.{ .sub_path = "annotate/config", .data = cfg });
+    try tmp.dir.writeFile(.{ .sub_path = ".config/annotate/config", .data = cfg });
+    const xdg = try EnvSwap.set(gpa, "XDG_CONFIG_HOME", dir_z);
+    defer xdg.restore(gpa);
+    const home = try EnvSwap.set(gpa, "HOME", dir_z);
+    defer home.restore(gpa);
+
+    // A headless run's config: the default or the flag, never the file's.
+    try std.testing.expectEqual(core.settings.CanvasBg.light, appConfig(.{ .image_path = "x" }).settings.canvas_bg);
+    try std.testing.expectEqual(core.settings.CanvasBg.dark, appConfig(.{ .image_path = "x", .canvas_bg = .dark }).settings.canvas_bg);
+    try std.testing.expectEqual(@as(?[]const u8, null), appConfig(.{ .image_path = "x", .canvas_bg = .dark }).settings_path);
+    // A replay with `b` (a settings change): light (not the file's dark), then dark.
+    var perr: script_mod.ParseError = undefined;
+    var s = try script_mod.parse(gpa, "size 200 150\nkey b\n", &perr);
+    defer s.deinit(gpa);
+    const app = try replay(gpa, try Canvas.init(gpa, 40, 30), &s, null, appConfig(.{ .image_path = "x" }));
+    defer app.destroy();
+    try std.testing.expectEqual(core.settings.CanvasBg.dark, app.editor.settings.canvas_bg);
+    // Both files stay as they were, with no temp file next to them.
+    var buf: [64]u8 = undefined;
+    for ([_][]const u8{ "annotate", ".config/annotate" }) |sub| {
+        var d = try tmp.dir.openDir(sub, .{ .iterate = true });
+        defer d.close();
+        try std.testing.expectEqualStrings(cfg, try d.readFile("config", &buf));
+        var it = d.iterate();
+        var n: usize = 0;
+        while (try it.next()) |_| n += 1;
+        try std.testing.expectEqual(@as(usize, 1), n);
     }
 }

@@ -2,14 +2,18 @@
 # X11 smoke test on a real display (needs DISPLAY, xdotool, ImageMagick `import`).
 # Opens annotate on a copy of the fixture, draws an arrow, two numbers and a
 # text with xdotool, zooms out (Ctrl+wheel), pans (middle drag), drops a
-# number past the image edge, captures the window, saves with Ctrl+S, quits
-# with Esc, then checks the saved PNG: the canvas grew to the right. Run through `zig build smoke-x11`.
+# number past the image edge, switches the canvas to dark (`b`), captures the
+# window, saves with Ctrl+S, quits with Esc, then checks the saved PNG (the
+# canvas grew to the right, dark grey) and the config file (canvas_bg=dark,
+# under a test XDG_CONFIG_HOME: the user's config is never touched). Run
+# through `zig build smoke-x11`.
 # Takes about 3 s and grabs the pointer and the screen meanwhile.
 set -euo pipefail
 bin=${1:-zig-out/bin/annotate}
 out=test-out/x11-smoke
 mkdir -p "$out"
 rm -f "$out"/*.png "$out"/log.txt
+rm -rf "$out/xdg"
 
 for tool in xdotool import identify; do
   command -v "$tool" >/dev/null || { echo "x11-smoke: $tool not found" >&2; exit 2; }
@@ -17,7 +21,7 @@ done
 [ -n "${DISPLAY:-}" ] || { echo "x11-smoke: DISPLAY is not set (try DISPLAY=:0)" >&2; exit 2; }
 
 cp tests/fixtures/screenshot.png "$out/input.png"
-"$bin" --timing -o "$out/saved.png" "$out/input.png" 2>"$out/log.txt" &
+XDG_CONFIG_HOME="$PWD/$out/xdg" "$bin" --timing -o "$out/saved.png" "$out/input.png" 2>"$out/log.txt" &
 pid=$!
 trap 'kill $pid 2>/dev/null || true' EXIT
 
@@ -41,6 +45,7 @@ xdotool key Return
 xdotool mousemove --sync $cx $cy keydown ctrl click 5 keyup ctrl
 xdotool mousedown 2 mousemove $((cx + 50)) $((cy + 25)) mousemove $((cx + 100)) $((cy + 50)) mouseup 2
 xdotool key n mousemove $((cx + 700)) $cy click 1
+xdotool key b
 sleep 0.3
 import -window "$wid" "$out/window.png"
 xdotool key ctrl+s
@@ -57,5 +62,8 @@ got=$(identify -format '%w %h' "$out/saved.png")
 read -r ww wh <<<"$want"
 read -r gw gh <<<"$got"
 [ "$gw" -gt "$ww" ] && [ "$gh" -eq "$wh" ] || { echo "x11-smoke: saved ${gw}x${gh}, expected wider than ${ww}x${wh} (number past the right edge)" >&2; exit 1; }
+px=$(convert "$out/saved.png" -crop "1x1+$((gw - 2))+2" -format '%[hex:p{0,0}]' info:)
+[ "${px:0:6}" = "4C566A" ] || { echo "x11-smoke: canvas past the image is #$px, expected #4C566A (dark, after b)" >&2; exit 1; }
+grep -qx 'canvas_bg=dark' "$out/xdg/annotate/config" || { echo "x11-smoke: $out/xdg/annotate/config does not say canvas_bg=dark" >&2; exit 1; }
 cat "$out/log.txt"
 echo "x11-smoke: OK. Look at $out/window.png (screen) and $out/saved.png (export)."
