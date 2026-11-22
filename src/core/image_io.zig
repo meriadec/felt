@@ -4,11 +4,19 @@
 const std = @import("std");
 const c = @import("c.zig").c;
 const Canvas = @import("canvas.zig").Canvas;
+const png = @import("png.zig");
 
 pub const Error = error{ DecodeFailed, EncodeFailed, OutOfMemory };
 
-/// Decode an encoded image held in memory.
+/// Decode an encoded image held in memory: fast path for common PNGs, stb for the rest.
 pub fn decode(gpa: std.mem.Allocator, bytes: []const u8) Error!Canvas {
+    return png.decode(gpa, bytes) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        error.Unsupported, error.Corrupt => decodeStb(gpa, bytes),
+    };
+}
+
+pub fn decodeStb(gpa: std.mem.Allocator, bytes: []const u8) Error!Canvas {
     var w: c_int = 0;
     var h: c_int = 0;
     var n: c_int = 0;
@@ -54,6 +62,11 @@ fn toRgb(gpa: std.mem.Allocator, cv: *const Canvas) ![]u8 {
 
 /// Encode to PNG in memory. Caller owns the bytes.
 pub fn encodePng(gpa: std.mem.Allocator, cv: *const Canvas) ![]u8 {
+    return png.encode(gpa, cv);
+}
+
+/// stb_image_write encoder, kept for comparison (tests, --bench).
+pub fn encodePngStb(gpa: std.mem.Allocator, cv: *const Canvas) ![]u8 {
     const rgb = try toRgb(gpa, cv);
     defer gpa.free(rgb);
     var sink = Sink{ .gpa = gpa };
@@ -95,9 +108,18 @@ test "png round trip" {
     var cv = try Canvas.init(gpa, 3, 2);
     defer cv.deinit(gpa);
     for (cv.pixels, 0..) |*p, i| p.* = 0xff000000 | @as(u32, @intCast(i * 0x102030));
-    const png = try encodePng(gpa, &cv);
-    defer gpa.free(png);
-    var back = try decode(gpa, png);
+    const bytes = try encodePng(gpa, &cv);
+    defer gpa.free(bytes);
+    var back = try decode(gpa, bytes);
     defer back.deinit(gpa);
     try std.testing.expectEqualSlices(u32, cv.pixels, back.pixels);
+    // stb path agrees with the fast path.
+    const stb_bytes = try encodePngStb(gpa, &cv);
+    defer gpa.free(stb_bytes);
+    var via_stb = try decodeStb(gpa, bytes);
+    defer via_stb.deinit(gpa);
+    try std.testing.expectEqualSlices(u32, cv.pixels, via_stb.pixels);
+    var fast_of_stb = try png.decode(gpa, stb_bytes);
+    defer fast_of_stb.deinit(gpa);
+    try std.testing.expectEqualSlices(u32, cv.pixels, fast_of_stb.pixels);
 }

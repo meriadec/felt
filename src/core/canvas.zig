@@ -166,6 +166,22 @@ fn bigFree(px: []Pixel) void {
     std.posix.munmap(p[0..len]);
 }
 
+/// Byte buffer with the same big-allocation policy as canvases.
+pub fn allocBytes(gpa: std.mem.Allocator, n: usize) ![]u8 {
+    if (n >= big_bytes) {
+        const px = try bigAlloc((n + 3) / 4);
+        return std.mem.sliceAsBytes(px)[0..n];
+    }
+    return gpa.alloc(u8, n);
+}
+
+pub fn freeBytes(gpa: std.mem.Allocator, b: []u8) void {
+    if (b.len >= big_bytes) {
+        const px: [*]Pixel = @ptrCast(@alignCast(b.ptr));
+        bigFree(px[0 .. (b.len + 3) / 4]);
+    } else gpa.free(b);
+}
+
 inline fn mul255(a: u8, b: u8) u8 {
     const x = @as(u32, a) * b + 128;
     return @intCast((x + (x >> 8)) >> 8);

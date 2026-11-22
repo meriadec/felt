@@ -108,7 +108,11 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     try ini.reportMin(w, "app init (font, view)");
     try first.reportMin(w, "first frame render");
     try total.reportMin(w, "startup total");
-    try w.writeAll("\n");
+    // Reference: stb decode of the same bytes (and a correctness check).
+    t.reset();
+    var ref = try core.image_io.decodeStb(gpa, png);
+    defer ref.deinit(gpa);
+    try w.print("{s:<26} {d:>7.3} ms ({s})\n\n", .{ "decode PNG, stb reference", ms(t.read()), if (std.mem.eql(u32, ref.pixels, app.image.pixels)) "same pixels" else "PIXELS DIFFER" });
 
     const W: f32 = @floatFromInt(opts.size[0]);
     const H: f32 = @floatFromInt(opts.size[1]);
@@ -188,5 +192,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     const t_encode = t.lap();
     try w.print("{s:<26} {d:>7.3} ms\n", .{ "export render", ms(t_export) });
     try w.print("{s:<26} {d:>7.3} ms ({d} KiB)\n", .{ "export PNG encode", ms(t_encode), out_png.len / 1024 });
+    const stb_png = try core.image_io.encodePngStb(gpa, &out);
+    defer gpa.free(stb_png);
+    try w.print("{s:<26} {d:>7.3} ms ({d} KiB)\n", .{ "export PNG encode, stb ref", ms(t.lap()), stb_png.len / 1024 });
     try w.flush();
 }
