@@ -1043,3 +1043,32 @@ test "the arrow style switch above the dock: a click picks a style; with another
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
 }
+
+test "move: a stairs arrow is grabbed on its path, not on the straight line; an end re-routes it" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("a"); // stairs
+    try t.drag(10, 10, 190, 90); // right along y 10 to x 100, down to y 90, right to x 190
+    _ = try t.key("m");
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 50, .y = 10 }).?);
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 100, .y = 50 }).?);
+    try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 55, .y = 30 })); // the straight line
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .head }, t.ed.grabAt(.{ .x = 188, .y = 89 }).?);
+    // The head alone: the path re-routes, the style stays.
+    try t.drag(188, 89, 178, 59);
+    var a = t.doc.items.items[0].arrow;
+    try std.testing.expectEqual(Vec2.init(10, 10), a.tail);
+    try std.testing.expectEqual(Vec2.init(180, 60), a.head);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, a.style);
+    try std.testing.expect(draw.hitDist(t.ed.ctx(), t.doc.items.items[0], t.ed.view.xf, .{ .x = 95, .y = 35 }) < 0); // new middle x 95
+    // The body: both ends move.
+    try t.drag(95, 35, 100, 40);
+    a = t.doc.items.items[0].arrow;
+    try std.testing.expectEqual(Vec2.init(15, 15), a.tail);
+    try std.testing.expectEqual(Vec2.init(185, 65), a.head);
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(Vec2.init(190, 90), t.doc.items.items[0].arrow.head);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
+}
