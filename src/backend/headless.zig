@@ -39,12 +39,12 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             if (try feed(app, ev)) break;
         },
         .ui => |t| {
-            const p = try uiPoint(app, t) orelse continue;
+            const p = try uiPoint(app, t, .click) orelse continue;
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },
         .hover => |t| {
-            const p = try uiPoint(app, t) orelse continue;
+            const p = try uiPoint(app, t, .hover) orelse continue;
             if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
         },
     };
@@ -73,8 +73,9 @@ fn feed(app: *App, ev: core.input.Event) !bool {
 }
 
 /// Screen center of a chrome item at the current screen size and tool;
-/// null: no click needed (the canvas background is already the one named).
-fn uiPoint(app: *App, t: script_mod.UiTarget) !?core.geom.Vec2 {
+/// null: no click needed (the canvas background or the arrow style is
+/// already the one named). A hover always gets the point.
+fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core.geom.Vec2 {
     const w = app.editor.view.screen_w;
     const h = app.editor.view.screen_h;
     const d = core.dock.Dock.of(w, h, app.editor.tool);
@@ -93,13 +94,14 @@ fn uiPoint(app: *App, t: script_mod.UiTarget) !?core.geom.Vec2 {
         .help => mid(d.help),
         .undo => mid(bar.slots[0]),
         .redo => mid(bar.slots[1]),
-        .canvas_bg => |want| if (want != null and want.? == app.editor.settings.canvas_bg) null else mid(bar.slots[2]),
+        .canvas_bg => |want| if (why == .click and want != null and want.? == app.editor.settings.canvas_bg) null else mid(bar.slots[2]),
         .arrow_style => |want| {
             if (d.switch_panel == null) {
                 std.log.err("script: ui arrow-style: the switch shows only with the arrow or the callout tool", .{});
                 return error.UiItemHidden;
             }
             const cur = app.editor.arrow_style;
+            if (why == .click and want != null and want.? == cur) return null;
             const st = want orelse (if (cur == .straight) core.annotation.ArrowStyle.stairs else .straight);
             for (core.dock.arrow_styles, d.styles) |s, b| if (s == st) return mid(b);
             unreachable;
@@ -227,4 +229,16 @@ test "headless never reads or writes the config file" {
         while (try it.next()) |_| n += 1;
         try std.testing.expectEqual(@as(usize, 1), n);
     }
+}
+
+test "ui arrow-style NAME clicks only if the style is not NAME yet" {
+    const gpa = std.testing.allocator;
+    var perr: script_mod.ParseError = undefined;
+    // Stairs by a click (a toast), a key hides the toast, stairs again: no click, no toast.
+    var s = try script_mod.parse(gpa, "size 900 500\nui tool arrow\nui arrow-style stairs\nkey 1\nui arrow-style stairs\n", &perr);
+    defer s.deinit(gpa);
+    const app = try replay(gpa, try Canvas.init(gpa, 40, 30), &s, null, appConfig(.{ .image_path = "x" }));
+    defer app.destroy();
+    try std.testing.expectEqual(core.annotation.ArrowStyle.stairs, app.editor.arrow_style);
+    try std.testing.expectEqual(@as(?[]const u8, null), app.editor.toast());
 }

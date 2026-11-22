@@ -40,3 +40,4 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-23: the bench's stairs move pressed the middle of the middle segment, which became the bend handle: the bench stopped with an error and printed none of its results (buffered). Fix: the bench flushes on error; it presses the first segment. Second hit of "no `check` step runs the bench": still open.
 - 2026-11-23: topbar.txt hovered redo with a raw `move 470 40`; a wider top bar would move it off redo with no error. Fix: script command `move ui NAME` hovers a chrome item where it is.
 - 2026-11-23: a re-rendered `zig build shot` PNG read at the same path showed the old picture (second hit of the reader cache). Fix: `zig build shot -Dtag=NAME` writes new paths.
+- 2026-11-23: a script could not state its arrow style without a side effect: `ui arrow-style NAME` always clicked (a toast), unlike `ui canvas-bg NAME`. Fix: it clicks only if the style is not NAME yet.

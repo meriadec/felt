@@ -16,7 +16,8 @@ pub const UiTarget = union(enum) {
     help,
     undo,
     redo,
-    /// A slot of the arrow style switch (null: the style not in use, a toggle).
+    /// A slot of the arrow style switch. With a name, it clicks only if the
+    /// style is not that one yet (null: the style not in use, a toggle).
     arrow_style: ?core.annotation.ArrowStyle,
     /// The canvas background switch of the top bar. With a name, it clicks
     /// only if the canvas is not that one yet (null: always, a toggle).
