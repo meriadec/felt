@@ -1,0 +1,5 @@
+# Help overlay (?): every shortcut from the key map, over the dock; the dock
+# shows the crop tool picked by a click on its slot.
+size 900 500
+click 456 458
+key ?

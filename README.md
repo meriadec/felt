@@ -1,8 +1,8 @@
 # annotate
 
 Fast full-screen screenshot annotation for X11. Opens an image, you draw
-arrows, text, boxes, numbered bubbles, callouts, highlights and pixelation
-with one-letter tools, then save (Ctrl+S) or copy (Ctrl+C). Built to replace
+arrows, text labels, boxes, numbered bubbles, callouts, highlights and
+pixelation with one-letter tools, crop it, then save (Ctrl+S) or copy (Ctrl+C). Built to replace
 `ksnip -e` in an i3 setup.
 
 ## Install
@@ -23,9 +23,14 @@ annotate -e shot.png         # same (ksnip-compatible flag)
 annotate -o out.png shot.png # Ctrl+S writes out.png
 ```
 
-The image fits the screen (never upscaled). Press `?` or F1 to show or hide
-the key bar. Esc quits; with unsaved changes, press Esc twice. Ctrl+C counts as
-saved, because xclip keeps the image in the clipboard after annotate exits.
+The image fits the screen (never upscaled). A small icon dock at the bottom
+center shows the tools (each with its key letter), the colors and the size;
+click it or use the keys. Tab and Shift+Tab cycle the tools. Space hides or
+shows the dock; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
+drag; undo restores it. The UI and the default sizes scale with the screen
+height (2x at 4K). Esc quits; with unsaved changes, press Esc twice. Ctrl+C
+counts as saved, because xclip keeps the image in the clipboard after annotate
+exits.
 
 Full key map: [docs/keymap.md](docs/keymap.md).
 

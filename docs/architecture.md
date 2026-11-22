@@ -40,10 +40,12 @@ image files. Build: `coreModule` in build.zig.
 | `document.zig` | Annotation list, crop rectangle, undo/redo of both, number counter |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
 | `input.zig` | Backend-neutral events and key chords |
-| `keymap.zig` | Single source of truth for keys: dispatch, hint bar, docs/keymap.md |
+| `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds |
-| `chrome.zig` | Hint bar, status pill, toast (layout as draw ops) |
+| `icons.zig` | Vector tool icons (SDF shapes, any scale) |
+| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks) |
+| `chrome.zig` | Nord chrome: icon dock, help overlay, toast pill (layout as draw ops) |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `exporter.zig` | Full-resolution export of the kept part (crop origin shift) |
 
@@ -93,9 +95,11 @@ only `XShmPutImage` of the damaged rects.
 
 ## Add a tool
 
-1. `keymap.zig`: add to `Tool` and `tools` (key, name, mouse help).
-2. `annotation.zig`: add a variant with image-space fields.
-3. `editor.zig`: build it in `shapeFromDrag` or `onDown`.
-4. `draw.zig`: draw it and give its `bounds`.
-5. `tests/scripts/<tool>.txt`, `zig build shot -Dscript=<tool>`, look at the PNG,
+1. `keymap.zig`: add to `Tool` and `tools` (key, name, mouse help). The dock,
+   the Tab cycle and the help overlay follow `tools` order.
+2. `icons.zig`: draw its icon (look at a `zig build shot` frame at 900x500).
+3. `annotation.zig`: add a variant with image-space fields.
+4. `editor.zig`: build it in `shapeFromDrag` or `onDown`.
+5. `draw.zig`: draw it and give its `bounds`.
+6. `tests/scripts/<tool>.txt`, `zig build shot -Dscript=<tool>`, look at the PNG,
    `zig build test -Dupdate-goldens=true`, `zig build docs`.

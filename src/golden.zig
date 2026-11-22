@@ -173,7 +173,6 @@ test "export is at original resolution with annotations mapped from screen" {
     const app = try App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none });
     defer app.destroy();
     try std.testing.expectEqual(@as(f32, 0.5), app.editor.view.xf.scale);
-    _ = try app.handle(.{ .key = .{ .key = .{ .char = '?' } } }); // hide the hint bar
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'r' } } });
     _ = try app.handle(.{ .mouse_down = .{ .x = 20, .y = 20 } });
     _ = try app.handle(.{ .mouse_move = .{ .x = 180, .y = 130 } });

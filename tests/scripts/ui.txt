@@ -1,6 +1,8 @@
-# UI states: color and size picked, help hidden, unsaved-changes toast after Esc.
+# UI states: blue picked by a dock click, size up twice, then the
+# unsaved-changes toast after Esc.
 size 900 500
 key a
 drag 300 300 400 200
-key 5 ] ] ?
+click 596 458
+key ] ]
 key esc

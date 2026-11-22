@@ -10,6 +10,7 @@ const color = @import("color.zig");
 const ann = @import("annotation.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
+const Dock = @import("dock.zig").Dock;
 
 const Vec2 = geom.Vec2;
 const Tool = keymap.Tool;
@@ -55,7 +56,10 @@ pub const Editor = struct {
     tool_before_crop: Tool = .arrow,
     color_idx: u8 = 0,
     size_idx: u8 = style.default_size,
-    help_visible: bool = true,
+    /// The shortcut overlay (`?`/F1).
+    help_visible: bool = false,
+    /// The icon dock (Space hides it to see the bottom of the image).
+    dock_visible: bool = true,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
     quit_armed: bool = false,
@@ -220,6 +224,22 @@ pub const Editor = struct {
     }
 
     fn onDown(self: *Editor, x: f32, y: f32, button: input.Button) !Effect {
+        if (self.help_visible) { // any click closes the help
+            self.help_visible = false;
+            return .{ .redraw = true };
+        }
+        if (self.mode != .drag and self.dock_visible) {
+            const d = Dock.of(self.view.screen_w, self.view.screen_h);
+            if (d.contains(.{ .x = x, .y = y })) {
+                if (button == .left) if (d.hit(.{ .x = x, .y = y })) |h| switch (h) {
+                    .tool => |t| try self.setTool(t),
+                    .color => |i| self.color_idx = i,
+                    .size => self.size_idx = @intCast((@as(usize, self.size_idx) + 1) % style.sizes.len),
+                    .help => self.help_visible = true,
+                };
+                return .{ .redraw = true };
+            }
+        }
         if (button == .right) {
             self.cancel();
             return .{ .redraw = true };
@@ -325,9 +345,15 @@ pub const Editor = struct {
                 },
             }
         }
-        if (self.mode == .drag and k.key == .named and k.key.named == .escape) {
-            self.cancel();
-            return .{ .redraw = true };
+        if (k.key == .named and k.key.named == .escape) {
+            if (self.mode == .drag) {
+                self.cancel();
+                return .{ .redraw = true };
+            }
+            if (self.help_visible) {
+                self.help_visible = false;
+                return .{ .redraw = true };
+            }
         }
         const action = keymap.lookup(k) orelse return .{};
         return self.run(action, was_armed);
@@ -366,6 +392,7 @@ pub const Editor = struct {
                 self.setToast("Unsaved changes. Esc again to quit, Ctrl+S to save, Ctrl+C to copy.", .{});
             },
             .toggle_help => self.help_visible = !self.help_visible,
+            .toggle_dock => self.dock_visible = !self.dock_visible,
         }
         return .{ .redraw = true };
     }
@@ -476,6 +503,33 @@ test "crop drag crops, refits the view, goes back to the tool; undo restores" {
     try std.testing.expectEqual(@as(u32, 200), @as(u32, @intCast(t.ed.view.src.width())));
     _ = try t.key("ctrl+y");
     try std.testing.expectEqual(@as(u32, 100), @as(u32, @intCast(t.ed.view.src.width())));
+}
+
+test "dock clicks pick tools and colors and never draw; help closes on click and Esc" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.resize(1920, 1080);
+    const d = Dock.of(1920, 1080);
+    const tb = d.tools[2];
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
+    try std.testing.expectEqual(keymap.tools[2].tool, t.ed.tool);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = d.swatches[4].x, .y = d.swatches[4].y } });
+    try std.testing.expectEqual(@as(u8, 4), t.ed.color_idx);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+    _ = try t.key("?");
+    try std.testing.expect(t.ed.help_visible);
+    _ = try t.key("esc");
+    try std.testing.expect(!t.ed.help_visible);
+    _ = try t.key("f1");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
+    try std.testing.expect(!t.ed.help_visible);
+    try std.testing.expect(t.ed.mode == .idle);
+    // Hidden dock: a click there draws.
+    _ = try t.key("space");
+    try t.drag(d.panel.min.x + 2, d.panel.min.y + 2, d.panel.max.x - 2, d.panel.max.y - 2);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
 }
 
 test "callout drag then type" {

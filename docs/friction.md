@@ -16,7 +16,7 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-22: stb_image in Debug made every test decode slow. Fix: build.zig compiles vendored C with `-O2` in all modes.
 - 2026-11-22: zig test runs are cached, so golden tests did not re-run after PNG edits. Fix: `has_side_effects = true` on test runs.
 - 2026-11-22: status pill showed a tofu glyph: a slice pointed at a stack temporary. No test caught it; only reading the shot did. Fix: `ui.txt` golden covers the pill. Rule: after any chrome change, run `zig build shot` and read the PNG.
-- 2026-11-22: a frame-pixel test failed because the hint bar covered the point on a 200x150 screen. Fix: tests that probe frame pixels press `?` first.
+- 2026-11-22: a frame-pixel test failed because the hint bar covered the point on a 200x150 screen. Now the dock sits only at the bottom center: probe frame pixels near the top, or press Space to hide the dock.
 - 2026-11-22: XShmCreateImage keeps a pointer to the XShmSegmentInfo; a stack copy gave BadShmSeg. Fix: heap-allocate it (comment in x11.zig).
 - 2026-11-22: the Zig test runner names the wrong test in "while executing test". Doc: docs/testing.md says to read the `error:` line.
 - 2026-11-22: bench numbers moved +-30% between runs (powersave governor). Fix: `--bench` repeats startup and prints min/median.

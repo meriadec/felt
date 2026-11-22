@@ -1,6 +1,7 @@
 //! Key map: the single source of truth for shortcuts. The editor dispatches
-//! with `lookup`, the hint bar draws `bindings`, and `writeMarkdown` prints
-//! docs/keymap.md (`zig build docs`). Edit shortcuts here only.
+//! with `lookup`, the dock follows `tools` order, the help overlay lists
+//! `bindings` and `extra`, and `writeMarkdown` prints docs/keymap.md
+//! (`zig build docs`). Edit shortcuts here only.
 const std = @import("std");
 const input = @import("input.zig");
 const palette = @import("color.zig").palette;
@@ -52,6 +53,7 @@ pub const Action = union(enum) {
     copy,
     quit,
     toggle_help,
+    toggle_dock,
 };
 
 pub const Chord = struct {
@@ -64,9 +66,7 @@ pub const Chord = struct {
 pub const Binding = struct {
     chord: Chord,
     action: Action,
-    /// Text of the key cap in the hint bar; null hides the binding there.
-    bar: ?[]const u8 = null,
-    /// Short label (hint bar and docs).
+    /// Short label (help overlay and docs).
     label: []const u8,
 };
 
@@ -76,39 +76,49 @@ fn ch(c: u21) input.Key {
 
 pub const bindings: []const Binding = blk: {
     var list: []const Binding = &.{};
-    for (tools) |t| list = list ++ [_]Binding{.{ .chord = .{ .key = ch(t.key) }, .action = .{ .tool = t.tool }, .bar = &[_]u8{t.key}, .label = t.name }};
-    for (palette, 0..) |p, i| list = list ++ [_]Binding{.{
-        .chord = .{ .key = ch('1' + i) },
-        .action = .{ .color = i },
-        .bar = if (i == 0) std.fmt.comptimePrint("1-{d}", .{palette.len}) else null,
-        .label = if (i == 0) "color" else p.name,
-    }};
+    for (tools) |t| list = list ++ [_]Binding{.{ .chord = .{ .key = ch(t.key) }, .action = .{ .tool = t.tool }, .label = t.name }};
+    for (palette, 0..) |p, i| list = list ++ [_]Binding{.{ .chord = .{ .key = ch('1' + i) }, .action = .{ .color = i }, .label = p.name }};
     list = list ++ [_]Binding{
-        .{ .chord = .{ .key = .{ .named = .tab }, .shift = false }, .action = .next_tool, .bar = "Tab", .label = "next tool" },
+        .{ .chord = .{ .key = .{ .named = .tab }, .shift = false }, .action = .next_tool, .label = "next tool" },
         .{ .chord = .{ .key = .{ .named = .tab }, .shift = true }, .action = .prev_tool, .label = "previous tool" },
-        .{ .chord = .{ .key = ch('[') }, .action = .size_down, .bar = "[ ]", .label = "size" },
+        .{ .chord = .{ .key = ch('[') }, .action = .size_down, .label = "smaller" },
         .{ .chord = .{ .key = ch(']') }, .action = .size_up, .label = "bigger" },
-        .{ .chord = .{ .key = ch('z'), .ctrl = true, .shift = false }, .action = .undo, .bar = "Ctrl Z", .label = "undo" },
-        .{ .chord = .{ .key = ch('z'), .ctrl = true, .shift = true }, .action = .redo, .bar = "Ctrl Y", .label = "redo" },
+        .{ .chord = .{ .key = ch('z'), .ctrl = true, .shift = false }, .action = .undo, .label = "undo" },
+        .{ .chord = .{ .key = ch('z'), .ctrl = true, .shift = true }, .action = .redo, .label = "redo" },
         .{ .chord = .{ .key = ch('y'), .ctrl = true }, .action = .redo, .label = "redo" },
-        .{ .chord = .{ .key = ch('s'), .ctrl = true }, .action = .save, .bar = "Ctrl S", .label = "save" },
-        .{ .chord = .{ .key = ch('c'), .ctrl = true }, .action = .copy, .bar = "Ctrl C", .label = "copy" },
-        .{ .chord = .{ .key = .{ .named = .escape } }, .action = .quit, .bar = "Esc", .label = "quit" },
-        .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .bar = "?", .label = "help" },
+        .{ .chord = .{ .key = ch('s'), .ctrl = true }, .action = .save, .label = "save" },
+        .{ .chord = .{ .key = ch('c'), .ctrl = true }, .action = .copy, .label = "copy" },
+        .{ .chord = .{ .key = .{ .named = .escape } }, .action = .quit, .label = "quit" },
+        .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
+        .{ .chord = .{ .key = ch(' ') }, .action = .toggle_dock, .label = "hide / show the dock" },
     };
     break :blk list;
 };
 
-/// Mouse and context inputs that are not key bindings (docs only).
-pub const extra = [_][2][]const u8{
-    .{ "Mouse wheel", "Bigger / smaller stroke and text" },
-    .{ "Right click", "Cancel the shape or text in progress" },
-    .{ "Esc while drawing", "Cancel the shape in progress" },
-    .{ "Esc with unsaved changes", "Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image." },
-    .{ "Ctrl+Z while typing", "Drop the text in progress" },
-    .{ "Tab while typing", "Finish the text, then go to the next tool" },
+pub const Extra = struct {
+    input: []const u8,
+    /// Full text (docs).
+    effect: []const u8,
+    /// Short text (help overlay).
+    short: []const u8,
 };
+
+/// Mouse and context inputs that are not key bindings.
+pub const extra = [_]Extra{
+    .{ .input = "Mouse wheel", .effect = "Bigger / smaller stroke and text", .short = "size" },
+    .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
+    .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help", .short = "pick" },
+    .{ .input = "Esc while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
+    .{ .input = "Esc with unsaved changes", .effect = "Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, Esc again quits" },
+    .{ .input = "Esc or a click with help open", .effect = "Close the help", .short = "close help" },
+    .{ .input = "Ctrl+Z while typing", .effect = "Drop the text in progress", .short = "drop text" },
+    .{ .input = "Tab while typing", .effect = "Finish the text, then go to the next tool", .short = "finish, next tool" },
+};
+
+fn upper(c: u21) u21 {
+    return if (c < 128) std.ascii.toUpper(@intCast(c)) else c;
+}
 
 fn lower(c: u21) u21 {
     return if (c < 128) std.ascii.toLower(@intCast(c)) else c;
@@ -128,21 +138,36 @@ pub fn lookup(ev: input.KeyEvent) ?Action {
     return null;
 }
 
-pub fn chordName(buf: []u8, chord: Chord) []const u8 {
-    var w = std.Io.Writer.fixed(buf);
-    if (chord.ctrl) w.writeAll("Ctrl+") catch {};
-    if (chord.shift == true) w.writeAll("Shift+") catch {};
-    switch (chord.key) {
-        .char => |c| w.print("{u}", .{c}) catch {},
-        .named => |n| w.writeAll(switch (n) {
-            .escape => "Esc",
-            .f1 => "F1",
-            .tab => "Tab",
-            else => @tagName(n),
-        }) catch {},
-    }
-    return w.buffered();
+fn namedName(n: input.Named) []const u8 {
+    return switch (n) {
+        .escape => "Esc",
+        .f1 => "F1",
+        .tab => "Tab",
+        .enter => "Enter",
+        .backspace => "Backspace",
+        else => @tagName(n),
+    };
 }
+
+/// Key cap text of a chord, e.g. "Ctrl+Shift+Z" (bindings are ASCII).
+fn capText(comptime chord: Chord) []const u8 {
+    comptime {
+        var s: []const u8 = "";
+        if (chord.ctrl) s = s ++ "Ctrl+";
+        if (chord.shift == true) s = s ++ "Shift+";
+        return s ++ switch (chord.key) {
+            .char => |c| if (c == ' ') "Space" else &[_]u8{@intCast(if (chord.ctrl) upper(c) else c)},
+            .named => |n| namedName(n),
+        };
+    }
+}
+
+/// Key cap text of each binding, same order as `bindings`. Static strings.
+pub const caps: [bindings.len][]const u8 = blk: {
+    var a: [bindings.len][]const u8 = undefined;
+    for (bindings, 0..) |b, i| a[i] = capText(b.chord);
+    break :blk a;
+};
 
 /// Markdown reference, written to docs/keymap.md by `zig build docs`.
 pub fn writeMarkdown(w: *std.Io.Writer) !void {
@@ -159,17 +184,12 @@ pub fn writeMarkdown(w: *std.Io.Writer) !void {
     );
     for (tools) |t| try w.print("| `{c}` | {s} | {s} |\n", .{ t.key, t.name, t.mouse });
     try w.writeAll("\n## Keys\n\n| Key | Action |\n|---|---|\n");
-    for (bindings) |b| {
+    for (bindings, caps) |b, cap| {
         if (b.action == .tool) continue;
-        var buf: [32]u8 = undefined;
-        const label = switch (b.action) {
-            .color => |i| palette[i].name,
-            else => b.label,
-        };
-        try w.print("| `{s}` | {s}{s} |\n", .{ chordName(&buf, b.chord), if (b.action == .color) "color " else "", label });
+        try w.print("| `{s}` | {s}{s} |\n", .{ cap, if (b.action == .color) "color " else "", b.label });
     }
     try w.writeAll("\n## Mouse and context\n\n| Input | Effect |\n|---|---|\n");
-    for (extra) |e| try w.print("| {s} | {s} |\n", .{ e[0], e[1] });
+    for (extra) |e| try w.print("| {s} | {s} |\n", .{ e.input, e.effect });
 }
 
 test "lookup" {
@@ -187,6 +207,21 @@ test "cycleTool wraps both ways in toolbar order" {
     try std.testing.expectEqual(tools[1].tool, cycleTool(tools[0].tool, 1));
     try std.testing.expectEqual(tools[tools.len - 1].tool, cycleTool(tools[0].tool, -1));
     try std.testing.expectEqual(tools[0].tool, cycleTool(tools[tools.len - 1].tool, 1));
+}
+
+test "caps" {
+    var found: usize = 0;
+    for (bindings, caps) |b, cap| {
+        if (b.action == .redo and b.chord.shift == true) {
+            try std.testing.expectEqualStrings("Ctrl+Shift+Z", cap);
+            found += 1;
+        }
+        if (b.action == .prev_tool) {
+            try std.testing.expectEqualStrings("Shift+Tab", cap);
+            found += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), found);
 }
 
 test "markdown mentions every tool" {

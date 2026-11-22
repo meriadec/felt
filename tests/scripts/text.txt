@@ -14,7 +14,7 @@ click 150 395
 type Owner since 2019
 key enter
 key 3 [ [ [
-click 608 19
+click 640 19
 type tiny on dark
 key enter
 key 4 ] ] ] ] ] ] ]

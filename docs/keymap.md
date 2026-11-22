@@ -29,16 +29,17 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `8` | color dark |
 | `Tab` | next tool |
 | `Shift+Tab` | previous tool |
-| `[` | size |
+| `[` | smaller |
 | `]` | bigger |
-| `Ctrl+z` | undo |
-| `Ctrl+Shift+z` | redo |
-| `Ctrl+y` | redo |
-| `Ctrl+s` | save |
-| `Ctrl+c` | copy |
+| `Ctrl+Z` | undo |
+| `Ctrl+Shift+Z` | redo |
+| `Ctrl+Y` | redo |
+| `Ctrl+S` | save |
+| `Ctrl+C` | copy |
 | `Esc` | quit |
 | `?` | help |
 | `F1` | help |
+| `Space` | hide / show the dock |
 
 ## Mouse and context
 
@@ -46,7 +47,9 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 |---|---|
 | Mouse wheel | Bigger / smaller stroke and text |
 | Right click | Cancel the shape or text in progress |
+| Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help |
 | Esc while drawing | Cancel the shape in progress |
 | Esc with unsaved changes | Shows a warning; a second Esc quits. Ctrl+C counts as saved: the clipboard keeps the image. |
+| Esc or a click with help open | Close the help |
 | Ctrl+Z while typing | Drop the text in progress |
 | Tab while typing | Finish the text, then go to the next tool |
