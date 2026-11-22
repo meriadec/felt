@@ -3,7 +3,10 @@
 //! removal of an annotation also bumps `removals`, which tells the compositor
 //! that appending on top of its cache is not enough. A move changes an
 //! annotation in place (same index, same text): the compositor finds it by
-//! comparing with what it painted.
+//! comparing with what it painted. A step may carry chained moves: the
+//! re-routes of other stairs paths that the step caused (route.zig). Undo
+//! and redo take a step and its chained moves together, from the stored
+//! geometry: nothing is routed again.
 const std = @import("std");
 const Annotation = @import("annotation.zig").Annotation;
 const Rect = @import("geom.zig").Rect;
@@ -15,8 +18,9 @@ pub const Crop = struct { rect: Rect, first: usize };
 
 /// A move of annotation `index`: `other` is its geometry on the other side
 /// of the step (before the move in the history, after it in the redo stack).
-/// `other` shares the text of the annotation; it never owns it.
-pub const Move = struct { index: usize, other: Annotation };
+/// `other` shares the text of the annotation; it never owns it. `chained`:
+/// part of the step before it (a re-route that step caused).
+pub const Move = struct { index: usize, other: Annotation, chained: bool = false };
 
 /// One undoable step.
 const Change = union(enum) { add, crop, move: Move };
@@ -110,11 +114,25 @@ pub const Document = struct {
         self.revision += 1;
     }
 
+    /// Record that annotation `i` changed from `before` to its current
+    /// geometry as part of the last step (a re-route that step caused).
+    /// Nothing if it did not change. Needs a last step.
+    pub fn commitChained(self: *Document, gpa: std.mem.Allocator, i: usize, before: Annotation) !void {
+        std.debug.assert(self.history.items.len > 0);
+        if (std.meta.eql(before, self.items.items[i])) return;
+        try self.history.append(gpa, .{ .move = .{ .index = i, .other = before, .chained = true } });
+        self.revision += 1;
+    }
+
     /// Swap annotation `m.index` with `m.other`: the step seen from the other side.
     fn swapMove(self: *Document, m: Move) Move {
         const cur = self.items.items[m.index];
         self.items.items[m.index] = m.other;
-        return .{ .index = m.index, .other = cur };
+        return .{ .index = m.index, .other = cur, .chained = m.chained };
+    }
+
+    fn isChained(c: anytype) bool {
+        return c == .move and c.move.chained;
     }
 
     /// Keep only `r` (image pixels) of the canvas. Clears the redo stack.
@@ -126,27 +144,35 @@ pub const Document = struct {
         self.revision += 1;
     }
 
+    /// Undo the last step: its chained moves (last first), then the step.
     pub fn undo(self: *Document, gpa: std.mem.Allocator) !bool {
-        try self.undone.ensureUnusedCapacity(gpa, 1);
-        const change = self.history.pop() orelse return false;
-        switch (change) {
+        if (self.history.items.len == 0) return false;
+        // Room for the whole step first: it never stops half undone.
+        var n: usize = 1;
+        while (isChained(self.history.items[self.history.items.len - n])) n += 1;
+        try self.undone.ensureUnusedCapacity(gpa, n);
+        for (0..n) |_| switch (self.history.pop().?) {
             .add => {
                 self.undone.appendAssumeCapacity(.{ .add = self.items.pop().? });
                 self.removals += 1;
             },
             .crop => self.undone.appendAssumeCapacity(.{ .crop = self.crops.pop().? }),
             .move => |m| self.undone.appendAssumeCapacity(.{ .move = self.swapMove(m) }),
-        }
+        };
         self.revision += 1;
         return true;
     }
 
+    /// Redo the last undone step, then its chained moves (first first).
     pub fn redo(self: *Document, gpa: std.mem.Allocator) !bool {
+        const len = self.undone.items.len;
+        if (len == 0) return false;
+        var n: usize = 1;
+        while (n < len and isChained(self.undone.items[len - 1 - n])) n += 1;
         try self.items.ensureUnusedCapacity(gpa, 1);
         try self.crops.ensureUnusedCapacity(gpa, 1);
-        try self.history.ensureUnusedCapacity(gpa, 1);
-        const u = self.undone.pop() orelse return false;
-        self.history.appendAssumeCapacity(switch (u) {
+        try self.history.ensureUnusedCapacity(gpa, n);
+        for (0..n) |_| self.history.appendAssumeCapacity(switch (self.undone.pop().?) {
             .add => |a| blk: {
                 self.items.appendAssumeCapacity(a);
                 break :blk .add;
@@ -248,6 +274,56 @@ test "a move is one undo step: undo and redo swap the geometry back and forth" {
     doc.setLive(2, t);
     try doc.commitMove(gpa, 2, tb);
     try std.testing.expect(try doc.undo(gpa));
+}
+
+test "chained moves undo and redo with their step, in order, exactly" {
+    const gpa = std.testing.allocator;
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    const at = struct {
+        fn f(x: f32) Annotation {
+            return .{ .number = .{ .center = .{ .x = x, .y = 0 }, .value = 1, .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } };
+        }
+    }.f;
+    try doc.add(gpa, at(0));
+    try doc.add(gpa, at(1));
+    // An add that changed both earlier ones, the first twice.
+    try doc.add(gpa, at(2));
+    const b0 = doc.items.items[0];
+    const b1 = doc.items.items[1];
+    doc.setLive(0, at(10));
+    doc.setLive(1, at(11));
+    doc.setLive(0, at(20));
+    try doc.commitChained(gpa, 0, b0);
+    try doc.commitChained(gpa, 1, b1);
+    try doc.commitChained(gpa, 2, doc.items.items[2]); // no change: no move
+    try std.testing.expectEqual(@as(usize, 5), doc.history.items.len);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+    try std.testing.expectEqual(@as(f32, 0), doc.items.items[0].number.center.x);
+    try std.testing.expectEqual(@as(f32, 1), doc.items.items[1].number.center.x);
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(@as(usize, 3), doc.items.items.len);
+    try std.testing.expectEqual(@as(f32, 20), doc.items.items[0].number.center.x);
+    try std.testing.expectEqual(@as(f32, 11), doc.items.items[1].number.center.x);
+    // A move with a chained move: one step too; the step before stays.
+    const m0 = doc.items.items[2];
+    const c1 = doc.items.items[1];
+    doc.setLive(2, at(30));
+    try doc.commitMove(gpa, 2, m0);
+    doc.setLive(1, at(31));
+    try doc.commitChained(gpa, 1, c1);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(f32, 2), doc.items.items[2].number.center.x);
+    try std.testing.expectEqual(@as(f32, 11), doc.items.items[1].number.center.x);
+    try std.testing.expectEqual(@as(f32, 20), doc.items.items[0].number.center.x);
+    try std.testing.expect(try doc.undo(gpa)); // the add and its two
+    try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(@as(f32, 30), doc.items.items[2].number.center.x);
+    try std.testing.expectEqual(@as(f32, 31), doc.items.items[1].number.center.x);
+    try std.testing.expect(!try doc.redo(gpa));
 }
 
 test "an annotation is clipped by every later crop" {
