@@ -109,7 +109,14 @@ pub fn Union(comptime A: type, comptime B: type) type {
         b: B,
 
         pub fn dist(s: @This(), p: Vec2) f32 {
-            return @min(s.a.dist(p), s.b.dist(p));
+            const da = s.a.dist(p);
+            // Outside the bounds of `b`, the distance to them is a lower
+            // bound of `b.dist`: skip `b` when it cannot be nearer (e.g. the
+            // head of a long arrow, for pixels along the shaft).
+            const bb = s.b.bounds();
+            const lb = boxDist(bb.min, bb.max, 0, p);
+            if (lb > 0 and lb >= da) return da;
+            return @min(da, s.b.dist(p));
         }
         pub fn bounds(s: @This()) Bounds {
             return s.a.bounds().unite(s.b.bounds());
