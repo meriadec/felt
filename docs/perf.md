@@ -23,30 +23,39 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
-## Numbers (2026-11, after the crop tool and the Nord dock)
+## Numbers (2026-11, after the growing canvas, zoom and pan)
 
 `zig build bench` (synthetic 2560x1440 PNG, screen 1920x1080), min of 3 runs:
 
 | Metric | Value |
 |---|---|
-| decode PNG (min) | 7.0 ms (stb: 8.8 ms) |
-| first frame render (min) | 5.5 ms |
-| startup total (min) | 12.4 ms |
-| frame, drag arrow | avg 0.49 ms, p95 1.0 ms (damage 11% of screen) |
-| frame, drag pixelate | avg 0.31 ms, p95 0.66 ms |
-| frame, type a character | avg 0.13 ms (was 0.06 ms: the text label adds a box and a soft shadow) |
-| frame, drag crop (outside dimmed) | avg 0.57 ms, p95 0.59 ms |
-| crop release (refit + scene rebuild) | 4.2 ms |
-| undo, scene rebuild with 31 annotations | 8.7-10.7 ms |
-| export render / PNG encode | 4.2 ms / 10.7 ms (stb: 58 ms) |
+| decode PNG (min) | 7.0 ms (stb: 8.7 ms) |
+| first frame render (min) | 5.7 ms (was 5.3: the downscaled image is kept in `scaled`, then copied) |
+| startup total (min) | 12.7 ms |
+| frame, drag arrow | avg 0.50 ms, p95 1.0 ms (damage 11% of screen) |
+| frame, drag pixelate | avg 0.32 ms, p95 0.67 ms |
+| frame, type a character | avg 0.14 ms |
+| frame, drag crop (outside dimmed) | avg 0.58 ms, p95 0.60 ms |
+| crop release (refit + scene rebuild) | 4.1 ms |
+| undo, scene rebuild with 31 annotations | 3.1 ms (was 8.7-10.7: `scaled` is kept, no new downscale) |
+| export render / PNG encode | 4.8 ms / 10.5 ms (stb: 58-80 ms) |
+| zoom out (`-`), scene rebuild at 2/3 | 5.2 ms |
+| frame, drag that grows the canvas | avg 0.32 ms, p95 0.64 ms (damage 5.4% of screen) |
+| frame, pan (middle drag, 31 annotations) | avg 0.83 ms, p95 1.0 ms (was 3.4 ms before the scene scroll) |
+| Ctrl+wheel zoom (downscale + rebuild) | avg 4.1 ms, p95 5.0 ms |
 
 `zig build bench -- --size 3840x2160` (same image, 4K screen, UI scale 2):
-drag arrow avg 1.5 ms p95 3.4 ms, drag pixelate avg 0.56 ms, type a character
-avg 0.43 ms, drag crop avg 1.7 ms p95 1.75 ms, crop release 10 ms.
+drag arrow avg 1.6 ms p95 3.4 ms, drag pixelate avg 0.86 ms p95 2.0 ms (the
+drag starts outside the image, so it grows the canvas live), type a character
+avg 0.44 ms, drag crop avg 1.7 ms p95 1.8 ms, crop release 10 ms, undo 10.4 ms,
+export 7.2 / 12.6 ms, drag that grows the canvas avg 0.90 ms p95 1.9 ms, pan
+avg 4.5 ms p95 4.6 ms (two full-frame copies: scene scroll + frame), zoom
+11.3-13.3 ms.
 
-Before these changes (commit "fix: ring every palette swatch"), the same runs
-gave: startup 12.4 ms, drag arrow avg 0.50 ms, type 0.06 ms, undo 10.0 ms,
-export 4.6 / 10.4 ms; at 4K drag arrow avg 2.0 ms p95 4.8 ms.
+Before these changes (commit "docs: perf numbers after the crop tool"), the
+same runs gave: first frame 5.3 ms, startup 12.3 ms, drag arrow avg 0.49 ms,
+undo 10.6 ms, export 4.2 / 10.8 ms; at 4K drag arrow avg 1.5 ms p95 3.3 ms,
+drag pixelate avg 0.55 ms, undo 13.2 ms, export 6.4 ms.
 
 `zig build bench -- --size 3840x2160 root4k.png` (real 4K screenshot, 1.6 MB PNG;
 measured at commit "perf: split image downscaling across threads"):
@@ -75,8 +84,14 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
   transparent huge pages: 16 page faults per 4K frame instead of 8100.
 - Compositor layers: the image is drawn straight into the scene; the frame is
   the X11 shared-memory image; only damaged rectangles are repainted and put.
-- Crop keeps the decoded image: the base layer downscales (or copies) only
-  the kept rectangle; the export copies it. A crop drag repaints only the
+- Crop keeps the decoded image: the `scaled` layer downscales only the kept
+  rectangle, once per zoom level or crop; at 1:1 the image is copied as is,
+  above 1:1 sampled (nearest) only where visible. The export copies it.
+- The canvas grows by bands: a drag past the image damages only the white
+  bands it adds or removes; a commit fills them in the scene and appends.
+- A pan scrolls the scene (whole-pixel offsets) and paints only the
+  uncovered strips. A scene with a pixelate repaints in full (pixelate reads
+  the pixels under it). A crop drag repaints only the
   bands between the old and the new rectangle (Damage does not merge rects
   whose union is much bigger than both).
 - Rasterizer: signed distance shapes in 8x8 tiles; tiles outside are skipped,
@@ -93,8 +108,11 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
 
 ## Open leads
 
-- Present is 6-10 ms for a full 4K frame (X server copy); only the first frame
-  pays it.
-- Undo rebuilds the whole scene (9-12 ms with 31 annotations). A per-step
+- A pan presents the whole frame (6-10 ms at 4K) and copies it twice. An
+  X server side scroll (`XCopyArea`) plus strips would make it cheap.
+- Zoom at 4K rebuilds `scaled` (11-13 ms); levels could be cached.
+- Present is 6-10 ms for a full 4K frame (X server copy); the first frame,
+  zoom and pan pay it.
+- Undo rebuilds the whole scene (3 ms at 1080p, 10 ms at 4K with 31 annotations). A per-step
   scene cache would make it ~1 ms.
 - PNG row conversion (RGBA -> pixels, 3-4 ms at 4K) could run on threads.
