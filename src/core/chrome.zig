@@ -1,8 +1,10 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
 //! colors, size, help button; geometry in dock.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
-//! top. Everything scales with style.uiScale. Layout is computed into a list
-//! of draw ops, so `rects` (for damage) and `draw` share one code path.
+//! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
+//! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
+//! computed into a list of draw ops, so `rects` (for damage) and `draw` share
+//! one code path.
 const std = @import("std");
 const geom = @import("geom.zig");
 const sdf = @import("sdf.zig");
@@ -43,14 +45,14 @@ pub const State = struct {
     }
 };
 
-const panel_bg = nord.n0.withAlpha(238);
-const pill_bg = nord.n1.withAlpha(240);
+const panel_bg = nord.n1;
+const panel_border = nord.n2;
 const accent = nord.n8;
 
 const Op = union(enum) {
-    rrect: struct { b: Bounds, radius: f32, color: Color, soft: f32 = 1 },
-    /// Outline of a rounded rect, `soft` > 1 for a glow.
-    ring: struct { b: Bounds, radius: f32, w: f32, color: Color, soft: f32 = 1 },
+    rrect: struct { b: Bounds, radius: f32, color: Color },
+    /// Outline of a rounded rect.
+    ring: struct { b: Bounds, radius: f32, w: f32, color: Color },
     disc: struct { c: Vec2, r: f32, color: Color },
     disc_ring: struct { c: Vec2, r: f32, w: f32, color: Color },
     /// Text with its top-left at `pos`.
@@ -75,13 +77,12 @@ pub const Layout = struct {
         }
     }
 
-    /// A floating panel: frost glow, translucent fill, thin frost border.
-    fn panel(l: *Layout, b: Bounds, radius: f32, s: f32) void {
-        const glow = 9 * s;
-        l.push(.{ .ring = .{ .b = b, .radius = radius, .w = s, .color = accent.withAlpha(50), .soft = glow } });
+    /// A floating panel: flat nord1 fill and a 1 px nord2 border.
+    fn panel(l: *Layout, b: Bounds, radius: f32) void {
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
-        l.push(.{ .ring = .{ .b = b, .radius = radius, .w = @max(1, s), .color = accent.withAlpha(120) } });
-        l.panels[l.n_panels] = b.expand(glow).toRect();
+        // Centered half a pixel inside the edge: one crisp pixel wide.
+        l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = panel_border } });
+        l.panels[l.n_panels] = b.expand(2).toRect();
         l.n_panels += 1;
     }
 };
@@ -102,21 +103,19 @@ fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
 
 fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const s = d.s;
-    l.panel(d.panel, 16 * s, s);
+    l.panel(d.panel, 12 * s);
 
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
         const c = center(b);
         if (active) {
             const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
-            l.push(.{ .ring = .{ .b = hb, .radius = 10 * s, .w = s, .color = accent.withAlpha(90), .soft = 7 * s } });
-            l.push(.{ .rrect = .{ .b = hb, .radius = 10 * s, .color = accent.withAlpha(46) } });
-            l.push(.{ .ring = .{ .b = hb, .radius = 10 * s, .w = 1.5 * s, .color = accent.withAlpha(220) } });
+            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = accent } });
         }
-        l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) accent else nord.n4 } });
+        l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) nord.n0 else nord.n4 } });
         const bc = b.max.sub(.{ .x = 8.5 * s, .y = 8.5 * s });
-        l.push(.{ .disc = .{ .c = bc, .r = 7 * s, .color = if (active) accent else nord.n3 } });
-        l.push(.{ .glyph = .{ .c = bc, .s = keymap.toolKey(info.tool), .px = px(10 * s), .color = if (active) nord.n0 else nord.n6 } });
+        l.push(.{ .disc = .{ .c = bc, .r = 7 * s, .color = if (active) nord.n0 else nord.n3 } });
+        l.push(.{ .glyph = .{ .c = bc, .s = keymap.toolKey(info.tool), .px = px(10 * s), .color = if (active) accent else nord.n6 } });
     }
 
     for (d.seps) |x| {
@@ -269,7 +268,7 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
     }
     const x0 = @round((W - size.x) / 2);
     const y0 = @round(@max(0, (avail_h - size.y) / 2));
-    l.panel(.{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 16 * m.s, m.s);
+    l.panel(.{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 12 * m.s);
 
     var x = x0 + m.pad;
     const head_y = y0 + m.pad;
@@ -321,11 +320,8 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32) void {
     const x0 = @round((W - pw) / 2);
     const y0 = @round(12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-    l.push(.{ .rrect = .{ .b = b, .radius = ph / 2, .color = pill_bg } });
-    l.push(.{ .ring = .{ .b = b, .radius = ph / 2, .w = @max(1, s), .color = accent.withAlpha(140) } });
+    l.panel(b, ph / 2);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
-    l.panels[l.n_panels] = b.expand(2).toRect();
-    l.n_panels += 1;
 }
 
 pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
@@ -351,8 +347,8 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
     for (rects(l)) |r| touches = touches or r.intersects(clip);
     if (!touches) return;
     for (l.ops[0..l.n]) |op| switch (op) {
-        .rrect => |r| raster.fill(cv, clip, rrectShape(r.b, r.radius), .{ .solid = r.color }, .{ .soft = r.soft }),
-        .ring => |r| raster.fill(cv, clip, sdf.ring(rrectShape(r.b, r.radius), r.w), .{ .solid = r.color }, .{ .soft = r.soft }),
+        .rrect => |r| raster.fill(cv, clip, rrectShape(r.b, r.radius), .{ .solid = r.color }, .{}),
+        .ring => |r| raster.fill(cv, clip, sdf.ring(rrectShape(r.b, r.radius), r.w), .{ .solid = r.color }, .{}),
         .disc => |d| raster.fill(cv, clip, sdf.Disc{ .c = d.c, .r = d.r }, .{ .solid = d.color }, .{}),
         .disc_ring => |d| raster.fill(cv, clip, sdf.ring(sdf.Disc{ .c = d.c, .r = d.r }, d.w), .{ .solid = d.color }, .{}),
         .icon => |i| icons.draw(cv, clip, i.tool, i.c, i.size, i.color),
