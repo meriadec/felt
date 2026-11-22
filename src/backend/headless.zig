@@ -52,6 +52,13 @@ pub fn loadScript(gpa: std.mem.Allocator, path: []const u8) !script_mod.Script {
     };
 }
 
+fn save(gpa: std.mem.Allocator, cv: *const Canvas, path: []const u8) !void {
+    core.image_io.savePng(gpa, cv, path) catch |err| {
+        std.debug.print("annotate: cannot write {s}: {s} (does the directory exist?)\n", .{ path, @errorName(err) });
+        return error.WriteReported;
+    };
+}
+
 pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var script = if (opts.script_path) |p| try loadScript(gpa, p) else script_mod.Script{};
     defer script.deinit(gpa);
@@ -62,13 +69,13 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     });
     defer app.destroy();
     if (opts.frame_out) |p| {
-        try core.image_io.savePng(gpa, app.frame(), p);
+        try save(gpa, app.frame(), p);
         std.debug.print("frame  {d}x{d} -> {s}\n", .{ app.frame().width, app.frame().height, p });
     }
     if (opts.export_out) |p| {
         var out = try app.exportImage();
         defer out.deinit(gpa);
-        try core.image_io.savePng(gpa, &out, p);
+        try save(gpa, &out, p);
         std.debug.print("export {d}x{d} -> {s}\n", .{ out.width, out.height, p });
     }
     if (opts.frame_out == null and opts.export_out == null) {

@@ -18,9 +18,13 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 
-    var msg: []const u8 = "";
-    const opts = cli.parse(args[1..], &msg) catch {
-        std.debug.print("annotate: {s}\nTry: annotate --help\n", .{msg});
+    var diag: cli.Diag = .{};
+    const opts = cli.parse(args[1..], &diag) catch {
+        if (diag.arg) |a| {
+            std.debug.print("annotate: {s}: {s}\nTry: annotate --help\n", .{ diag.msg, a });
+        } else {
+            std.debug.print("annotate: {s}\nTry: annotate --help\n", .{diag.msg});
+        }
         return 2;
     };
 
@@ -58,7 +62,9 @@ pub fn main() !u8 {
 fn fail(err: anyerror, image: []const u8) u8 {
     switch (err) {
         error.DecodeFailed => std.debug.print("annotate: cannot decode {s} (PNG, JPEG or BMP expected)\n", .{image}),
-        error.FileNotFound => std.debug.print("annotate: file not found ({s} or a path in the options)\n", .{image}),
+        error.FileNotFound => std.debug.print("annotate: cannot open {s}: file not found\n", .{image}),
+        error.IsDir => std.debug.print("annotate: {s} is a directory\n", .{image}),
+        error.WriteReported => {}, // already printed with the path
         error.BadScript => {}, // already printed with file:line
         error.NoDisplay => std.debug.print("annotate: cannot open X display (DISPLAY not set?). Without a display use --headless.\n", .{}),
         error.UnsupportedVisual => std.debug.print("annotate: X visual is not 24/32-bit TrueColor RGB\n", .{}),

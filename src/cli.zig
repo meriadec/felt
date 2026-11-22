@@ -46,8 +46,15 @@ pub const Options = struct {
 
 pub const Error = error{BadArgs};
 
-/// Parse args (without argv[0]). On error, `msg` says why.
-pub fn parse(args: []const []const u8, msg: *[]const u8) Error!Options {
+/// Why parsing failed: a message and the argument at fault, if any.
+pub const Diag = struct {
+    msg: []const u8 = "",
+    arg: ?[]const u8 = null,
+};
+
+/// Parse args (without argv[0]). On error, `diag` says why.
+pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
+    const msg = &diag.msg;
     var o = Options{};
     var i: usize = 0;
     const S = struct {
@@ -95,11 +102,13 @@ pub fn parse(args: []const []const u8, msg: *[]const u8) Error!Options {
                 return error.BadArgs;
             };
         } else if (a.len > 1 and a[0] == '-') {
-            msg.* = "unknown option (see --help)";
+            msg.* = "unknown option";
+            diag.arg = a;
             return error.BadArgs;
         } else {
             if (o.image != null) {
                 msg.* = "more than one image given";
+                diag.arg = a;
                 return error.BadArgs;
             }
             o.image = a;
@@ -121,13 +130,14 @@ pub fn parseSize(s: []const u8) ?[2]u32 {
 }
 
 test "parse" {
-    var msg: []const u8 = "";
+    var msg: Diag = .{};
     const o = try parse(&.{ "-e", "shot.png" }, &msg);
     try std.testing.expectEqualStrings("shot.png", o.image.?);
     try std.testing.expectEqual(Mode.window, o.mode);
     const h = try parse(&.{ "--headless", "--size", "800x500", "--script", "s.txt", "in.png" }, &msg);
     try std.testing.expectEqual([2]u32{ 800, 500 }, h.size.?);
     try std.testing.expectError(error.BadArgs, parse(&.{"--nope"}, &msg));
+    try std.testing.expectEqualStrings("--nope", msg.arg.?);
     try std.testing.expectError(error.BadArgs, parse(&.{}, &msg));
     try std.testing.expectEqual(Mode.bench, (try parse(&.{"--bench"}, &msg)).mode);
 }
