@@ -85,6 +85,18 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
                 pen.fill(pen.box(x0, y0, x0 + cell, y0 + cell, 0.06), if ((ix + iy) % 2 == 0) 1 else 0.4);
             };
         },
+        .move => {
+            // Four-way arrow: a cross with a head on each end.
+            pen.line(-0.55, 0, 0.55, 0);
+            pen.line(0, -0.55, 0, 0.55);
+            const e = 0.88;
+            const b = 0.5;
+            const h = 0.3;
+            pen.fill(pen.tri(.{ 0, -e }, .{ -h, -b }, .{ h, -b }), 1);
+            pen.fill(pen.tri(.{ 0, e }, .{ -h, b }, .{ h, b }), 1);
+            pen.fill(pen.tri(.{ -e, 0 }, .{ -b, -h }, .{ -b, h }), 1);
+            pen.fill(pen.tri(.{ e, 0 }, .{ b, -h }, .{ b, h }), 1);
+        },
         .crop => {
             pen.line(-0.45, -0.85, -0.45, 0.45);
             pen.line(-0.45, 0.45, 0.85, 0.45);

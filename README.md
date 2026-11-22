@@ -28,7 +28,9 @@ center shows the tools (each with its key letter), the colors and the size;
 click it or use the keys. A small bar at the top center has Undo and Redo
 buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
 panels; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
-drag; undo restores it. Draw past the image edge and the canvas grows white
+drag; undo restores it. Move (`m`) drags any annotation; it lights up
+under the pointer. A callout box moves alone (the tip stays) or its tip
+alone; an arrow end moves alone. Draw past the image edge and the canvas grows white
 to hold the shape (the saved PNG too); undo shrinks it back. Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
 middle drag or the arrow keys pan. The UI and the default sizes scale with the screen

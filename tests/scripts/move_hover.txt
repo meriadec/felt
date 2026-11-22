@@ -1,0 +1,12 @@
+# Move tool hover: a callout and a number; the pointer rests on the
+# callout tip, which lights up (outline thin, tip handle big).
+size 900 500
+key c
+drag 300 150 450 250
+type Hover
+key enter
+key n
+click 600 200
+key m
+move 600 200
+move 301 151

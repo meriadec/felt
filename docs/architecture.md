@@ -78,8 +78,29 @@ image files. Build: `coreModule` in build.zig.
   crop) grown by the annotations made since: a side grows when the body of a
   shape crosses it, to the shape's full bounds plus `extent.pad` (16 image
   px). Canvas outside the image is white, on screen and in the export. Each
-  annotation draws only inside its own clip (`extent.itemClip`), which never
-  changes after it is made, so appending to the scene equals a repaint.
+  annotation draws only inside its own clip (`extent.itemClip`): a pure
+  function of its current geometry, the kept rectangle when it was made, and
+  the crops made after it. Adding an annotation never changes another's
+  clip, so appending to the scene equals a repaint.
+- Move (tool `m`): the editor changes the annotation in place while the
+  drag runs (`Document.setLive`, no history), and on release records one
+  `Document.Move` step with the geometry from before. Undo and redo swap the
+  two geometries; the text is shared, never copied. A move changes only the
+  moved annotation's clip and the canvas, both recomputed from geometry, so
+  undo is exact. The compositor keeps a shallow copy of what it painted and
+  repaints the old and new bounds of any annotation that differs, the bands
+  the canvas gained or lost, and grows each repaint rect to hold any
+  pixelate it touches (a pixelate averages the pixels under it).
+- Move and crops: an annotation made before a crop stays under that crop.
+  Its clip stays cut by the crop, it never grows the canvas, and the pointer
+  grabs it only where it shows. A move position that would hide its body
+  (outside the crop or past the reach) is skipped: it stops at the last
+  place where it shows. Annotations made after the last crop grow and
+  shrink the canvas as they move.
+- Callout move: a press on the tip (handle radius 9 px at 1080p) moves the
+  tip alone; anywhere else on the callout moves the box alone and the tip
+  stays on its target. An arrow longer than four handle radii: a press on
+  an end moves that end alone.
   The canvas grows at most `extent.limit` past the kept rectangle (2048 to
   4096 px a side, a memory bound); the editor refuses a shape out of reach
   with a toast.
@@ -107,9 +128,11 @@ image files. Build: `coreModule` in build.zig.
 
 `scaled` (the kept part of the image at the view scale, only below 1:1;
 rebuilt on zoom or crop), `scene` (background + white canvas + image +
-committed annotations; appended in place, the new white bands filled when the
-canvas grows; repainted after undo, resize, zoom or crop), `frame` (scene +
-white canvas the shape in progress adds + crop dimming + chrome + preview). A
+committed annotations; appended in place; repainted in place where an
+annotation moved or the canvas grew or shrank; repainted in full after the
+undo of an add or a crop, resize or zoom), `frame` (scene +
+white canvas the shape in progress adds + crop dimming + move outline +
+chrome + preview). A
 crop drag damages only the bands between the old and the new crop rectangle;
 a drag that grows the canvas damages only the bands it adds or removes. In X11 the frame is the shared-memory image, so a present is
 only `XShmPutImage` of the damaged rects.

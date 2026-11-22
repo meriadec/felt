@@ -1,0 +1,16 @@
+# Move parts: the callout tip alone, then the callout box alone (the tip
+# stays), then the arrow head alone. Undo twice (head, box), redo once
+# (box). The pointer rests on the arrow: its outline and end handles show.
+size 900 500
+key c
+drag 300 150 450 250
+type Tip
+key enter
+key a
+drag 150 300 300 380
+key m
+drag 300 150 200 100
+drag 470 250 470 330
+drag 300 380 360 300
+key ctrl+z ctrl+z ctrl+y
+move 225 340

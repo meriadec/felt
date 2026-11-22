@@ -1,0 +1,12 @@
+# A move grows the canvas: a rect on the small strip image is dragged
+# below and left of it; the canvas grows white there, and the export too.
+# A second rect goes out and comes back: the canvas shrinks again.
+image tests/fixtures/strip.png
+size 900 500
+key r
+drag 250 230 350 270
+drag 600 230 680 270
+key m
+drag 250 250 150 400
+drag 600 250 820 350
+drag 820 350 600 250

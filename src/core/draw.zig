@@ -112,6 +112,62 @@ pub fn bodyBounds(ctx: Ctx, ann: Annotation, xf: Xform) Rect {
     return (Bounds{ .min = b.min.add(.{ .x = 0.01, .y = 0.01 }), .max = b.max.sub(.{ .x = 0.01, .y = 0.01 }) }).toRect();
 }
 
+/// Distance (target px) from `p` to the drawn shape, negative inside: the
+/// stroke of an arrow or a rect outline, the area of the filled shapes, the
+/// label box of a text, the box and pointer of a callout. For hit tests.
+pub fn hitDist(ctx: Ctx, ann: Annotation, xf: Xform, p: Vec2) f32 {
+    return switch (ann) {
+        .arrow => |a| arrowShape(a, xf).dist(p),
+        .rect => |r| boxShape(r, xf).dist(p),
+        .highlight => |h| highlightShape(h, xf).dist(p),
+        .pixelate => |q| blk: {
+            const b = sortedBounds(xf.apply(q.a), xf.apply(q.b));
+            break :blk (sdf.RoundRect{ .min = b.min, .max = b.max, .radius = 0 }).dist(p);
+        },
+        .text => |t| textGeom(ctx, t, xf).box.dist(p),
+        .number => |n| blk: {
+            const d = numberDisc(n, xf);
+            break :blk d.dist(p) - numberRing(d);
+        },
+        .callout => |c| calloutGeom(ctx, c, xf).shape().dist(p),
+    };
+}
+
+/// Look of the move tool's outline: a flat line `gap` px off the shape.
+pub const OutlineStyle = struct { gap: f32, w: f32, color: Color };
+
+/// Outline `ann` (move tool hover): a line around its shape, `st.gap` px
+/// off it. A rect outline gets one line around its outer edge.
+pub fn outline(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform, st: OutlineStyle) void {
+    const paint = raster.Paint{ .solid = st.color };
+    const off = st.gap + st.w * 0.5;
+    switch (ann) {
+        .arrow => |a| raster.fill(cv, clip, sdf.ring(sdf.Grown(ArrowShape){ .s = arrowShape(a, xf), .r = off }, st.w), paint, .{}),
+        .rect => |r| {
+            const b = boxShape(r, xf);
+            const e = b.w * 0.5 + off;
+            raster.fill(cv, clip, sdf.ring(sdf.RoundRect{ .min = b.min.sub(.{ .x = e, .y = e }), .max = b.max.add(.{ .x = e, .y = e }), .radius = off }, st.w), paint, .{});
+        },
+        .highlight => |h| raster.fill(cv, clip, sdf.ring(sdf.Grown(sdf.RoundRect){ .s = highlightShape(h, xf), .r = off }, st.w), paint, .{}),
+        .pixelate => |q| {
+            const b = sortedBounds(xf.apply(q.a), xf.apply(q.b)).expand(off);
+            raster.fill(cv, clip, sdf.ring(sdf.RoundRect{ .min = b.min, .max = b.max, .radius = off }, st.w), paint, .{});
+        },
+        .text => |t| raster.fill(cv, clip, sdf.ring(sdf.Grown(sdf.RoundRect){ .s = textGeom(ctx, t, xf).box, .r = off }, st.w), paint, .{}),
+        .number => |n| {
+            const d = numberDisc(n, xf);
+            raster.fill(cv, clip, sdf.ring(sdf.Disc{ .c = d.c, .r = d.r + numberRing(d) + off }, st.w), paint, .{});
+        },
+        .callout => |c| raster.fill(cv, clip, sdf.ring(sdf.Grown(CalloutShape){ .s = calloutGeom(ctx, c, xf).shape(), .r = off }, st.w), paint, .{}),
+    }
+}
+
+/// Target-pixel rectangle that `outline` may write.
+pub fn outlineBounds(ctx: Ctx, ann: Annotation, xf: Xform, st: OutlineStyle) Rect {
+    const body = bodyBounds(ctx, ann, xf);
+    return body.expand(@intFromFloat(@ceil(st.gap + st.w + 2)));
+}
+
 fn drawWithShadow(cv: *Canvas, clip: Rect, shape: anytype, c: Color, sh: Shadow) void {
     raster.fill(cv, clip, shape, .{ .solid = shadow_color }, .{ .offset = sh.offset, .soft = sh.soft });
     raster.fill(cv, clip, shape, .{ .solid = c }, .{});

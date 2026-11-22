@@ -20,6 +20,7 @@ const Hover = @import("chrome.zig").Hover;
 const Vec2 = geom.Vec2;
 const Tool = keymap.Tool;
 const Annotation = ann.Annotation;
+const Part = ann.Part;
 
 pub const Command = enum { save, copy, quit };
 
@@ -46,11 +47,29 @@ const Typing = struct {
     target: ?Vec2 = null,
 };
 
+/// An annotation part under the pointer (move tool).
+pub const Grab = struct { index: usize, part: Part };
+
+/// A move in progress: the document holds the live geometry, `before`
+/// the geometry to restore on cancel and to record for undo.
+const Moving = struct {
+    grab: Grab,
+    before: Annotation,
+    /// Image px under the pointer at the press.
+    start: Vec2,
+};
+
 pub const Mode = union(enum) {
     idle,
     drag: Drag,
     typing: Typing,
+    moving: Moving,
 };
+
+/// Screen distance (px at 1080p) within which the pointer grabs a shape.
+const grab_tolerance = 5;
+/// Screen radius (px at 1080p) of an arrow end or callout tip handle.
+const handle_radius = 9;
 
 pub const Editor = struct {
     gpa: std.mem.Allocator,
@@ -80,6 +99,8 @@ pub const Editor = struct {
     dock_visible: bool = true,
     /// Last pointer position on screen (hover), null before the first move.
     pointer: ?Vec2 = null,
+    /// Move tool: the annotation part under the pointer.
+    hover: ?Grab = null,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
     quit_armed: bool = false,
@@ -146,10 +167,80 @@ pub const Editor = struct {
     /// The dock or top bar item under the pointer (none during a drag).
     pub fn chromeHover(self: *const Editor) Hover {
         const p = self.pointer orelse return .{};
-        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.panning != null) return .{};
+        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.panning != null) return .{};
         const w = self.view.screen_w;
         const h = self.view.screen_h;
         return .{ .dock = Dock.of(w, h).hit(p), .bar = TopBar.of(w, h).hit(p) };
+    }
+
+    /// The annotation part a press at screen point `p` would move: the
+    /// topmost shape within the grab tolerance, with its visible part (its
+    /// clip) under the pointer. An arrow end or a callout tip wins over the body.
+    pub fn grabAt(self: *const Editor, p: Vec2) ?Grab {
+        if (self.onChrome(p)) return null;
+        const ui = style.uiScale(self.view.screen_h);
+        const tol = grab_tolerance * ui;
+        const hr = handle_radius * ui;
+        const xf = self.view.xf;
+        const ip = self.view.toImage(p);
+        const items = self.doc.items.items;
+        var i = items.len;
+        while (i > 0) {
+            i -= 1;
+            const a = items[i];
+            const clip = extent.itemClip(self.ctx(), self.doc, self.image_w, self.image_h, i).toBounds();
+            if (ip.x < clip.min.x or ip.y < clip.min.y or ip.x >= clip.max.x or ip.y >= clip.max.y) continue;
+            switch (a) {
+                .arrow => |ar| {
+                    const t = xf.apply(ar.tail);
+                    const h = xf.apply(ar.head);
+                    // Ends only on an arrow long enough to keep a body to grab.
+                    if (t.dist(h) > 4 * hr) {
+                        if (p.dist(h) <= hr) return .{ .index = i, .part = .head };
+                        if (p.dist(t) <= hr) return .{ .index = i, .part = .tail };
+                    }
+                },
+                .callout => |c| if (c.target) |t| {
+                    if (p.dist(xf.apply(t)) <= hr) return .{ .index = i, .part = .tip };
+                },
+                else => {},
+            }
+            if (draw.hitDist(self.ctx(), a, xf, p) <= tol) return .{ .index = i, .part = .whole };
+        }
+        return null;
+    }
+
+    /// The move tool's target to outline: the part being moved, or under
+    /// the pointer.
+    pub fn highlight(self: *const Editor) ?Grab {
+        if (self.mode == .moving) return self.mode.moving.grab;
+        if (self.tool != .move or self.mode != .idle or self.help_visible) return null;
+        const g = self.hover orelse return null;
+        return if (g.index < self.doc.items.items.len) g else null;
+    }
+
+    fn updateHover(self: *Editor) bool {
+        const before = self.hover;
+        self.hover = if (self.tool == .move and self.mode == .idle and self.pointer != null) self.grabAt(self.pointer.?) else null;
+        return !std.meta.eql(before, self.hover);
+    }
+
+    /// Move the grabbed part to follow the pointer at image point `ip`.
+    /// A position that would hide the annotation (past the reach, or out of
+    /// a later crop) is skipped: the annotation stays at the last good one.
+    fn moveTo(self: *Editor, ip: Vec2) void {
+        const m = self.mode.moving;
+        const a = m.before.moved(m.grab.part, ip.sub(m.start));
+        if (!extent.showsAs(self.ctx(), self.doc, self.image_w, self.image_h, m.grab.index, a)) return;
+        if (std.meta.eql(a, self.doc.items.items[m.grab.index])) return;
+        self.doc.setLive(m.grab.index, a);
+    }
+
+    /// Record the move in progress as one undo step.
+    fn finishMove(self: *Editor) !void {
+        const m = self.mode.moving;
+        self.mode = .idle;
+        try self.doc.commitMove(self.gpa, m.grab.index, m.before);
     }
 
     /// The point is on the dock or the top bar: a click there never draws.
@@ -258,7 +349,7 @@ pub const Editor = struct {
     pub fn preview(self: *const Editor) ?Annotation {
         const c = self.currentColor();
         return switch (self.mode) {
-            .idle => null,
+            .idle, .moving => null,
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c } },
@@ -275,13 +366,14 @@ pub const Editor = struct {
             .highlight => .{ .highlight = .{ .a = d.start, .b = d.cur, .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
             .callout => .{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c } },
-            .text, .number, .crop => null,
+            .text, .number, .move, .crop => null,
         };
     }
 
     pub fn handle(self: *Editor, ev: input.Event) !Effect {
         var eff = try self.handleEvent(ev);
         if (self.syncView()) eff.redraw = true;
+        if (self.updateHover()) eff.redraw = true;
         return eff;
     }
 
@@ -321,6 +413,10 @@ pub const Editor = struct {
                     self.mode.drag.cur = self.view.toImage(p);
                     return .{ .redraw = true };
                 }
+                if (self.mode == .moving) {
+                    self.moveTo(self.view.toImage(.{ .x = m.x, .y = m.y }));
+                    return .{ .redraw = true };
+                }
                 return .{ .redraw = self.chromeHover().key() != hover_before };
             },
             .wheel => |wh| {
@@ -346,7 +442,7 @@ pub const Editor = struct {
         }
         const p = Vec2.init(x, y);
         self.pointer = p;
-        if (self.mode != .drag and self.onChrome(p)) {
+        if (self.mode != .drag and self.mode != .moving and self.onChrome(p)) {
             if (button == .left) {
                 if (Dock.of(self.view.screen_w, self.view.screen_h).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
@@ -366,14 +462,19 @@ pub const Editor = struct {
             return .{ .redraw = true };
         }
         if (button == .middle) {
-            if (self.mode != .drag) self.panning = .{ .x = x, .y = y };
+            if (self.mode != .drag and self.mode != .moving) self.panning = .{ .x = x, .y = y };
             return .{};
         }
         if (button != .left) return .{};
         if (self.mode == .typing) try self.commitTyping();
         if (self.mode == .drag) self.mode = .idle; // lost release: start over
+        if (self.mode == .moving) try self.finishMove(); // lost release: keep the move
         const sp = Vec2.init(x, y);
         const ip = self.view.toImage(sp);
+        if (self.tool == .move) {
+            if (self.grabAt(sp)) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
+            return .{ .redraw = true };
+        }
         if (!extent.reachable(self.kept_key, ip)) {
             self.tooFar();
             return .{ .redraw = true };
@@ -389,6 +490,11 @@ pub const Editor = struct {
     }
 
     fn onUp(self: *Editor, x: f32, y: f32, button: input.Button) !Effect {
+        if (button == .left and self.mode == .moving) {
+            self.moveTo(self.view.toImage(.{ .x = x, .y = y }));
+            try self.finishMove();
+            return .{ .redraw = true };
+        }
         if (button != .left or self.mode != .drag) return .{};
         const d = self.mode.drag;
         const sp = Vec2.init(x, y);
@@ -425,8 +531,9 @@ pub const Editor = struct {
         self.mode = .{ .typing = t };
     }
 
-    /// Drop any shape or text in progress.
+    /// Drop any shape or text in progress; put a moving annotation back.
     pub fn cancel(self: *Editor) void {
+        if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
         self.draft.clearRetainingCapacity();
         self.mode = .idle;
     }
@@ -519,7 +626,7 @@ pub const Editor = struct {
             // Esc and q: cancel the shape in progress, else close the help,
             // else quit (a second press when there are unsaved changes).
             .quit => {
-                if (self.mode == .drag) {
+                if (self.mode == .drag or self.mode == .moving) {
                     self.cancel();
                 } else if (self.help_visible) {
                     self.help_visible = false;
@@ -791,4 +898,82 @@ test "callout drag then type" {
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqualStrings("Hi", c.text);
     try std.testing.expectEqual(Vec2.init(10, 10), c.target.?);
+}
+
+test "move: topmost wins, Esc puts it back, a drag is one exact undo step" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("r");
+    try t.drag(20, 20, 80, 60);
+    try t.drag(40, 40, 120, 90); // on top, its outline crosses the first one
+    _ = try t.key("m");
+    try std.testing.expectEqual(Grab{ .index = 1, .part = .whole }, t.ed.grabAt(.{ .x = 40, .y = 60 }).?);
+    try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 20, .y = 30 }).?);
+    try std.testing.expectEqual(@as(?Grab, null), t.ed.grabAt(.{ .x = 60, .y = 30 })); // inside the first: no stroke
+    // Hover follows the pointer.
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 20, .y = 30 } });
+    try std.testing.expectEqual(@as(usize, 0), t.ed.highlight().?.index);
+    // Esc in the middle of a drag puts it back, with no undo step.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 30 } });
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 25, .y = 35 } });
+    try std.testing.expectEqual(Vec2.init(25, 25), t.doc.items.items[0].rect.a);
+    _ = try t.key("esc");
+    try std.testing.expectEqual(Vec2.init(20, 20), t.doc.items.items[0].rect.a);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 25, .y = 35 } });
+    try std.testing.expectEqual(@as(usize, 2), t.doc.history.items.len);
+    try t.drag(20, 30, 30, 40);
+    try std.testing.expectEqual(Vec2.init(30, 30), t.doc.items.items[0].rect.a);
+    try std.testing.expectEqual(@as(usize, 3), t.doc.history.items.len);
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(Vec2.init(20, 20), t.doc.items.items[0].rect.a);
+    try std.testing.expectEqual(Vec2.init(80, 60), t.doc.items.items[0].rect.b);
+    _ = try t.key("ctrl+y");
+    try std.testing.expectEqual(Vec2.init(30, 30), t.doc.items.items[0].rect.a);
+}
+
+test "move: a callout box moves alone, its tip alone; an arrow end alone" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("c");
+    try t.drag(20, 20, 100, 60);
+    _ = try t.key("H");
+    _ = try t.key("enter");
+    _ = try t.key("m");
+    try t.drag(21, 21, 31, 11); // the tip
+    var c = t.doc.items.items[0].callout;
+    try std.testing.expectEqual(Vec2.init(30, 10), c.target.?);
+    try std.testing.expectEqual(Vec2.init(100, 60), c.anchor);
+    try t.drag(110, 60, 120, 70); // the box
+    c = t.doc.items.items[0].callout;
+    try std.testing.expectEqual(Vec2.init(30, 10), c.target.?);
+    try std.testing.expectEqual(Vec2.init(110, 70), c.anchor);
+    _ = try t.key("a");
+    try t.drag(10, 90, 190, 90);
+    _ = try t.key("m");
+    try t.drag(189, 90, 179, 80); // the head
+    const a = t.doc.items.items[1].arrow;
+    try std.testing.expectEqual(Vec2.init(10, 90), a.tail);
+    try std.testing.expectEqual(Vec2.init(180, 80), a.head);
+}
+
+test "move: an annotation made before a crop stays under it" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("n");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 50, .y = 50 } });
+    _ = try t.key("x");
+    try t.drag(20, 20, 120, 80); // keeps image (20, 20)..(120, 80)
+    _ = try t.key("m");
+    // The view refits to the crop: image (50, 50) is on screen at...
+    const p = t.ed.view.toScreen(.{ .x = 50, .y = 50 });
+    const far = t.ed.view.toScreen(.{ .x = 300, .y = 50 });
+    try t.drag(p.x, p.y, far.x, far.y);
+    // It may not leave the crop for good: it stops where it still shows.
+    const n = t.doc.items.items[0].number;
+    try std.testing.expect(n.center.x < 120 + n.size);
+    // The canvas does not grow for it.
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 20, .x1 = 120, .y1 = 80 }, t.ed.canvas);
 }

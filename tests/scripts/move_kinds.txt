@@ -1,0 +1,30 @@
+# Move tool (m): one annotation of each kind, each dragged by its body to a
+# new place. A rect is grabbed by its outline; the pixelate re-samples the
+# image under its new place; the callout box moves, its tip stays.
+size 900 500
+key a
+drag 120 100 260 160
+key r
+drag 300 80 420 150
+key t
+click 480 100
+type Moved
+key enter
+key n
+click 650 110
+key h
+drag 100 250 260 275
+key p
+drag 300 200 420 260
+key c
+drag 560 250 680 320
+type Box
+key enter
+key m
+drag 190 130 190 210
+drag 420 115 470 335
+drag 500 100 650 180
+drag 650 110 800 330
+drag 180 262 180 400
+drag 360 230 180 330
+drag 700 320 700 400

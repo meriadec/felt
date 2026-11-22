@@ -2,11 +2,16 @@
 //! kept rectangle (the image, or the last crop) grown to hold the
 //! annotations made since. Each annotation has its own clip: the kept
 //! rectangle at its creation, grown on every side that the body of the
-//! shape crosses, to its full draw bounds (shadow included) plus `pad`.
-//! A shape inside the image never grows the canvas, even if its shadow
-//! touches the edge. The canvas is the union of the kept rectangle and these
-//! clips. Canvas areas outside the image are `fill` (white), on screen and in
-//! the export. Clips never change once made, so the compositor can append.
+//! shape crosses, to its full draw bounds (shadow included) plus `pad`, then
+//! cut by every crop made after it. A shape inside the image never grows
+//! the canvas, even if its shadow touches the edge. The canvas is the union
+//! of the kept rectangle and the clips of the annotations made since.
+//! Canvas areas outside the image are `fill` (white), on screen and in the
+//! export.
+//! A clip is a pure function of the annotation's current geometry, the kept
+//! rectangle at its creation and the later crops. Adding an annotation never
+//! changes another's clip, so the compositor can append. A move changes only
+//! the moved annotation's clip (and the canvas), and its undo restores both.
 //! The canvas grows at most to `limit`; the editor refuses shapes beyond it.
 const std = @import("std");
 const geom = @import("geom.zig");
@@ -71,8 +76,19 @@ fn keptAt(doc: *const Document, w: u32, h: u32, i: usize) Rect {
 
 /// Clip of annotation `i`: its own clip, cut by every later crop.
 pub fn itemClip(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize) Rect {
-    const r = grow(ctx, keptAt(doc, w, h, i), doc.items.items[i]);
+    return clipAs(ctx, doc, w, h, i, doc.items.items[i]);
+}
+
+/// Clip annotation `i` would have with the geometry of `a` (a move).
+pub fn clipAs(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize, a: Annotation) Rect {
+    const r = grow(ctx, keptAt(doc, w, h, i), a);
     return if (doc.clipOf(i)) |c| r.intersect(c) else r;
+}
+
+/// Annotation `i` with the geometry of `a` still shows a part of its body:
+/// a move may not hide it past the reach or under a later crop.
+pub fn showsAs(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize, a: Annotation) bool {
+    return fits(ctx, keptAt(doc, w, h, i), a) and draw.bodyBounds(ctx, a, .identity).intersects(clipAs(ctx, doc, w, h, i, a));
 }
 
 /// The canvas of the document over an image of size w x h.

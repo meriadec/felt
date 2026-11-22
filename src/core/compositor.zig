@@ -12,6 +12,8 @@ const draw = @import("draw.zig");
 const extent = @import("extent.zig");
 const chrome = @import("chrome.zig");
 const resample = @import("resample.zig");
+const sdf = @import("sdf.zig");
+const raster = @import("raster.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 const Annotation = @import("annotation.zig").Annotation;
@@ -88,6 +90,8 @@ pub const Compositor = struct {
     /// Screen rectangle of the canvas with the shape in progress.
     prev_live: Rect = Rect.empty,
     prev_crop: ?Rect = null,
+    /// Move tool outline last drawn, and its screen rectangle.
+    prev_outline: ?Outline = null,
     prev_chrome: [chrome.max_panels]Rect = @splat(Rect.empty),
     prev_chrome_sig: u64 = 0,
     force_full: bool = true,
@@ -310,6 +314,14 @@ pub const Compositor = struct {
         }
         self.prev_crop = crop;
 
+        // Move tool: the outline of the annotation under the pointer.
+        const outline = Outline.of(ctx, doc, ed);
+        if (!std.meta.eql(outline, self.prev_outline)) {
+            if (self.prev_outline) |o| dmg.add(o.rect.intersect(full_rect));
+            if (outline) |o| dmg.add(o.rect.intersect(full_rect));
+            self.prev_outline = outline;
+        }
+
         const st = chrome.State.of(ed);
         const lay = chrome.layout(ctx, st, w, h);
         const sig = st.signature();
@@ -330,6 +342,7 @@ pub const Compositor = struct {
             frame.copyRect(scene, r);
             for (extra) |b| frame.fillRect(b.intersect(r), extent.fill);
             if (crop) |c| drawCropOverlay(frame, r, c);
+            if (outline) |o| o.paint(ctx, frame, r, v.xf);
             try chrome.draw(ctx, frame, r, &lay);
             // The shape in progress goes over the chrome: what you type stays visible.
             if (preview) |p| try draw.annotation(ctx, frame, r.intersect(preview_clip), p, v.xf, .{ .preview = true, .area = preview_clip });
@@ -355,6 +368,68 @@ const Scene = struct {
     fn itemClip(s: *const Scene, i: usize) Rect {
         const r = extent.itemClip(s.ctx, s.doc, s.image.width, s.image.height, i);
         return s.view.rect(r).intersect(s.view.screen());
+    }
+};
+
+/// The move tool's flat outline around an annotation, with handles on the
+/// parts that move alone (arrow ends, callout tip).
+const Outline = struct {
+    ann: Annotation,
+    part: @import("annotation.zig").Part,
+    /// Screen px at 1080p to screen px.
+    ui: f32,
+    rect: Rect,
+
+    const line = color.nord.n8;
+    const handle_edge = color.nord.n0;
+
+    fn of(ctx: draw.Ctx, doc: *const Document, ed: *const Editor) ?Outline {
+        const g = ed.highlight() orelse return null;
+        const a = doc.items.items[g.index];
+        const ui = @import("style.zig").uiScale(ed.view.screen_h);
+        var o = Outline{ .ann = a, .part = g.part, .ui = ui, .rect = draw.outlineBounds(ctx, a, ed.view.xf, lineStyle(ui, g.part)) };
+        var hs: [2]?geom.Vec2 = undefined;
+        for (o.handles(ed.view.xf, &hs)) |h| if (h) |c| {
+            o.rect = o.rect.unite((geom.Bounds{ .min = c, .max = c }).expand(o.handleR(true) + 2).toRect());
+        };
+        return o;
+    }
+
+    fn lineStyle(ui: f32, part: @import("annotation.zig").Part) draw.OutlineStyle {
+        return .{ .gap = 3 * ui, .w = (if (part == .whole) @as(f32, 2) else 1) * ui, .color = line };
+    }
+
+    fn handleR(o: Outline, active: bool) f32 {
+        return (if (active) @as(f32, 6) else 4.5) * o.ui;
+    }
+
+    /// Screen points of the handles: arrow tail and head, callout tip.
+    fn handles(o: Outline, xf: geom.Xform, out: *[2]?geom.Vec2) []const ?geom.Vec2 {
+        out.* = .{ null, null };
+        switch (o.ann) {
+            .arrow => |a| out.* = .{ xf.apply(a.tail), xf.apply(a.head) },
+            .callout => |c| if (c.target) |t| {
+                out[0] = xf.apply(t);
+            },
+            else => {},
+        }
+        return out;
+    }
+
+    fn paint(o: Outline, ctx: draw.Ctx, cv: *Canvas, r: Rect, xf: geom.Xform) void {
+        if (!o.rect.intersects(r)) return;
+        draw.outline(ctx, cv, r, o.ann, xf, lineStyle(o.ui, o.part));
+        var hs: [2]?geom.Vec2 = undefined;
+        for (o.handles(xf, &hs), 0..) |h, i| if (h) |c| {
+            const active = switch (o.part) {
+                .tail, .tip => i == 0,
+                .head => i == 1,
+                .whole => false,
+            };
+            const disc = sdf.Disc{ .c = c, .r = o.handleR(active) };
+            raster.fill(cv, r, disc, .{ .solid = line }, .{});
+            raster.fill(cv, r, sdf.ring(disc, 1), .{ .solid = handle_edge }, .{});
+        };
     }
 };
 

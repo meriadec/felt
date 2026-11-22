@@ -3,6 +3,6 @@
 size 900 500
 key a
 drag 300 300 400 200
-click 596 458
+click 618 458
 key ] ]
 key esc
