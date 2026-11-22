@@ -33,7 +33,7 @@ image files. Build: `coreModule` in build.zig.
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
 | `view.zig` | Fit the image to the screen, never above 1:1, centered |
-| `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks, outline dilation |
+| `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks |
 | `image_io.zig` | Decode and encode image files: `png.zig` first, stb_image for the rest |
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |

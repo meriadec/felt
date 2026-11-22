@@ -151,6 +151,25 @@ pub fn Grown(comptime S: type) type {
     };
 }
 
+/// Outline of a shape: a band of width `w` centered on its edge.
+pub fn Ring(comptime S: type) type {
+    return struct {
+        s: S,
+        w: f32,
+
+        pub fn dist(g: @This(), p: Vec2) f32 {
+            return @abs(g.s.dist(p)) - g.w * 0.5;
+        }
+        pub fn bounds(g: @This()) Bounds {
+            return g.s.bounds().expand(g.w * 0.5);
+        }
+    };
+}
+
+pub fn ring(s: anytype, w: f32) Ring(@TypeOf(s)) {
+    return .{ .s = s, .w = w };
+}
+
 test "triangle sign" {
     const t = Triangle{ .a = .{ .x = 0, .y = 0 }, .b = .{ .x = 10, .y = 0 }, .c = .{ .x = 0, .y = 10 } };
     try std.testing.expect(t.dist(.{ .x = 2, .y = 2 }) < 0);

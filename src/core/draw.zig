@@ -71,22 +71,20 @@ pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform,
 
 /// Target-pixel rectangle that `annotation` may write.
 pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
+    _ = opts; // preview extras (caret, pixelate frame) stay inside the shape bounds
     const b: Bounds = switch (ann) {
         .arrow => |a| arrowShape(a, xf).bounds().expand(Shadow.of(a.width * xf.scale).margin()),
         .rect => |r| boxShape(r, xf).bounds().expand(Shadow.of(r.width * xf.scale).margin()),
         .highlight => |h| highlightShape(h, xf).bounds().expand(2),
         .pixelate => |p| sortedBounds(xf.apply(p.a), xf.apply(p.b)).expand(1),
         .text => |t| blk: {
-            const px = text.pxOf(t.size * xf.scale);
-            const lay = text.measure(ctx.font, t.text, px);
-            const o = xf.apply(t.pos);
-            const extra = outlineRadius(px) + 4 + (if (opts.preview) @as(f32, @floatFromInt(px)) * 0.2 else 0);
-            break :blk (Bounds{ .min = o, .max = o.add(.{ .x = lay.width, .y = lay.height }) }).expand(extra);
+            const g = textGeom(ctx, t, xf);
+            break :blk g.box.bounds().expand(Shadow.of(g.m.pxf * 0.2).margin() + 2);
         },
         .number => |n| numberDisc(n, xf).bounds().expand(Shadow.of(n.size * xf.scale * 0.2).margin() + 2),
         .callout => |c| blk: {
             const g = calloutGeom(ctx, c, xf);
-            break :blk g.shape().bounds().expand(Shadow.of(g.px_f * 0.2).margin() + 2);
+            break :blk g.shape().bounds().expand(Shadow.of(g.m.pxf * 0.2).margin() + 2);
         },
     };
     return b.toRect();
@@ -151,33 +149,60 @@ fn highlightTint(c: Color) Color {
     return c.lighten(0.35);
 }
 
-// ---- text --------------------------------------------------------------
+// ---- text label ------------------------------------------------------
 
-fn outlineRadius(px: u16) f32 {
-    return @max(1.2, @as(f32, @floatFromInt(px)) * 0.09);
-}
+/// Text and callouts share one label look: a rounded box in the annotation
+/// color, text in the contrast color, a soft drop shadow. Crisp on any background.
+const LabelMetrics = struct {
+    px: u16,
+    pxf: f32,
+    /// Space between the text and the box edge (target px).
+    pad: f32,
+    /// Box size (target px).
+    size: Vec2,
+
+    fn of(ctx: Ctx, s: []const u8, size: f32, xf: Xform) LabelMetrics {
+        const pxf = size * xf.scale;
+        const px = text.pxOf(pxf);
+        const lay = text.measure(ctx.font, s, px);
+        const pad = pxf * 0.45;
+        return .{ .px = px, .pxf = pxf, .pad = pad, .size = Vec2.init(@max(lay.width, pxf * 0.5) + 2 * pad, lay.height + 2 * pad) };
+    }
+
+    fn box(m: LabelMetrics, min: Vec2) sdf.RoundRect {
+        return .{ .min = min, .max = min.add(m.size), .radius = m.pad * 0.7 };
+    }
+};
 
 /// Blend a text block whose top-left is at `o` (target px).
-fn blendText(ctx: Ctx, cv: *Canvas, clip: Rect, s: []const u8, px: u16, o: Vec2, fill_c: Color, outline: ?Color, caret: bool) !void {
-    const r = outlineRadius(px);
-    const pad: u32 = @intFromFloat(@ceil(r) + 1);
+fn blendText(ctx: Ctx, cv: *Canvas, clip: Rect, s: []const u8, px: u16, o: Vec2, fill_c: Color, caret: bool) !void {
     const fx = @floor(o.x);
-    var mask = try text.render(ctx.gpa, ctx.font, s, px, pad, o.x - fx, caret);
+    var mask = try text.render(ctx.gpa, ctx.font, s, px, 0, o.x - fx, caret);
     defer mask.deinit(ctx.gpa);
-    const dx = @as(i32, @intFromFloat(fx)) - @as(i32, @intCast(pad));
-    const dy = @as(i32, @intFromFloat(@round(o.y))) - @as(i32, @intCast(pad));
-    if (outline) |oc| {
-        var om = try text.dilate(ctx.gpa, &mask, r);
-        defer om.deinit(ctx.gpa);
-        cv.blendMask(om.data, om.w, om.h, dx, dy, oc, clip);
-    }
-    cv.blendMask(mask.data, mask.w, mask.h, dx, dy, fill_c, clip);
+    cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(fx), @intFromFloat(@round(o.y)), fill_c, clip);
+}
+
+const TextGeom = struct { m: LabelMetrics, box: sdf.RoundRect, text_pos: Vec2 };
+
+/// `t.pos` is the top-left of the text; the box grows around it by the padding.
+fn textGeom(ctx: Ctx, t: ann_mod.Text, xf: Xform) TextGeom {
+    const m = LabelMetrics.of(ctx, t.text, t.size, xf);
+    const o = xf.apply(t.pos);
+    return .{ .m = m, .box = m.box(o.sub(.{ .x = m.pad, .y = m.pad })), .text_pos = o };
+}
+
+/// Label body: shadow, fill, and a faint edge so a white label stays visible
+/// on white (and a black one on black).
+fn drawLabelBody(cv: *Canvas, clip: Rect, shape: anytype, c: Color, m: LabelMetrics) void {
+    drawWithShadow(cv, clip, shape, c, Shadow.of(m.pxf * 0.2));
+    const edge = if (c.luminance() > 0.6) Color{ .r = 0, .g = 0, .b = 0, .a = 50 } else Color{ .r = 255, .g = 255, .b = 255, .a = 40 };
+    raster.fill(cv, clip, sdf.ring(shape, @max(1, m.pxf * 0.05)), .{ .solid = edge }, .{});
 }
 
 fn drawText(ctx: Ctx, cv: *Canvas, clip: Rect, t: ann_mod.Text, xf: Xform, caret: bool) !void {
-    const px = text.pxOf(t.size * xf.scale);
-    const outline = if (t.color.luminance() > 0.6) Color{ .r = 20, .g = 20, .b = 20, .a = 230 } else Color{ .r = 255, .g = 255, .b = 255, .a = 235 };
-    try blendText(ctx, cv, clip, t.text, px, xf.apply(t.pos), t.color, outline, caret);
+    const g = textGeom(ctx, t, xf);
+    drawLabelBody(cv, clip, g.box, t.color, g.m);
+    try blendText(ctx, cv, clip, t.text, g.m.px, g.text_pos, t.color.contrast(), caret);
 }
 
 // ---- numbered bubble ---------------------------------------------------
@@ -211,11 +236,10 @@ fn drawNumber(ctx: Ctx, cv: *Canvas, clip: Rect, n: ann_mod.Number, xf: Xform) !
 const CalloutShape = sdf.Union(sdf.RoundRect, sdf.Triangle);
 
 const CalloutGeom = struct {
+    m: LabelMetrics,
     box: sdf.RoundRect,
     pointer: ?sdf.Triangle,
     text_pos: Vec2,
-    px: u16,
-    px_f: f32,
 
     fn shape(g: CalloutGeom) CalloutShape {
         // Without a pointer, a degenerate triangle inside the box changes nothing.
@@ -225,11 +249,8 @@ const CalloutGeom = struct {
 };
 
 fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
-    const px = text.pxOf(c.size * xf.scale);
-    const pxf = c.size * xf.scale;
-    const lay = text.measure(ctx.font, c.text, px);
-    const pad = pxf * 0.45;
-    const size = Vec2.init(@max(lay.width, pxf * 0.5) + 2 * pad, lay.height + 2 * pad);
+    const m = LabelMetrics.of(ctx, c.text, c.size, xf);
+    const size = m.size;
     const a = xf.apply(c.anchor);
     var min = a.sub(size.scale(0.5)); // centered label
     if (c.target) |t_img| {
@@ -240,7 +261,6 @@ fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
             min.y = if (d.y >= 0) a.y else a.y - size.y;
         }
     }
-    const box = sdf.RoundRect{ .min = min, .max = min.add(size), .radius = pad * 0.7 };
     var pointer: ?sdf.Triangle = null;
     if (c.target) |t_img| {
         const tip = xf.apply(t_img);
@@ -249,13 +269,13 @@ fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
         const half = @min(size.x, size.y) * 0.28;
         pointer = .{ .a = tip, .b = center.add(n.scale(half)), .c = center.sub(n.scale(half)) };
     }
-    return .{ .box = box, .pointer = pointer, .text_pos = min.add(.{ .x = pad, .y = pad }), .px = px, .px_f = pxf };
+    return .{ .m = m, .box = m.box(min), .pointer = pointer, .text_pos = min.add(.{ .x = m.pad, .y = m.pad }) };
 }
 
 fn drawCallout(ctx: Ctx, cv: *Canvas, clip: Rect, c: ann_mod.Callout, xf: Xform, caret: bool) !void {
     const g = calloutGeom(ctx, c, xf);
-    drawWithShadow(cv, clip, g.shape(), c.color, Shadow.of(g.px_f * 0.2));
-    try blendText(ctx, cv, clip, c.text, g.px, g.text_pos, c.color.contrast(), null, caret);
+    drawLabelBody(cv, clip, g.shape(), c.color, g.m);
+    try blendText(ctx, cv, clip, c.text, g.m.px, g.text_pos, c.color.contrast(), caret);
 }
 
 test "arrow head is proportional and points at the head" {

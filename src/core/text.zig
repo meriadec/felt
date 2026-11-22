@@ -1,5 +1,5 @@
 //! Text layout and coverage masks. A mask holds the text block (all lines)
-//! with `pad` pixels of margin; `dilate` grows it into an outline mask.
+//! with `pad` pixels of margin.
 //! Lines are separated by '\n'. Sizes are whole pixels (see font.zig).
 const std = @import("std");
 const font_mod = @import("font.zig");
@@ -126,52 +126,14 @@ fn blitMax(mask: *Mask, g: font_mod.Glyph, x: i32, y: i32) void {
     }
 }
 
-/// New mask = max of `src` over a disc of radius `r` (anti-aliased edge).
-/// `src.pad` must be >= ceil(r) so nothing is cut.
-pub fn dilate(gpa: std.mem.Allocator, src: *const Mask, r: f32) !Mask {
-    const data = try gpa.alloc(u8, src.data.len);
-    @memset(data, 0);
-    const ri: i32 = @intFromFloat(@ceil(r));
-    const w: i32 = @intCast(src.w);
-    const h: i32 = @intCast(src.h);
-    var dy: i32 = -ri;
-    while (dy <= ri) : (dy += 1) {
-        var dx: i32 = -ri;
-        while (dx <= ri) : (dx += 1) {
-            const d = @sqrt(@as(f32, @floatFromInt(dx * dx + dy * dy)));
-            const k = std.math.clamp(r + 0.5 - d, 0, 1);
-            if (k <= 0) continue;
-            const kk: u32 = @intFromFloat(k * 256);
-            var y: i32 = @max(0, -dy);
-            while (y < @min(h, h - dy)) : (y += 1) {
-                const srow = src.data[@intCast((y + dy) * w)..];
-                const drow = data[@intCast(y * w)..];
-                var x: i32 = @max(0, -dx);
-                while (x < @min(w, w - dx)) : (x += 1) {
-                    const v: u8 = @intCast((@as(u32, srow[@intCast(x + dx)]) * kk) >> 8);
-                    const o = &drow[@intCast(x)];
-                    o.* = @max(o.*, v);
-                }
-            }
-        }
-    }
-    return .{ .w = src.w, .h = src.h, .data = data, .pad = src.pad, .layout = src.layout };
-}
-
-test "render and dilate" {
+test "render" {
     const gpa = std.testing.allocator;
     var f = try Font.init(gpa, @embedFile("font_ttf"));
     defer f.deinit();
     var m = try render(gpa, &f, "Hi\nthere", 20, 3, 0, true);
     defer m.deinit(gpa);
     try std.testing.expectEqual(@as(u32, 2), m.layout.lines);
-    var o = try dilate(gpa, &m, 2);
-    defer o.deinit(gpa);
-    var sum_m: u64 = 0;
-    var sum_o: u64 = 0;
-    for (m.data, o.data) |a, b| {
-        sum_m += a;
-        sum_o += b;
-    }
-    try std.testing.expect(sum_o > sum_m);
+    var sum: u64 = 0;
+    for (m.data) |a| sum += a;
+    try std.testing.expect(sum > 0);
 }
