@@ -26,7 +26,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `5` | color blue |
 | `6` | color purple |
 | `7` | color white |
-| `8` | color black |
+| `8` | color dark |
 | `Tab` | next tool |
 | `Shift+Tab` | previous tool |
 | `[` | size |

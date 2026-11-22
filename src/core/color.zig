@@ -31,9 +31,9 @@ pub const Color = struct {
         return (0.2126 * @as(f32, @floatFromInt(c.r)) + 0.7152 * @as(f32, @floatFromInt(c.g)) + 0.0722 * @as(f32, @floatFromInt(c.b))) / 255.0;
     }
 
-    /// Black or white, whichever reads best on top of `c`.
+    /// Dark (nord0) or light (nord6), whichever reads best on top of `c`.
     pub fn contrast(c: Color) Color {
-        return if (c.luminance() > 0.6) black else white;
+        return if (c.luminance() > 0.6) nord.n0 else nord.n6;
     }
 
     /// Mix toward white by `t` in 0..1.
@@ -51,24 +51,50 @@ pub const Color = struct {
 pub const white = Color.rgb(0xffffff);
 pub const black = Color.rgb(0x000000);
 
+/// The Nord palette (nordtheme.com): the chrome uses it as is.
+pub const nord = struct {
+    // Polar Night
+    pub const n0 = Color.rgb(0x2E3440);
+    pub const n1 = Color.rgb(0x3B4252);
+    pub const n2 = Color.rgb(0x434C5E);
+    pub const n3 = Color.rgb(0x4C566A);
+    // Snow Storm
+    pub const n4 = Color.rgb(0xD8DEE9);
+    pub const n5 = Color.rgb(0xE5E9F0);
+    pub const n6 = Color.rgb(0xECEFF4);
+    // Frost
+    pub const n7 = Color.rgb(0x8FBCBB);
+    pub const n8 = Color.rgb(0x88C0D0);
+    pub const n9 = Color.rgb(0x81A1C1);
+    pub const n10 = Color.rgb(0x5E81AC);
+    // Aurora
+    pub const n11 = Color.rgb(0xBF616A);
+    pub const n12 = Color.rgb(0xD08770);
+    pub const n13 = Color.rgb(0xEBCB8B);
+    pub const n14 = Color.rgb(0xA3BE8C);
+    pub const n15 = Color.rgb(0xB48EAD);
+};
+
 pub const Named = struct { name: []const u8, color: Color };
 
-/// Annotation palette, selected with keys 1..8 (index 0 = key 1).
+/// Annotation palette, selected with keys 1..8 (index 0 = key 1). Nord hues
+/// (Aurora, Frost, Snow Storm, Polar Night), more saturated than Nord's
+/// pastels so marks pop on bright screenshots.
 pub const palette = [_]Named{
-    .{ .name = "red", .color = Color.rgb(0xe53935) },
-    .{ .name = "orange", .color = Color.rgb(0xfb8c00) },
-    .{ .name = "yellow", .color = Color.rgb(0xfdd835) },
-    .{ .name = "green", .color = Color.rgb(0x43a047) },
-    .{ .name = "blue", .color = Color.rgb(0x1e88e5) },
-    .{ .name = "purple", .color = Color.rgb(0x8e24aa) },
-    .{ .name = "white", .color = Color.rgb(0xffffff) },
-    .{ .name = "black", .color = Color.rgb(0x111111) },
+    .{ .name = "red", .color = Color.rgb(0xE04B5A) },
+    .{ .name = "orange", .color = Color.rgb(0xEE8A4F) },
+    .{ .name = "yellow", .color = Color.rgb(0xF5C85C) },
+    .{ .name = "green", .color = Color.rgb(0x8FC46A) },
+    .{ .name = "blue", .color = Color.rgb(0x4C9BD6) },
+    .{ .name = "purple", .color = Color.rgb(0xB77BC0) },
+    .{ .name = "white", .color = nord.n6 },
+    .{ .name = "dark", .color = nord.n0 },
 };
 
 test "pixel round trip" {
     const c = Color{ .r = 1, .g = 2, .b = 3, .a = 4 };
     try std.testing.expectEqual(@as(u32, 0x04010203), c.toPixel());
     try std.testing.expectEqual(c, Color.fromPixel(c.toPixel()));
-    try std.testing.expectEqual(white, palette[0].color.contrast());
-    try std.testing.expectEqual(black, palette[2].color.contrast());
+    try std.testing.expectEqual(nord.n6, palette[0].color.contrast());
+    try std.testing.expectEqual(nord.n0, palette[2].color.contrast());
 }

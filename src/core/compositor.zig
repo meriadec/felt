@@ -16,7 +16,7 @@ const Editor = @import("editor.zig").Editor;
 const Rect = geom.Rect;
 const View = @import("view.zig").View;
 
-pub const background = color.Color.rgb(0x1e1f22);
+pub const background = color.nord.n0;
 
 /// A short list of screen rectangles to repaint and present.
 pub const Damage = struct {
@@ -224,8 +224,8 @@ pub const Compositor = struct {
     }
 };
 
-const crop_dim = color.Color{ .r = 0x2e, .g = 0x34, .b = 0x40, .a = 170 };
-const crop_frame = color.Color.rgb(0x88c0d0);
+const crop_dim = color.nord.n0.withAlpha(170);
+const crop_frame = color.nord.n8;
 const crop_frame_w = 2;
 
 /// Dim `r` outside the crop rectangle `c` and draw the crop frame.
