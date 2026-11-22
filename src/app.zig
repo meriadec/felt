@@ -92,7 +92,7 @@ pub const App = struct {
 
     /// Full-resolution image with annotations. Caller owns it.
     pub fn exportImage(self: *App) !Canvas {
-        return core.exporter.render(self.ctx(), &self.image, &self.doc);
+        return core.exporter.render(self.ctx(), &self.image, &self.doc, self.editor.settings.canvas_bg.color());
     }
 
     fn save(self: *App) void {

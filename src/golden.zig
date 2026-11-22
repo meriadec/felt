@@ -236,7 +236,7 @@ test "crop exports the kept part at original resolution; undo restores" {
     try std.testing.expectEqual(red, full.at(40, 150));
 }
 
-test "drawing past the image grows the exported PNG with white; undo shrinks it" {
+test "drawing past the image grows the exported PNG with the light canvas; undo shrinks it" {
     const gpa = std.testing.allocator;
     var image = try Canvas.init(gpa, 100, 50);
     image.fill(core.color.Color.rgb(0x808080));
@@ -261,14 +261,15 @@ test "drawing past the image grows the exported PNG with white; undo shrinks it"
     defer saved.deinit(gpa);
     try std.testing.expectEqual(@as(u32, @intCast(canvas.width())), saved.width);
     try std.testing.expectEqual(@as(u32, @intCast(canvas.height())), saved.height);
-    // Image pixels unchanged away from the arrow; the extension is white.
+    // Image pixels unchanged away from the arrow; the extension is the canvas background.
+    const bg = core.settings.color_light.toPixel();
     try std.testing.expectEqual(app.image.at(5, 5), saved.at(5, 5));
     try std.testing.expectEqual(app.image.at(50, 10), saved.at(50, 10));
-    try std.testing.expectEqual(@as(u32, 0xffffffff), saved.at(@intCast(canvas.x1 - 2), 2));
-    try std.testing.expectEqual(@as(u32, 0xffffffff), saved.at(105, 45));
+    try std.testing.expectEqual(bg, saved.at(@intCast(canvas.x1 - 2), 2));
+    try std.testing.expectEqual(bg, saved.at(105, 45));
     try std.testing.expectEqual(core.color.palette[0].color.toPixel(), saved.at(130, 25)); // the arrow, past the edge
-    // On screen too: white past the image edge, background past the canvas.
-    try std.testing.expectEqual(@as(u32, 0xffffffff), app.frame().at(255, 130));
+    // On screen too: the canvas background past the image edge, the screen background past the canvas.
+    try std.testing.expectEqual(bg, app.frame().at(255, 130));
     try std.testing.expectEqual(core.compositor.background.toPixel(), app.frame().at(150 + canvas.x1 + 2, 130));
 
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });

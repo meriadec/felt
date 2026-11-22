@@ -1,9 +1,9 @@
 //! Compositor: builds screen frames with caching and damage tracking.
 //! Layers: `scaled` = the kept part of the image at the view scale (rebuilt on
-//! zoom or crop), `scene` = background + white canvas + image + committed
+//! zoom or crop), `scene` = background + canvas background + image + committed
 //! annotations (appended in place, scrolled on a pan, repainted in place
 //! where an annotation moved or the canvas changed, repainted after undo of an add),
-//! `frame` = scene + white canvas of the shape in progress + crop dimming +
+//! `frame` = scene + canvas background the shape in progress adds + crop dimming +
 //! chrome + preview, repainted only in damaged rects.
 const std = @import("std");
 const geom = @import("geom.zig");
@@ -206,14 +206,14 @@ pub const Compositor = struct {
         slot.* = try Canvas.init(self.gpa, w, h);
     }
 
-    /// Paint the scene in `r`: background, white canvas, image, then the
+    /// Paint the scene in `r`: background, canvas background, image, then the
     /// first `n` annotations, each in its own clip.
     fn paintScene(self: *Compositor, s: *const Scene, r_in: Rect, n: usize) !void {
         const cv = &self.scene.?;
         const r = r_in.intersect(cv.bounds());
         if (r.isEmpty()) return;
         for (r.minus(s.canvas_dst)) |b| cv.fillRect(b, background);
-        for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, extent.fill);
+        for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
         try self.paintImage(cv, s, r);
         for (s.doc.items.items[0..n], 0..) |a, i| {
             if (!draw.bounds(s.ctx, a, s.xf, .{}).intersects(r)) continue; // e.g. no text mask to render
@@ -302,6 +302,7 @@ pub const Compositor = struct {
             .pic = pic,
             .pic_dst = v.rect(pic),
             .canvas_dst = v.rect(ed.canvas),
+            .bg = ed.settings.canvas_bg.color(),
         };
         if (self.view_key == null or !std.meta.eql(v, self.view_key.?) or !std.meta.eql(pic, self.pic_key)) {
             if (self.view_key != null and self.canScroll(doc, self.view_key.?, v, pic)) {
@@ -367,7 +368,7 @@ pub const Compositor = struct {
         self.scene_removals = doc.removals;
         self.scene_canvas = ed.canvas;
 
-        // Overlay damage: old and new preview, the white canvas it adds,
+        // Overlay damage: old and new preview, the canvas it adds,
         // chrome if it changed.
         const preview = ed.preview();
         var preview_clip = Rect.empty;
@@ -425,7 +426,7 @@ pub const Compositor = struct {
         for (dmg.slice()) |r_raw| {
             const r = r_raw.intersect(full_rect);
             frame.copyRect(scene, r);
-            for (extra) |b| frame.fillRect(b.intersect(r), extent.fill);
+            for (extra) |b| frame.fillRect(b.intersect(r), s.bg);
             if (crop) |c| drawCropOverlay(frame, r, c);
             if (outline) |o| o.paint(ctx, frame, r, v.xf);
             var chrome_clock = Clock.start();
@@ -451,6 +452,8 @@ const Scene = struct {
     pic_dst: Rect,
     /// Screen rectangle of the canvas.
     canvas_dst: Rect,
+    /// Color of the canvas outside the image (settings.zig).
+    bg: color.Color,
 
     /// Screen clip of annotation `i`.
     fn itemClip(s: *const Scene, i: usize) Rect {

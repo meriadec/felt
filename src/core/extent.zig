@@ -6,8 +6,8 @@
 //! cut by every crop made after it. A shape inside the image never grows
 //! the canvas, even if its shadow touches the edge. The canvas is the union
 //! of the kept rectangle and the clips of the annotations made since.
-//! Canvas areas outside the image are `fill` (white), on screen and in the
-//! export.
+//! Canvas areas outside the image take the canvas background
+//! (settings.zig: light or dark grey), on screen and in the export.
 //! A clip is a pure function of the annotation's current geometry, the kept
 //! rectangle at its creation and the later crops. Adding an annotation never
 //! changes another's clip, so the compositor can append. A move changes only
@@ -22,11 +22,8 @@ const Annotation = @import("annotation.zig").Annotation;
 
 const Rect = geom.Rect;
 
-/// White space (image px) kept past a shape on a side it grew.
+/// Space (image px) kept past a shape on a side it grew.
 pub const pad = 16;
-
-/// Color of the canvas outside the image.
-pub const fill = color.white;
 
 /// A canvas grows at most this far past the kept rectangle on each side:
 /// the larger kept side, clamped to [min_reach, max_reach]. It bounds the

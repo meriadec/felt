@@ -17,6 +17,7 @@ const Font = @import("font.zig").Font;
 const Dock = @import("dock.zig").Dock;
 const TopBar = @import("topbar.zig").TopBar;
 const Hover = @import("chrome.zig").Hover;
+const Settings = @import("settings.zig").Settings;
 
 const Vec2 = geom.Vec2;
 const Tool = keymap.Tool;
@@ -97,6 +98,8 @@ pub const Editor = struct {
     /// Style of new arrows and callout pointers (one setting for both). It
     /// stays for the session, across tool switches.
     arrow_style: ann.ArrowStyle = .straight,
+    /// User settings (settings.zig): not document state, not undo steps.
+    settings: Settings = .{},
     /// The shortcut overlay (`?`/F1).
     help_visible: bool = false,
     /// The icon dock and the top bar (Space hides both to see the image).
