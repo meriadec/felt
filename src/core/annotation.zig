@@ -21,8 +21,12 @@ pub const Text = struct { pos: Vec2, text: []const u8, size: f32, color: Color }
 /// Numbered bubble centered on `center`; `size` is the font size.
 pub const Number = struct { center: Vec2, value: u32, size: f32, color: Color };
 
-/// Text box attached at `anchor`, with a pointer to `target` (none = label).
-pub const Callout = struct { target: ?Vec2, anchor: Vec2, text: []const u8, size: f32, color: Color };
+/// Text box attached at `anchor`, with an arrow pointer to `target` (none =
+/// label). The box sits on the far side of `anchor` from the target, so
+/// `anchor` is the middle of the box side that faces the target: the
+/// pointer starts there. The pointer is an arrow of stroke `width` and
+/// `style`, drawn under the box.
+pub const Callout = struct { target: ?Vec2, anchor: Vec2, text: []const u8, size: f32, color: Color, width: f32, style: ArrowStyle = .straight };
 
 /// Pixelated rectangle a..b with square blocks of `block` pixels.
 pub const Pixelate = struct { a: Vec2, b: Vec2, block: f32 };
@@ -89,7 +93,7 @@ test "moved shifts the dragged part only" {
     try std.testing.expectEqual(Vec2.init(110, 5), ar.moved(.whole, d).arrow.head);
     try std.testing.expectEqual(Vec2.init(0, 0), ar.moved(.head, d).arrow.tail);
     try std.testing.expectEqual(Vec2.init(110, 5), ar.moved(.head, d).arrow.head);
-    const co = Annotation{ .callout = .{ .target = Vec2.init(1, 1), .anchor = Vec2.init(50, 50), .text = "x", .size = 10, .color = c } };
+    const co = Annotation{ .callout = .{ .target = Vec2.init(1, 1), .anchor = Vec2.init(50, 50), .text = "x", .size = 10, .color = c, .width = 2 } };
     try std.testing.expectEqual(Vec2.init(1, 1), co.moved(.whole, d).callout.target.?);
     try std.testing.expectEqual(Vec2.init(60, 55), co.moved(.whole, d).callout.anchor);
     try std.testing.expectEqual(Vec2.init(11, 6), co.moved(.tip, d).callout.target.?);

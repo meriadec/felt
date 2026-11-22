@@ -85,7 +85,9 @@ pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
         .number => |n| numberDisc(n, xf).bounds().expand(Shadow.of(n.size * xf.scale * 0.2).margin() + 2),
         .callout => |c| blk: {
             const g = calloutGeom(ctx, c, xf);
-            break :blk g.shape().bounds().expand(Shadow.of(g.m.pxf * 0.2).margin() + 2);
+            const box = g.box.bounds().expand(Shadow.of(g.m.pxf * 0.2).margin() + 2);
+            const p = g.pointer orelse break :blk box;
+            break :blk box.unite(p.bounds().expand(g.pointer_margin));
         },
     };
     return b.toRect();
@@ -101,21 +103,7 @@ pub const max_cover = 24;
 pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []const Rect {
     var n: usize = 0;
     switch (ann) {
-        .arrow => |a| {
-            const m = Shadow.of(a.width * xf.scale).margin();
-            switch (arrowShape(a, xf)) {
-                .straight => |s| {
-                    buf[0] = s.b.bounds().expand(m).toRect(); // head
-                    n = 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, buf[1..]);
-                },
-                // Axis-aligned segments: their boxes are tight.
-                .stairs => |s| {
-                    buf[0] = s.b.bounds().expand(m).toRect();
-                    for (s.a.pieces(m), 1..) |b, i| buf[i] = b.toRect();
-                    n = 4;
-                },
-            }
-        },
+        .arrow => |a| n = arrowCover(arrowShape(a, xf), Shadow.of(a.width * xf.scale).margin(), buf),
         .rect => |r| {
             const b = boxShape(r, xf);
             const e = b.w * 0.5 + Shadow.of(r.width * xf.scale).margin();
@@ -133,11 +121,7 @@ pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []cons
             const m = Shadow.of(g.m.pxf * 0.2).margin() + 2;
             buf[0] = g.box.bounds().expand(m).toRect();
             n = 1;
-            if (g.pointer) |t| {
-                // The pointer narrows from its base (b, c) to the tip (a).
-                const base = t.b.add(t.c).scale(0.5);
-                n += segmentCover(t.a, base, t.b.dist(t.c) * 0.5 + m, buf[1..]);
-            }
+            if (g.pointer) |p| n += arrowCover(p, g.pointer_margin, buf[1..]);
         },
         else => {
             buf[0] = bounds(ctx, ann, xf, .{});
@@ -145,6 +129,23 @@ pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []cons
         },
     }
     return buf[0..n];
+}
+
+/// Cover an arrow grown by `m` (its shadow margin): the head, and slabs
+/// along a straight stroke or the boxes of the stairs segments (axis
+/// aligned: their boxes are tight). Returns the count (at most `out.len`).
+fn arrowCover(shape: ArrowShape, m: f32, out: []Rect) usize {
+    switch (shape) {
+        .straight => |s| {
+            out[0] = s.b.bounds().expand(m).toRect(); // head
+            return 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, out[1..]);
+        },
+        .stairs => |s| {
+            out[0] = s.b.bounds().expand(m).toRect();
+            for (s.a.pieces(m), 1..) |b, i| out[i] = b.toRect();
+            return 4;
+        },
+    }
 }
 
 /// Cover the segment a..b grown by `r` with slabs across its main axis.
@@ -438,20 +439,47 @@ fn drawNumber(ctx: Ctx, cv: *Canvas, clip: Rect, n: ann_mod.Number, xf: Xform) !
 
 // ---- callout -----------------------------------------------------------
 
-const CalloutShape = sdf.Union(sdf.RoundRect, sdf.Triangle);
+/// The box and, under it, the arrow pointer (none: a label).
+const CalloutShape = struct {
+    box: sdf.RoundRect,
+    pointer: ?ArrowShape,
+
+    pub fn dist(s: CalloutShape, p: Vec2) f32 {
+        const d = s.box.dist(p);
+        const ptr = s.pointer orelse return d;
+        return @min(d, ptr.dist(p));
+    }
+    pub fn bounds(s: CalloutShape) Bounds {
+        const b = s.box.bounds();
+        return if (s.pointer) |ptr| b.unite(ptr.bounds()) else b;
+    }
+};
 
 const CalloutGeom = struct {
     m: LabelMetrics,
     box: sdf.RoundRect,
-    pointer: ?sdf.Triangle,
+    pointer: ?ArrowShape,
+    /// Shadow margin of the pointer (target px).
+    pointer_margin: f32,
     text_pos: Vec2,
 
     fn shape(g: CalloutGeom) CalloutShape {
-        // Without a pointer, a degenerate triangle inside the box changes nothing.
-        const c = g.box.min.add(g.box.max).scale(0.5);
-        return .{ .a = g.box, .b = g.pointer orelse .{ .a = c, .b = c, .c = c } };
+        return .{ .box = g.box, .pointer = g.pointer };
     }
 };
+
+/// The pointer of a callout as an arrow: from `anchor` (the middle of the
+/// box side that faces the target) to the target, with the callout's
+/// stroke, color and style. A stairs pointer leaves the box across that
+/// side: its first segment runs along the same axis that picked the side.
+/// None for a label, or when the target is nearer the box than one head
+/// length: a pointer that short would be only a head stuck to the box.
+/// Its tip handle still moves it out (move tool).
+pub fn calloutPointer(c: ann_mod.Callout) ?ann_mod.Arrow {
+    const t = c.target orelse return null;
+    if (t.dist(c.anchor) < headLength(c.width)) return null;
+    return .{ .tail = c.anchor, .head = t, .width = c.width, .color = c.color, .style = c.style };
+}
 
 fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
     const m = LabelMetrics.of(ctx, c.text, c.size, xf);
@@ -459,6 +487,8 @@ fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
     const a = xf.apply(c.anchor);
     var min = a.sub(size.scale(0.5)); // centered label
     if (c.target) |t_img| {
+        // The box goes on the far side of the anchor from the target,
+        // along the dominant axis: the anchor is the middle of that side.
         const d = a.sub(xf.apply(t_img));
         if (@abs(d.x) >= @abs(d.y)) {
             min.x = if (d.x >= 0) a.x else a.x - size.x;
@@ -466,20 +496,24 @@ fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
             min.y = if (d.y >= 0) a.y else a.y - size.y;
         }
     }
-    var pointer: ?sdf.Triangle = null;
-    if (c.target) |t_img| {
-        const tip = xf.apply(t_img);
-        const center = min.add(size.scale(0.5));
-        const n = center.sub(tip).normalize().perp();
-        const half = @min(size.x, size.y) * 0.28;
-        pointer = .{ .a = tip, .b = center.add(n.scale(half)), .c = center.sub(n.scale(half)) };
-    }
-    return .{ .m = m, .box = m.box(min), .pointer = pointer, .text_pos = min.add(.{ .x = m.pad, .y = m.pad }) };
+    const ptr = calloutPointer(c);
+    return .{
+        .m = m,
+        .box = m.box(min),
+        .pointer = if (ptr) |p| arrowShape(p, xf) else null,
+        .pointer_margin = Shadow.of(c.width * xf.scale).margin(),
+        .text_pos = min.add(.{ .x = m.pad, .y = m.pad }),
+    };
 }
 
+/// The pointer first (an arrow with its shadow), then the box over its
+/// start: the join is the clean box edge.
 fn drawCallout(ctx: Ctx, cv: *Canvas, clip: Rect, c: ann_mod.Callout, xf: Xform, caret: bool) !void {
     const g = calloutGeom(ctx, c, xf);
-    drawLabelBody(cv, clip, g.shape(), c.color, g.m);
+    if (g.pointer) |p| switch (p) {
+        inline else => |s| drawWithShadow(cv, clip, s, c.color, Shadow.of(c.width * xf.scale)),
+    };
+    drawLabelBody(cv, clip, g.box, c.color, g.m);
     try blendText(ctx, cv, clip, c.text, g.m.px, g.text_pos, c.color.contrast(), caret);
 }
 
@@ -496,7 +530,10 @@ test "cover holds every pixel an annotation writes" {
         .{ .arrow = .{ .tail = .{ .x = 20, .y = 250 }, .head = .{ .x = 380, .y = 40 }, .width = 8, .color = red, .style = .stairs } },
         .{ .arrow = .{ .tail = .{ .x = 300, .y = 20 }, .head = .{ .x = 100, .y = 290 }, .width = 10, .color = red, .style = .stairs } },
         .{ .rect = .{ .a = .{ .x = 30, .y = 30 }, .b = .{ .x = 350, .y = 260 }, .width = 8, .color = red } },
-        .{ .callout = .{ .target = .{ .x = 20, .y = 20 }, .anchor = .{ .x = 300, .y = 250 }, .text = "Hi", .size = 20, .color = red } },
+        .{ .callout = .{ .target = .{ .x = 20, .y = 20 }, .anchor = .{ .x = 300, .y = 250 }, .text = "Hi", .size = 20, .color = red, .width = 5 } },
+        .{ .callout = .{ .target = .{ .x = 20, .y = 20 }, .anchor = .{ .x = 300, .y = 250 }, .text = "Hi", .size = 20, .color = red, .width = 5, .style = .stairs } },
+        .{ .callout = .{ .target = .{ .x = 380, .y = 30 }, .anchor = .{ .x = 60, .y = 260 }, .text = "Hi", .size = 20, .color = red, .width = 5, .style = .stairs } },
+        .{ .callout = .{ .target = .{ .x = 100, .y = 290 }, .anchor = .{ .x = 300, .y = 20 }, .text = "Hi", .size = 20, .color = red, .width = 8, .style = .stairs } },
     };
     for (anns) |a| {
         cv.fill(color.white);
@@ -553,4 +590,59 @@ test "stairs arrow: the stroke follows the elbow path, the head points along the
     // Same body bounds for both: the path stays in the box of its ends.
     const sb = s.bounds();
     try std.testing.expect(sb.min.x >= -3 and sb.max.x <= 203 and sb.min.y >= -3 and sb.max.y <= 113);
+}
+
+test "callout pointer: an arrow from the middle of the box side that faces the target, under the box" {
+    const gpa = std.testing.allocator;
+    var font = try Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    const ctx = Ctx{ .gpa = gpa, .font = &font };
+    const red = color.palette[0].color;
+    // Target up-left, wider than high: the box sits right of the anchor,
+    // the pointer leaves its left side at the anchor.
+    var c = ann_mod.Callout{ .target = .{ .x = 0, .y = 0 }, .anchor = .{ .x = 200, .y = 100 }, .text = "Hi", .size = 20, .color = red, .width = 4 };
+    const g = calloutGeom(ctx, c, .identity);
+    try std.testing.expectEqual(@as(f32, 200), g.box.min.x);
+    try std.testing.expectApproxEqAbs(@as(f32, 100), (g.box.min.y + g.box.max.y) * 0.5, 1e-3);
+    const p = calloutPointer(c).?;
+    try std.testing.expectEqual(c.anchor, p.tail);
+    try std.testing.expectEqual(c.target.?, p.head);
+    // Straight: along the line; stairs: along the elbow, not the line.
+    const a: Annotation = .{ .callout = c };
+    try std.testing.expect(hitDist(ctx, a, .identity, .{ .x = 150, .y = 75 }) < 0);
+    try std.testing.expect(hitDist(ctx, a, .identity, .{ .x = 150, .y = 100 }) > 5);
+    c.style = .stairs;
+    const s: Annotation = .{ .callout = c };
+    try std.testing.expect(hitDist(ctx, s, .identity, .{ .x = 150, .y = 100 }) < 0); // leaves the box across its side
+    try std.testing.expect(hitDist(ctx, s, .identity, .{ .x = 100, .y = 50 }) < 0); // middle segment
+    try std.testing.expect(hitDist(ctx, s, .identity, .{ .x = 50, .y = 0 }) < 0); // into the target
+    try std.testing.expect(hitDist(ctx, s, .identity, .{ .x = 150, .y = 75 }) > 5); // the straight line: off it
+    try std.testing.expect(hitDist(ctx, s, .identity, .{ .x = 230, .y = 100 }) < 0); // the box
+    // Bounds hold the whole elbow, the box and their shadows.
+    const b = bounds(ctx, s, .identity, .{});
+    try std.testing.expect(b.x0 < -2 and b.y0 < -2 and b.x1 > @as(i32, @intFromFloat(g.box.max.x)));
+    // Target below, higher than wide: the box sits above the anchor, the
+    // pointer leaves its bottom side.
+    const down = ann_mod.Callout{ .target = .{ .x = 220, .y = 300 }, .anchor = .{ .x = 200, .y = 100 }, .text = "Hi", .size = 20, .color = red, .width = 4, .style = .stairs };
+    const gd = calloutGeom(ctx, down, .identity);
+    try std.testing.expectEqual(@as(f32, 100), gd.box.max.y);
+    try std.testing.expect(hitDist(ctx, .{ .callout = down }, .identity, .{ .x = 200, .y = 150 }) < 0);
+    try std.testing.expect(hitDist(ctx, .{ .callout = down }, .identity, .{ .x = 220, .y = 250 }) < 0);
+    // Under the box: a pointer pixel inside the box has the box's look.
+    var cv = try Canvas.init(gpa, 320, 200);
+    defer cv.deinit(gpa);
+    cv.fill(color.white);
+    try annotation(ctx, &cv, cv.bounds(), s, .identity, .{});
+    try std.testing.expectEqual(red.toPixel(), cv.at(150, 100)); // the stroke
+    try std.testing.expectEqual(red.toPixel(), cv.at(204, 100)); // the box over the stroke start
+}
+
+test "callout pointer: none for a label or a target nearer than one head length" {
+    const red = color.palette[0].color;
+    var c = ann_mod.Callout{ .target = null, .anchor = .{ .x = 200, .y = 100 }, .text = "Hi", .size = 20, .color = red, .width = 4 };
+    try std.testing.expectEqual(@as(?ann_mod.Arrow, null), calloutPointer(c));
+    c.target = .{ .x = 190, .y = 95 };
+    try std.testing.expectEqual(@as(?ann_mod.Arrow, null), calloutPointer(c));
+    c.target = .{ .x = 200 - headLength(4) - 1, .y = 100 };
+    try std.testing.expect(calloutPointer(c) != null);
 }
