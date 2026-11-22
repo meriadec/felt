@@ -22,7 +22,10 @@ pub const UiTarget = union(enum) {
 
 pub const Step = union(enum) {
     event: Event,
+    /// Click a chrome item.
     ui: UiTarget,
+    /// Move the pointer onto a chrome item (hover, no click).
+    hover: UiTarget,
 };
 
 /// A list of steps that takes events, for the parser.
@@ -91,7 +94,10 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     } else if (std.mem.eql(u8, cmd, "size")) {
         s.size = .{ @intFromFloat(try num(err, &it)), @intFromFloat(try num(err, &it)) };
     } else if (std.mem.eql(u8, cmd, "move")) {
-        try ev.append(gpa, .{ .mouse_move = .{ .x = try num(err, &it), .y = try num(err, &it) } });
+        if (it.peek() != null and std.mem.eql(u8, it.peek().?, "ui")) { // hover a chrome item
+            _ = it.next();
+            try s.events.append(gpa, .{ .hover = try parseUi(&it, err) });
+        } else try ev.append(gpa, .{ .mouse_move = .{ .x = try num(err, &it), .y = try num(err, &it) } });
     } else if (std.mem.eql(u8, cmd, "down") or std.mem.eql(u8, cmd, "up") or std.mem.eql(u8, cmd, "click")) {
         const x = try num(err, &it);
         const y = try num(err, &it);
@@ -153,25 +159,37 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         }
         for (0..times) |_| try ev.append(gpa, .{ .wheel = .{ .delta = step, .x = x, .y = y, .mods = mods } });
     } else if (std.mem.eql(u8, cmd, "ui")) {
-        const what = it.next() orelse return fail(err, ui_help);
-        const t: UiTarget = if (std.mem.eql(u8, what, "tool")) blk: {
-            const name = it.next() orelse return fail(err, ui_help);
-            for (core.keymap.tools) |info| if (std.mem.eql(u8, info.name, name)) break :blk .{ .tool = info.tool };
-            return fail(err, "ui tool: unknown tool name (see the key map)");
-        } else if (std.mem.eql(u8, what, "color")) blk: {
-            const k = try num(err, &it);
-            if (k < 1 or k > core.color.palette.len) return fail(err, "ui color: 1 to the palette size");
-            break :blk .{ .color = @intFromFloat(k - 1) };
-        } else if (std.mem.eql(u8, what, "arrow-style") or std.mem.eql(u8, what, "pointer-style")) blk: {
-            const name = it.next() orelse break :blk .{ .arrow_style = null };
-            break :blk .{ .arrow_style = std.meta.stringToEnum(core.annotation.ArrowStyle, name) orelse return fail(err, "ui arrow-style: straight or stairs (none: the other one)") };
-        } else if (std.mem.eql(u8, what, "size")) .size else if (std.mem.eql(u8, what, "help")) .help else if (std.mem.eql(u8, what, "undo")) .undo else if (std.mem.eql(u8, what, "redo")) .redo else return fail(err, ui_help);
-        try s.events.append(gpa, .{ .ui = t });
+        try s.events.append(gpa, .{ .ui = try parseUi(&it, err) });
     } else if (std.mem.eql(u8, cmd, "resize")) {
         try ev.append(gpa, .{ .resize = .{ .w = @intFromFloat(try num(err, &it)), .h = @intFromFloat(try num(err, &it)) } });
     } else {
         return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize, ui)");
     }
+}
+
+/// The chrome item after `ui` (or `move ui`).
+fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget {
+    const what = it.next() orelse return fail(err, ui_help);
+    const eq = std.mem.eql;
+    if (eq(u8, what, "tool")) {
+        const name = it.next() orelse return fail(err, ui_help);
+        for (core.keymap.tools) |info| if (eq(u8, info.name, name)) return .{ .tool = info.tool };
+        return fail(err, "ui tool: unknown tool name (see the key map)");
+    }
+    if (eq(u8, what, "color")) {
+        const k = try num(err, it);
+        if (k < 1 or k > core.color.palette.len) return fail(err, "ui color: 1 to the palette size");
+        return .{ .color = @intFromFloat(k - 1) };
+    }
+    if (eq(u8, what, "arrow-style") or eq(u8, what, "pointer-style")) {
+        const name = it.next() orelse return .{ .arrow_style = null };
+        return .{ .arrow_style = std.meta.stringToEnum(core.annotation.ArrowStyle, name) orelse return fail(err, "ui arrow-style: straight or stairs (none: the other one)") };
+    }
+    if (eq(u8, what, "size")) return .size;
+    if (eq(u8, what, "help")) return .help;
+    if (eq(u8, what, "undo")) return .undo;
+    if (eq(u8, what, "redo")) return .redo;
+    return fail(err, ui_help);
 }
 
 const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo or arrow-style [straight|stairs] (alias pointer-style)";
@@ -194,8 +212,10 @@ test "parse script" {
         \\ui arrow-style
         \\ui arrow-style stairs
         \\ui pointer-style straight
+        \\move ui redo
     , &err);
     defer s.deinit(gpa);
+    try std.testing.expectEqual(UiTarget.redo, s.events.pop().?.hover);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
     try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
     try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1 + 3 + 3), s.events.items.len);

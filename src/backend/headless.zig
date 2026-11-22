@@ -40,6 +40,10 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },
+        .hover => |t| {
+            const p = try uiPoint(app, t);
+            if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
+        },
     };
     return app;
 }

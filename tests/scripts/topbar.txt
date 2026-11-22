@@ -10,4 +10,4 @@ ui redo
 ui undo
 ui undo
 ui redo
-move 470 40
+move ui redo
