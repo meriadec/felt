@@ -1,9 +1,9 @@
 //! Compositor: builds screen frames with caching and damage tracking.
 //! Layers: `scaled` = the kept part of the image at the view scale (rebuilt on
 //! zoom or crop), `scene` = background + white canvas + image + committed
-//! annotations (appended in place, repainted after undo), `frame` = scene +
-//! white canvas of the shape in progress + crop dimming + chrome + preview,
-//! repainted only in damaged rects.
+//! annotations (appended in place, scrolled on a pan, repainted after undo),
+//! `frame` = scene + white canvas of the shape in progress + crop dimming +
+//! chrome + preview, repainted only in damaged rects.
 const std = @import("std");
 const geom = @import("geom.zig");
 const color = @import("color.zig");
@@ -156,6 +156,18 @@ pub const Compositor = struct {
         }
     }
 
+    /// The view only moved by whole pixels over a valid scene. Pixelate reads
+    /// the pixels under it, so a strip repaint could differ: repaint all.
+    fn canScroll(self: *const Compositor, doc: *const Document, old: View, new: View, pic: Rect) bool {
+        if (!self.scene_valid or !std.meta.eql(pic, self.pic_key)) return false;
+        if (old.screen_w != new.screen_w or old.screen_h != new.screen_h or old.xf.scale != new.xf.scale) return false;
+        const dx = @abs(new.xf.offset.x - old.xf.offset.x);
+        const dy = @abs(new.xf.offset.y - old.xf.offset.y);
+        if (dx >= @as(f32, @floatFromInt(new.screen_w)) or dy >= @as(f32, @floatFromInt(new.screen_h))) return false;
+        for (doc.items.items[0..@min(self.scene_count, doc.items.items.len)]) |a| if (a == .pixelate) return false;
+        return true;
+    }
+
     /// Bring `frame` up to date; returns the screen rectangles that changed.
     pub fn render(self: *Compositor, ctx: draw.Ctx, image: *const Canvas, doc: *const Document, ed: *const Editor) !Damage {
         var dmg = Damage{};
@@ -183,10 +195,22 @@ pub const Compositor = struct {
             .canvas_dst = v.rect(ed.canvas),
         };
         if (self.view_key == null or !std.meta.eql(v, self.view_key.?) or !std.meta.eql(pic, self.pic_key)) {
-            try self.ensureCanvas(&self.scene, w, h);
+            if (self.view_key != null and self.canScroll(doc, self.view_key.?, v, pic)) {
+                // A pan: scroll the scene, paint only the strips it uncovers,
+                // with the canvas the scene holds (growth is appended below).
+                const dx: i32 = @intFromFloat(v.xf.offset.x - self.view_key.?.xf.offset.x);
+                const dy: i32 = @intFromFloat(v.xf.offset.y - self.view_key.?.xf.offset.y);
+                self.scene.?.scroll(dx, dy);
+                var old = s;
+                old.canvas_dst = v.rect(self.scene_canvas);
+                for (full_rect.minus(full_rect.offset(dx, dy))) |strip| try self.paintScene(&old, strip, self.scene_count);
+                full = true;
+            } else {
+                try self.ensureCanvas(&self.scene, w, h);
+                self.scene_valid = false;
+            }
             self.view_key = v;
             self.pic_key = pic;
-            self.scene_valid = false;
         }
         const scene = &self.scene.?;
         const frame = &self.frame.?;

@@ -84,6 +84,38 @@ pub const Canvas = struct {
         while (y < dst.y1) : (y += 1) @memcpy(self.row(y, dst.x0, dst.x1), src.row(y + oy, dst.x0 + ox, dst.x1 + ox));
     }
 
+    /// Move the contents by (dx, dy) whole pixels. Pixels moved in from
+    /// outside are left as they were: the caller repaints those strips.
+    pub fn scroll(self: *Canvas, dx: i32, dy: i32) void {
+        const w: i32 = @intCast(self.width);
+        const h: i32 = @intCast(self.height);
+        if (@abs(dx) >= w or @abs(dy) >= h or (dx == 0 and dy == 0)) return;
+        const n: usize = @intCast(w - @as(i32, @intCast(@abs(dx))));
+        const sx: usize = @intCast(@max(0, -dx));
+        const tx: usize = @intCast(@max(0, dx));
+        const W: usize = self.width;
+        if (dy > 0) {
+            var y = h - 1;
+            while (y >= dy) : (y -= 1) {
+                const d = @as(usize, @intCast(y)) * W;
+                const src = @as(usize, @intCast(y - dy)) * W;
+                @memcpy(self.pixels[d + tx ..][0..n], self.pixels[src + sx ..][0..n]);
+            }
+        } else if (dy < 0) {
+            var y: i32 = 0;
+            while (y < h + dy) : (y += 1) {
+                const d = @as(usize, @intCast(y)) * W;
+                const src = @as(usize, @intCast(y - dy)) * W;
+                @memcpy(self.pixels[d + tx ..][0..n], self.pixels[src + sx ..][0..n]);
+            }
+        } else {
+            for (0..self.height) |y| {
+                const r = self.pixels[y * W ..][0..W];
+                if (dx < 0) std.mem.copyForwards(Pixel, r[0..n], r[sx..][0..n]) else std.mem.copyBackwards(Pixel, r[tx..][0..n], r[0..n]);
+            }
+        }
+    }
+
     /// Source-over blend of `c` scaled by `cov` (0..255) into the pixel at `i`.
     pub inline fn blendAt(self: *Canvas, i: usize, c: Color, cov: u32) void {
         self.pixels[i] = blendPixel(self.pixels[i], c, cov * c.a);
@@ -233,4 +265,25 @@ test "pixelate averages blocks" {
     cv.pixelate(cv.bounds(), 2, cv.bounds(), cv.bounds());
     try std.testing.expectEqual(@as(u32, 0xff7f7f7f), cv.pixels[0]);
     try std.testing.expectEqual(@as(u32, 0xff000000), cv.pixels[3]);
+}
+
+test "scroll moves pixels in every direction" {
+    const gpa = std.testing.allocator;
+    var cv = try Canvas.init(gpa, 4, 3);
+    defer cv.deinit(gpa);
+    const moves = [_][2]i32{ .{ 1, 0 }, .{ -2, 0 }, .{ 0, 1 }, .{ 0, -1 }, .{ 1, -2 }, .{ -3, 2 } };
+    for (moves) |m| {
+        for (cv.pixels, 0..) |*p, i| p.* = @intCast(i);
+        cv.scroll(m[0], m[1]);
+        var y: i32 = 0;
+        while (y < 3) : (y += 1) {
+            var x: i32 = 0;
+            while (x < 4) : (x += 1) {
+                const sx = x - m[0];
+                const sy = y - m[1];
+                if (sx < 0 or sy < 0 or sx >= 4 or sy >= 3) continue;
+                try std.testing.expectEqual(@as(u32, @intCast(sy * 4 + sx)), cv.at(x, y));
+            }
+        }
+    }
 }

@@ -272,6 +272,54 @@ test "drawing past the image grows the exported PNG with white; undo shrinks it"
     try std.testing.expect(std.mem.eql(u32, app.image.pixels, out.pixels));
 }
 
+test "panning scrolls the scene to the same pixels as a full repaint" {
+    const gpa = std.testing.allocator;
+    const image = try core.image_io.load(gpa, fixture);
+    const app = try App.create(gpa, image, 900, 500, .{ .output_path = null, .clipboard = .none });
+    defer app.destroy();
+    const key = struct {
+        fn ev(c: u21) core.input.Event {
+            return .{ .key = .{ .key = .{ .char = c } } };
+        }
+    }.ev;
+    _ = try app.handle(key('-'));
+    // Shapes of every kind across the screen, some past the image.
+    const kinds = [_]u21{ 'a', 'r', 'h', 'c' };
+    for (kinds, 0..) |k, i| {
+        _ = try app.handle(key(k));
+        const x: f32 = 60 + 200 * @as(f32, @floatFromInt(i));
+        _ = try app.handle(.{ .mouse_down = .{ .x = x, .y = 40 } });
+        _ = try app.handle(.{ .mouse_move = .{ .x = x + 150, .y = 300 } });
+        _ = try app.handle(.{ .mouse_up = .{ .x = x + 150, .y = 300 } });
+        if (k == 'c') for ("Note") |ch| {
+            _ = try app.handle(key(ch));
+        };
+        _ = try app.render();
+    }
+    _ = try app.handle(key('n'));
+    _ = try app.handle(.{ .mouse_down = .{ .x = 880, .y = 20 } });
+    _ = try app.handle(key('t'));
+    _ = try app.handle(.{ .mouse_down = .{ .x = 10, .y = 400 } });
+    for ("Text") |ch| _ = try app.handle(key(ch));
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } });
+    _ = try app.render();
+    const moves = [_][2]f32{ .{ 450, 250 }, .{ 437, 263 }, .{ 500, 240 }, .{ 500, 241 }, .{ 380, 300 }, .{ 120, 90 } };
+    _ = try app.handle(.{ .mouse_down = .{ .x = moves[0][0], .y = moves[0][1], .button = .middle } });
+    for (moves[1..]) |m| {
+        _ = try app.handle(.{ .mouse_move = .{ .x = m[0], .y = m[1] } });
+        _ = try app.render();
+        var fresh = core.compositor.Compositor{ .gpa = gpa };
+        defer fresh.deinit();
+        _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+        const d = compare(app.frame(), &fresh.frame.?, null);
+        if (d.bad > 0) {
+            writeOut(gpa, app.frame(), "pan", "damage.incremental");
+            writeOut(gpa, &fresh.frame.?, "pan", "damage.full");
+        }
+        try std.testing.expectEqual(@as(usize, 0), d.bad);
+    }
+}
+
 test "docs/keymap.md is up to date" {
     const gpa = std.testing.allocator;
     var buf: [16 * 1024]u8 = undefined;
