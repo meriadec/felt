@@ -29,8 +29,9 @@ pub const Event = union(enum) {
     mouse_down: struct { x: f32, y: f32, button: Button = .left },
     mouse_up: struct { x: f32, y: f32, button: Button = .left },
     mouse_move: Pointer,
-    /// +1 per wheel step up, -1 down.
-    wheel: i32,
+    /// `delta`: +1 per wheel step up, -1 down; at the pointer, with the
+    /// modifiers held.
+    wheel: struct { delta: i32, x: f32 = 0, y: f32 = 0, mods: Mods = .{} },
     key: KeyEvent,
     resize: struct { w: u32, h: u32 },
 };

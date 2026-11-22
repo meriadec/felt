@@ -54,6 +54,11 @@ pub const Action = union(enum) {
     quit,
     toggle_help,
     toggle_dock,
+    zoom_in,
+    zoom_out,
+    zoom_fit,
+    /// Move the image by a fraction of the screen: x, y in -1..1.
+    pan: [2]i8,
 };
 
 pub const Chord = struct {
@@ -92,6 +97,14 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = ch(' ') }, .action = .toggle_dock, .label = "hide / show the dock" },
+        .{ .chord = .{ .key = ch('=') }, .action = .zoom_in, .label = "zoom in" },
+        .{ .chord = .{ .key = ch('+') }, .action = .zoom_in, .label = "zoom in" },
+        .{ .chord = .{ .key = ch('-') }, .action = .zoom_out, .label = "zoom out (room to draw around)" },
+        .{ .chord = .{ .key = ch('0') }, .action = .zoom_fit, .label = "fit the canvas to the screen" },
+        .{ .chord = .{ .key = .{ .named = .left } }, .action = .{ .pan = .{ 1, 0 } }, .label = "pan" },
+        .{ .chord = .{ .key = .{ .named = .right } }, .action = .{ .pan = .{ -1, 0 } }, .label = "pan" },
+        .{ .chord = .{ .key = .{ .named = .up } }, .action = .{ .pan = .{ 0, 1 } }, .label = "pan" },
+        .{ .chord = .{ .key = .{ .named = .down } }, .action = .{ .pan = .{ 0, -1 } }, .label = "pan" },
     };
     break :blk list;
 };
@@ -107,6 +120,9 @@ pub const Extra = struct {
 /// Mouse and context inputs that are not key bindings.
 pub const extra = [_]Extra{
     .{ .input = "Mouse wheel", .effect = "Bigger / smaller stroke and text", .short = "size" },
+    .{ .input = "Ctrl+wheel", .effect = "Zoom in / out about the pointer", .short = "zoom" },
+    .{ .input = "Middle drag", .effect = "Pan the view", .short = "pan" },
+    .{ .input = "Drawing past the image", .effect = "The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help", .short = "pick" },
     .{ .input = "Esc while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
@@ -145,6 +161,10 @@ fn namedName(n: input.Named) []const u8 {
         .tab => "Tab",
         .enter => "Enter",
         .backspace => "Backspace",
+        .left => "←",
+        .right => "→",
+        .up => "↑",
+        .down => "↓",
         else => @tagName(n),
     };
 }
@@ -201,6 +221,8 @@ test "lookup" {
     try std.testing.expectEqual(@as(?Action, null), lookup(.{ .key = .{ .char = 'a' }, .mods = .{ .ctrl = true } }));
     try std.testing.expectEqual(Action.next_tool, lookup(.{ .key = .{ .named = .tab } }).?);
     try std.testing.expectEqual(Action.prev_tool, lookup(.{ .key = .{ .named = .tab }, .mods = .{ .shift = true } }).?);
+    try std.testing.expectEqual(Action.zoom_in, lookup(.{ .key = .{ .char = '+' }, .mods = .{ .shift = true } }).?);
+    try std.testing.expectEqual(Action.zoom_out, lookup(.{ .key = .{ .char = '-' } }).?);
 }
 
 test "cycleTool wraps both ways in toolbar order" {

@@ -151,7 +151,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
 /// One row of the overlay: key caps (or a plain input text) and a label.
 const Row = struct {
-    caps: [3][]const u8 = undefined,
+    caps: [4][]const u8 = undefined,
     n_caps: u8 = 0,
     /// Plain text instead of caps (mouse inputs).
     input: ?[]const u8 = null,
@@ -164,11 +164,12 @@ const Column = struct { title: []const u8, rows: []const Row };
 const color_caps = std.fmt.comptimePrint("1-{d}", .{color.palette.len});
 
 fn toolRows(out: []Row) []Row {
-    for (keymap.tools, 0..) |t, i| out[i] = .{ .caps = .{ keymap.toolKey(t.tool), "", "" }, .n_caps = 1, .label = t.name, .tool = t.tool };
+    for (keymap.tools, 0..) |t, i| out[i] = .{ .caps = .{ keymap.toolKey(t.tool), "", "", "" }, .n_caps = 1, .label = t.name, .tool = t.tool };
     return out[0..keymap.tools.len];
 }
 
-/// Key bindings, tools left out, colors as one row, same actions merged.
+/// Key bindings, tools left out, colors as one row, neighbours with the same
+/// action kind and label merged (redo, zoom in, the four pan arrows).
 fn keyRows(out: []Row) []Row {
     var n: usize = 0;
     var prev: ?keymap.Action = null;
@@ -177,18 +178,18 @@ fn keyRows(out: []Row) []Row {
             .tool => continue,
             .color => |i| {
                 if (i == 0) {
-                    out[n] = .{ .caps = .{ color_caps, "", "" }, .n_caps = 1, .label = "color" };
+                    out[n] = .{ .caps = .{ color_caps, "", "", "" }, .n_caps = 1, .label = "color" };
                     n += 1;
                 }
                 continue;
             },
             else => {},
         }
-        if (prev != null and std.meta.eql(prev.?, b.action) and out[n - 1].n_caps < 3) {
+        if (prev != null and std.meta.activeTag(prev.?) == std.meta.activeTag(b.action) and std.mem.eql(u8, out[n - 1].label, b.label) and out[n - 1].n_caps < 4) {
             out[n - 1].caps[out[n - 1].n_caps] = cap;
             out[n - 1].n_caps += 1;
         } else {
-            out[n] = .{ .caps = .{ cap, "", "" }, .n_caps = 1, .label = b.label };
+            out[n] = .{ .caps = .{ cap, "", "", "" }, .n_caps = 1, .label = b.label };
             n += 1;
         }
         prev = b.action;

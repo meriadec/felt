@@ -66,11 +66,11 @@ One command per line, screen coordinates, `#` starts a comment.
 | `size W H` | Screen size (CLI `--size` wins; default 1280x720) |
 | `key CHORD...` | Key presses: `a`, `5`, `]`, `?`, `ctrl+z`, `ctrl+shift+z`, `enter`, `shift+enter`, `esc`, `backspace`, `f1`, `space` |
 | `type TEXT` | Types the rest of the line literally; `\n` is Shift+Enter |
-| `click X Y [button]` | Press and release (`left`, `middle`, `right`) |
+| `click X Y [button]` | Press and release (`left`, `middle`, `right`; middle drag pans) |
 | `down X Y [button]`, `up X Y [button]` | Press, release |
 | `move X Y` | Pointer motion |
 | `drag X0 Y0 X1 Y1 [steps]` | Press, `steps` moves (default 8), release |
-| `wheel up\|down [n]` | Wheel steps (size) |
+| `wheel up\|down [n] [at X Y] [ctrl]` | Wheel steps at a point (size; with `ctrl`: zoom about the point) |
 | `resize W H` | Window resize |
 
 The replay renders after each event that asks for a redraw, like the X11

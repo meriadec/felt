@@ -84,6 +84,11 @@ image files. Build: `coreModule` in build.zig.
   A crop may keep white canvas. Undo pops it. The view refits when the kept
   rectangle changes; a canvas that grows or shrinks with annotations keeps
   the view (no jumps while drawing).
+- The user zooms (Ctrl+wheel about the pointer, `-` `=` `0`) and pans (middle
+  drag, arrow keys) freely; the view offset stays whole pixels, so a pan is
+  an exact scroll. New annotation sizes follow the scale that fits the kept
+  rectangle, not the zoom: zooming out to draw around a big image does not
+  make strokes fat.
 - Every pixel write takes a clip `Rect`. The compositor repaints only damaged
   rects; `draw.bounds` must cover everything `draw.annotation` can touch
   (shadows and anti-aliasing included). The golden test checks that an

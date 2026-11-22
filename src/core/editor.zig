@@ -63,6 +63,10 @@ pub const Editor = struct {
     canvas_rev: u64,
     /// Kept rectangle the view was fitted for: a crop, its undo or redo refits.
     kept_key: geom.Rect,
+    /// The view fits the canvas (no zoom or pan since): a resize refits.
+    fitted: bool = true,
+    /// Middle-button pan in progress: last pointer position.
+    panning: ?Vec2 = null,
     tool: Tool = .arrow,
     /// Tool to go back to after a crop.
     tool_before_crop: Tool = .arrow,
@@ -110,9 +114,12 @@ pub const Editor = struct {
         return color.palette[self.color_idx].color;
     }
 
-    /// Screen px to image px, with the UI scale.
+    /// Screen px to image px, with the UI scale. Sizes follow the scale that
+    /// fits the kept rectangle, not the zoom: a shape drawn zoomed out has
+    /// the same image size as one drawn at the fit.
     fn toImg(self: *const Editor, screen_px_1080: f32) f32 {
-        return screen_px_1080 * style.uiScale(self.view.screen_h) / self.view.xf.scale;
+        const ref = View.fit(self.kept_key, self.view.screen_w, self.view.screen_h).xf.scale;
+        return screen_px_1080 * style.uiScale(self.view.screen_h) / ref;
     }
 
     fn strokeImg(self: *const Editor) f32 {
@@ -146,8 +153,34 @@ pub const Editor = struct {
         return null;
     }
 
+    /// A fitted view refits; a zoomed or panned one keeps its transform.
     pub fn resize(self: *Editor, w: u32, h: u32) void {
-        self.view = View.fit(self.canvas, w, h);
+        if (self.fitted) {
+            self.view = View.fit(self.canvas, w, h);
+        } else {
+            self.view.screen_w = w;
+            self.view.screen_h = h;
+        }
+    }
+
+    fn fit(self: *Editor) void {
+        self.view = View.fit(self.canvas, self.view.screen_w, self.view.screen_h);
+        self.fitted = true;
+    }
+
+    /// Zoom `steps` levels about the screen point `p`.
+    fn zoom(self: *Editor, steps: i32, p: Vec2) void {
+        const s = @import("view.zig").zoomStep(self.view.xf.scale, steps);
+        if (s != self.view.xf.scale) {
+            self.view = self.view.zoomAt(s, p);
+            self.fitted = false;
+        }
+        self.setToast("Zoom {d}%. 0: fit, middle drag: pan.", .{@as(u32, @intFromFloat(@round(self.view.xf.scale * 100)))});
+    }
+
+    fn pan(self: *Editor, dx: i32, dy: i32) void {
+        self.view = self.view.panBy(dx, dy);
+        self.fitted = false;
     }
 
     /// Follow document changes: recompute the canvas, and refit the view
@@ -160,7 +193,7 @@ pub const Editor = struct {
         const kept = self.doc.kept(self.image_w, self.image_h);
         if (std.meta.eql(kept, self.kept_key)) return false;
         self.kept_key = kept;
-        self.view = View.fit(self.canvas, self.view.screen_w, self.view.screen_h);
+        self.fit();
         return true;
     }
 
@@ -234,8 +267,22 @@ pub const Editor = struct {
                 eff.redraw = eff.redraw or had_toast or was_armed;
                 return eff;
             },
-            .mouse_up => |m| return self.onUp(m.x, m.y, m.button),
+            .mouse_up => |m| {
+                if (m.button == .middle) {
+                    self.panning = null;
+                    return .{};
+                }
+                return self.onUp(m.x, m.y, m.button);
+            },
             .mouse_move => |m| {
+                if (self.panning) |last| {
+                    const dx: i32 = @intFromFloat(@round(m.x - last.x));
+                    const dy: i32 = @intFromFloat(@round(m.y - last.y));
+                    self.panning = .{ .x = last.x + @as(f32, @floatFromInt(dx)), .y = last.y + @as(f32, @floatFromInt(dy)) };
+                    if (dx == 0 and dy == 0) return .{};
+                    self.pan(dx, dy);
+                    return .{ .redraw = true };
+                }
                 if (self.mode == .drag) {
                     const p = Vec2.init(m.x, m.y);
                     self.mode.drag.cur_screen = p;
@@ -244,8 +291,8 @@ pub const Editor = struct {
                 }
                 return .{};
             },
-            .wheel => |n| {
-                self.changeSize(n);
+            .wheel => |wh| {
+                if (wh.mods.ctrl) self.zoom(wh.delta, .{ .x = wh.x, .y = wh.y }) else self.changeSize(wh.delta);
                 return .{ .redraw = true };
             },
             .resize => |r| {
@@ -280,6 +327,10 @@ pub const Editor = struct {
         if (button == .right) {
             self.cancel();
             return .{ .redraw = true };
+        }
+        if (button == .middle) {
+            if (self.mode != .drag) self.panning = .{ .x = x, .y = y };
+            return .{};
         }
         if (button != .left) return .{};
         if (self.mode == .typing) try self.commitTyping();
@@ -430,6 +481,19 @@ pub const Editor = struct {
             },
             .toggle_help => self.help_visible = !self.help_visible,
             .toggle_dock => self.dock_visible = !self.dock_visible,
+            .zoom_in, .zoom_out => self.zoom(if (action == .zoom_in) 1 else -1, .{
+                .x = @floatFromInt(self.view.screen_w / 2),
+                .y = @floatFromInt(self.view.screen_h / 2),
+            }),
+            .zoom_fit => {
+                self.fit();
+                self.setToast("Fit: zoom {d}%", .{@as(u32, @intFromFloat(@round(self.view.xf.scale * 100)))});
+            },
+            .pan => |d| {
+                const step_x: i32 = @intCast(self.view.screen_w / 8);
+                const step_y: i32 = @intCast(self.view.screen_h / 8);
+                self.pan(d[0] * step_x, d[1] * step_y);
+            },
         }
         return .{ .redraw = true };
     }
@@ -570,6 +634,36 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     _ = try t.key("space");
     try t.drag(d.panel.min.x + 2, d.panel.min.y + 2, d.panel.max.x - 2, d.panel.max.y - 2);
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+}
+
+test "zoom out keeps sizes and the point under the pointer; 0 refits; middle drag pans" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    const stroke = t.ed.strokeImg();
+    const p = Vec2.init(150, 40);
+    const before = t.ed.view.toImage(p);
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = -1, .x = p.x, .y = p.y, .mods = .{ .ctrl = true } } });
+    try std.testing.expectEqual(@as(f32, 2.0 / 3.0), t.ed.view.xf.scale);
+    const after = t.ed.view.toImage(p);
+    try std.testing.expectApproxEqAbs(before.x, after.x, 1);
+    try std.testing.expectApproxEqAbs(before.y, after.y, 1);
+    try std.testing.expectEqual(stroke, t.ed.strokeImg());
+    try std.testing.expect(t.ed.toast() != null);
+    // A drag far outside the image grows the canvas; the view stays.
+    const xf = t.ed.view.xf;
+    try t.drag(100, 50, 199, 99);
+    try std.testing.expect(t.ed.canvas.x1 > 200);
+    try std.testing.expectEqual(xf, t.ed.view.xf);
+    // Middle drag pans by whole pixels and draws nothing.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 50, .y = 50, .button = .middle } });
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 60, .y = 45 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 60, .y = 45, .button = .middle } });
+    try std.testing.expectEqual(xf.offset.add(.{ .x = 10, .y = -5 }), t.ed.view.xf.offset);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    _ = try t.key("0");
+    try std.testing.expect(t.ed.fitted);
+    try std.testing.expect(t.ed.view.xf.scale < 1);
 }
 
 test "callout drag then type" {

@@ -40,12 +40,23 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `?` | help |
 | `F1` | help |
 | `Space` | hide / show the dock |
+| `=` | zoom in |
+| `+` | zoom in |
+| `-` | zoom out (room to draw around) |
+| `0` | fit the canvas to the screen |
+| `←` | pan |
+| `→` | pan |
+| `↑` | pan |
+| `↓` | pan |
 
 ## Mouse and context
 
 | Input | Effect |
 |---|---|
 | Mouse wheel | Bigger / smaller stroke and text |
+| Ctrl+wheel | Zoom in / out about the pointer |
+| Middle drag | Pan the view |
+| Drawing past the image | The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help |
 | Esc while drawing | Cancel the shape in progress |

@@ -263,8 +263,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
                             };
                             break :blk if (down) .{ .mouse_down = .{ .x = x, .y = y, .button = btn } } else .{ .mouse_up = .{ .x = x, .y = y, .button = btn } };
                         },
-                        4 => if (down) .{ .wheel = 1 } else null,
-                        5 => if (down) .{ .wheel = -1 } else null,
+                        4 => if (down) .{ .wheel = .{ .delta = 1, .x = x, .y = y, .mods = mods(b.state) } } else null,
+                        5 => if (down) .{ .wheel = .{ .delta = -1, .x = x, .y = y, .mods = mods(b.state) } } else null,
                         else => null,
                     };
                     if (e) |event| {

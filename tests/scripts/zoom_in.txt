@@ -1,0 +1,9 @@
+# Zoom in: Ctrl+wheel up twice about the API key (2/3 -> 1 -> 1.5), pixels
+# get bigger (nearest), an arrow points at the key. The arrow keys pan the
+# view a little. The toast shows the zoom.
+size 900 500
+wheel up 2 at 250 170 ctrl
+key a
+drag 700 420 420 250
+key left
+wheel up at 450 250 ctrl

@@ -1,0 +1,18 @@
+# Zoom out: the image fills the screen, so `-` makes room around it. An arrow
+# from outside the top left, Ctrl+wheel zooms out again about the pointer, a
+# middle drag pans, a number and a text go past the bottom right. The export
+# holds the grown white canvas. Sizes do not change with the zoom.
+size 900 500
+key -
+drag 60 60 300 200
+wheel down at 100 100 ctrl
+down 450 250 middle
+move 470 260
+move 500 280
+up 500 280 middle
+key n
+click 760 360
+key t
+click 700 300
+type Outside!
+key enter

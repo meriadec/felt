@@ -105,10 +105,24 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
             i += l;
         }
     } else if (std.mem.eql(u8, cmd, "wheel")) {
+        // wheel up|down [N] [at X Y] [ctrl]
         const dir = it.next() orelse return fail(err, "wheel needs up or down");
         const step: i32 = if (std.mem.eql(u8, dir, "up")) 1 else if (std.mem.eql(u8, dir, "down")) -1 else return fail(err, "wheel needs up or down");
-        const times: usize = if (it.peek() != null) @intFromFloat(try num(err, &it)) else 1;
-        for (0..times) |_| try ev.append(gpa, .{ .wheel = step });
+        var times: usize = 1;
+        var x: f32 = 0;
+        var y: f32 = 0;
+        var mods = input.Mods{};
+        while (it.next()) |t| {
+            if (std.mem.eql(u8, t, "at")) {
+                x = try num(err, &it);
+                y = try num(err, &it);
+            } else if (std.mem.eql(u8, t, "ctrl")) {
+                mods.ctrl = true;
+            } else {
+                times = @intFromFloat(std.fmt.parseFloat(f32, t) catch return fail(err, "wheel: expected N, at X Y, or ctrl"));
+            }
+        }
+        for (0..times) |_| try ev.append(gpa, .{ .wheel = .{ .delta = step, .x = x, .y = y, .mods = mods } });
     } else if (std.mem.eql(u8, cmd, "resize")) {
         try ev.append(gpa, .{ .resize = .{ .w = @intFromFloat(try num(err, &it)), .h = @intFromFloat(try num(err, &it)) } });
     } else {
@@ -127,11 +141,14 @@ test "parse script" {
         \\drag 10 10 100 100 4
         \\type Hi\n!
         \\wheel up 2
+        \\wheel down at 10 20 ctrl
     , &err);
     defer s.deinit(gpa);
     try std.testing.expectEqual([2]u32{ 800, 500 }, s.size.?);
     try std.testing.expectEqualStrings("tests/fixtures/strip.png", s.image.?);
-    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2), s.events.items.len);
+    try std.testing.expectEqual(@as(usize, 1 + 6 + 4 + 2 + 1), s.events.items.len);
+    const z = s.events.items[s.events.items.len - 1].wheel;
+    try std.testing.expect(z.mods.ctrl and z.delta == -1 and z.x == 10 and z.y == 20);
     try std.testing.expectError(error.BadScript, parse(gpa, "key a\nfly 1 2", &err));
     try std.testing.expectEqual(@as(usize, 2), err.line);
 }
