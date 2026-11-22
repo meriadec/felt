@@ -70,7 +70,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget) !core.geom.Vec2 {
         .redo => mid(bar.slots[1]),
         .arrow_style => |want| {
             if (d.switch_panel == null) {
-                std.log.err("script: ui arrow-style: the switch shows only with the arrow tool", .{});
+                std.log.err("script: ui arrow-style: the switch shows only with the arrow or the callout tool", .{});
                 return error.UiItemHidden;
             }
             const cur = app.editor.arrow_style;

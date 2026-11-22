@@ -6,11 +6,11 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
-| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows, for the rest of the session. |
+| `a` | arrow | Drag from the tail to the head. Style: straight, or stairs (an elbow with round corners); `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
-| `c` | callout | Drag from the point of interest to where the box goes, release, type, Enter. A plain click makes a label without a pointer. |
+| `c` | callout | Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: straight or stairs, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
 | `m` | move | Point at an annotation: it lights up. Drag it to move it. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. Undo puts it back. |
 | `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |
@@ -20,6 +20,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Key | Action |
 |---|---|
 | `a` again (arrow tool active) | arrow style: straight / stairs |
+| `c` again (callout tool active) | pointer style: straight / stairs |
 | `1` | color red |
 | `2` | color orange |
 | `3` | color yellow |
@@ -60,7 +61,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Middle drag | Pan the view |
 | Drawing past the image | The canvas grows white to hold the shape; the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
-| Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow tool, the switch above the dock picks the arrow style |
+| Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers) |
 | Click on the top bar | Undo or redo (a dim button has nothing to do) |
 | Esc or q while drawing | Cancel the shape in progress |
 | Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |

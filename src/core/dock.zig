@@ -1,7 +1,8 @@
 //! Dock geometry: the floating tool bar at the bottom center. One slot per
 //! tool (in key map order), the color swatches, the size slot and the help
-//! button. With the arrow tool active, a small switch floats above the
-//! dock's left end, over the arrow slot: one slot per arrow style. Pure
+//! button. With the arrow or the callout tool active, a small switch floats
+//! above the dock, over that tool's slot: one slot per arrow style (arrows
+//! and callout pointers share it). Pure
 //! layout from the screen size and the tool, no font: chrome.zig draws it
 //! and the editor hit-tests clicks with the same numbers.
 const std = @import("std");
@@ -52,7 +53,7 @@ pub const Dock = struct {
     help: Bounds,
     /// x of the two separator lines.
     seps: [2]f32,
-    /// The arrow style switch panel (null: another tool is active).
+    /// The arrow style switch panel (null: no tool with a style is active).
     switch_panel: ?Bounds,
     styles: [arrow_styles.len]Bounds,
 
@@ -96,11 +97,15 @@ pub const Dock = struct {
         x += (slot + slot_gap) * s;
         d.help = .{ .min = .{ .x = x, .y = top + (slot - help_w) * s / 2 }, .max = .{ .x = x + help_w * s, .y = top + (slot + help_w) * s / 2 } };
 
+        // Over the active tool's slot, centered, but not left of the dock.
         const sw_n: f32 = arrow_styles.len;
+        const sw_w = (2 * sw_pad + sw_n * sw_slot + (sw_n - 1) * slot_gap) * s;
+        const ts = d.tools[toolIndex(tool)];
+        const sx0 = @max(x0, @round((ts.min.x + ts.max.x - sw_w) / 2));
         const sy1 = y0 - sw_gap * s;
         const sy0 = sy1 - (sw_slot + 2 * sw_pad) * s;
-        d.switch_panel = if (tool == .arrow) .{ .min = .{ .x = x0, .y = sy0 }, .max = .{ .x = x0 + (2 * sw_pad + sw_n * sw_slot + (sw_n - 1) * slot_gap) * s, .y = sy1 } } else null;
-        var sx = x0 + sw_pad * s;
+        d.switch_panel = if (hasStyleSwitch(tool)) .{ .min = .{ .x = sx0, .y = sy0 }, .max = .{ .x = sx0 + sw_w, .y = sy1 } } else null;
+        var sx = sx0 + sw_pad * s;
         for (&d.styles) |*b| {
             b.* = .{ .min = .{ .x = sx, .y = sy0 + sw_pad * s }, .max = .{ .x = sx + sw_slot * s, .y = sy1 - sw_pad * s } };
             sx += (sw_slot + slot_gap) * s;
@@ -129,6 +134,16 @@ pub const Dock = struct {
     }
 };
 
+/// The tool draws with an arrow style: the switch shows above the dock.
+pub fn hasStyleSwitch(tool: keymap.Tool) bool {
+    return tool == .arrow or tool == .callout;
+}
+
+fn toolIndex(tool: keymap.Tool) usize {
+    for (keymap.tools, 0..) |t, i| if (t.tool == tool) return i;
+    unreachable;
+}
+
 fn inside(b: Bounds, p: Vec2) bool {
     return p.x >= b.min.x and p.x < b.max.x and p.y >= b.min.y and p.y < b.max.y;
 }
@@ -149,7 +164,7 @@ test "dock is centered at the bottom and hit-tests its slots" {
     try std.testing.expect(narrow.panel.min.x >= 0 and narrow.panel.max.x <= 300);
 }
 
-test "the arrow style switch shows above the dock with the arrow tool only" {
+test "the arrow style switch shows above the dock with the arrow and the callout tool only" {
     const other = Dock.of(1920, 1080, .rect);
     try std.testing.expectEqual(@as(?Bounds, null), other.switch_panel);
     const d = Dock.of(1920, 1080, .arrow);
@@ -163,4 +178,16 @@ test "the arrow style switch shows above the dock with the arrow tool only" {
         try std.testing.expectEqual(@as(?Hit, null), other.hit(c));
         try std.testing.expect(!other.contains(c));
     }
+}
+
+test "with the callout tool the switch sits over the callout slot" {
+    const d = Dock.of(1920, 1080, .callout);
+    const sp = d.switch_panel.?;
+    const slot_b = d.tools[toolIndex(.callout)];
+    try std.testing.expectApproxEqAbs((slot_b.min.x + slot_b.max.x) / 2, (sp.min.x + sp.max.x) / 2, 1);
+    for (d.styles, arrow_styles) |b, st| {
+        try std.testing.expectEqual(Hit{ .arrow_style = st }, d.hit(b.min.add(b.max).scale(0.5)).?);
+    }
+    // The arrow tool: the switch starts at the dock's left end.
+    try std.testing.expectEqual(d.panel.min.x, Dock.of(1920, 1080, .arrow).switch_panel.?.min.x);
 }

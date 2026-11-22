@@ -93,7 +93,8 @@ pub const Editor = struct {
     tool_before_crop: Tool = .arrow,
     color_idx: u8 = 0,
     size_idx: u8 = style.default_size,
-    /// Style of new arrows. It stays for the session, across tool switches.
+    /// Style of new arrows and callout pointers (one setting for both). It
+    /// stays for the session, across tool switches.
     arrow_style: ann.ArrowStyle = .straight,
     /// The shortcut overlay (`?`/F1).
     help_visible: bool = false,
@@ -611,10 +612,11 @@ pub const Editor = struct {
         _ = try self.doc.redo(self.gpa);
     }
 
-    /// Set the style of new arrows (an arrow in progress follows) and say it.
+    /// Set the style of new arrows and callout pointers (a shape in
+    /// progress follows) and say it, in the words of the active tool.
     fn setArrowStyle(self: *Editor, s: ann.ArrowStyle) void {
         self.arrow_style = s;
-        self.setToast("Arrow: {s}", .{@tagName(s)});
+        self.setToast("{s}: {s}", .{ if (self.tool == .callout) "Pointer" else "Arrow", @tagName(s) });
     }
 
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
@@ -1071,4 +1073,52 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     _ = try t.key("ctrl+z");
     try std.testing.expectEqual(Vec2.init(190, 90), t.doc.items.items[0].arrow.head);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
+}
+
+test "c again switches the pointer style of new callouts: one setting with the arrows; while typing c is a letter" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("c");
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style);
+    _ = try t.key("c"); // the callout tool is active: a second press
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
+    try std.testing.expectEqual(Tool.callout, t.ed.tool);
+    try t.drag(10, 10, 120, 60);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style);
+    _ = try t.key("c"); // typing: a letter, not the switch
+    _ = try t.key("enter");
+    const c = t.doc.items.items[0].callout;
+    try std.testing.expectEqualStrings("c", c.text);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, c.style);
+    try std.testing.expectEqual(t.ed.strokeImg(), c.width);
+    // The arrow tool shares the setting.
+    _ = try t.key("a");
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    _ = try t.key("a");
+    try std.testing.expectEqualStrings("Arrow: straight", t.ed.toast().?);
+    _ = try t.key("c");
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style);
+    // Undo and redo keep each callout's own style.
+    _ = try t.key("ctrl+z");
+    _ = try t.key("ctrl+y");
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].callout.style);
+}
+
+test "the style switch shows above the dock with the callout tool; a click picks the pointer style" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.resize(1920, 1080);
+    t.ed.dock_visible = true;
+    _ = try t.key("c");
+    const d = Dock.of(1920, 1080, .callout);
+    const p = d.styles[1].min.add(d.styles[1].max).scale(0.5);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = p.x, .y = p.y } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = p.x, .y = p.y } });
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
+    try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
+    try std.testing.expect(t.ed.mode == .idle);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
 }

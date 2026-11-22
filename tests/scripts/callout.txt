@@ -9,6 +9,6 @@ drag 600 290 690 160
 type Friday spike\nwhy?
 key enter
 key 3
-click 330 392
+click 360 340
 type Draft
 key enter
