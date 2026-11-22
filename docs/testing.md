@@ -20,7 +20,9 @@ zig build shot -Dscript=callout   # or no -Dscript for all scripts
 ```
 
 writes `test-out/shots/<name>.frame.png` (what the screen shows, chrome
-included) and `<name>.export.png` (what Ctrl+S writes). Read the PNG. The
+included) and `<name>.export.png` (what Ctrl+S writes). Read the PNG. To
+look again after a change, add `-Dtag=v2` (files get a `.v2` suffix): an
+image reader may cache a path and show the old picture. The
 chrome scales with the screen height, so check it at real sizes too:
 
 ```sh

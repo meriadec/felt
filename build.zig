@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
     const exact_goldens = b.option(bool, "exact-goldens", "With `test`: no tolerance, any changed golden pixel fails") orelse false;
     const script = b.option([]const u8, "script", "With `shot`: script name in tests/scripts (default: all)");
     const shot_size = b.option([]const u8, "size", "With `shot`: screen size WxH, e.g. 3840x2160 (default: the script's); files get a .WxH suffix");
+    const shot_tag = b.option([]const u8, "tag", "With `shot`: files get a .TAG suffix (a new path for each look: image readers may cache a path)");
 
     const exe = addExe(b, target, optimize);
     b.installArtifact(exe);
@@ -47,7 +48,8 @@ pub fn build(b: *std.Build) void {
     for (names.items) |name| {
         const r = b.addRunArtifact(exe);
         r.setCwd(b.path("."));
-        const stem = if (shot_size) |sz| b.fmt("{s}.{s}", .{ name, sz }) else name;
+        var stem = if (shot_size) |sz| b.fmt("{s}.{s}", .{ name, sz }) else name;
+        if (shot_tag) |t| stem = b.fmt("{s}.{s}", .{ stem, t });
         r.addArgs(&.{
             "--headless",
             "--script",
