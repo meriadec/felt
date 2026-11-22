@@ -26,7 +26,7 @@ pub const background = color.nord.n0;
 
 /// A short list of screen rectangles to repaint and present.
 pub const Damage = struct {
-    pub const max = 6;
+    pub const max = 12;
     rects: [max]Rect = undefined,
     len: usize = 0,
 
@@ -38,7 +38,7 @@ pub const Damage = struct {
         var i: usize = 0;
         while (i < d.len) {
             const o = d.rects[i];
-            if (o.expand(8).intersects(r) and o.unite(r).area() <= (o.area() + r.area()) * 3 / 2 + 4096) {
+            if (o.expand(8).intersects(r) and o.unite(r).area() <= o.area() + r.area() + 4096) {
                 r = r.unite(d.rects[i]);
                 d.rects[i] = d.rects[d.len - 1];
                 d.len -= 1;
@@ -46,8 +46,19 @@ pub const Damage = struct {
             } else i += 1;
         }
         if (d.len == max) {
-            for (d.rects[0..d.len]) |o| r = r.unite(o);
-            d.len = 0;
+            // No room: fold into the rectangle that grows the least.
+            var best: usize = 0;
+            var best_cost: u64 = std.math.maxInt(u64);
+            for (d.rects[0..d.len], 0..) |o, j| {
+                const cost = o.unite(r).area() - o.area();
+                if (cost < best_cost) {
+                    best = j;
+                    best_cost = cost;
+                }
+            }
+            r = r.unite(d.rects[best]);
+            d.rects[best] = d.rects[d.len - 1];
+            d.len -= 1;
         }
         d.rects[d.len] = r;
         d.len += 1;
@@ -61,6 +72,46 @@ pub const Damage = struct {
         var a: u64 = 0;
         for (d.slice()) |r| a += r.area();
         return a;
+    }
+};
+
+/// Scene rectangles to repaint in place (a move, a canvas change): a moved
+/// diagonal arrow is many slabs (draw.cover), not its bounding box. Two
+/// rects merge only when their union adds no pixel (a slab at the old and
+/// the new place), so no pixel is painted twice there and none for nothing.
+const Fix = struct {
+    const max = 64;
+    rects: [max]Rect = undefined,
+    len: usize = 0,
+    /// All of them, when the pieces run out.
+    hull: Rect = Rect.empty,
+
+    fn add(f: *Fix, r_in: Rect) void {
+        var r = r_in;
+        if (r.isEmpty()) return;
+        f.hull = f.hull.unite(r);
+        var i: usize = 0;
+        while (i < f.len) {
+            const o = f.rects[i];
+            if (o.unite(r).area() + o.intersect(r).area() <= o.area() + r.area()) {
+                r = r.unite(o);
+                f.rects[i] = f.rects[f.len - 1];
+                f.len -= 1;
+                i = 0;
+            } else i += 1;
+        }
+        if (f.len < max) {
+            f.rects[f.len] = r;
+            f.len += 1;
+        }
+    }
+
+    fn slice(f: *Fix) []const Rect {
+        if (f.len == max) { // overflow: one rectangle holds all
+            f.rects[0] = f.hull;
+            f.len = 1;
+        }
+        return f.rects[0..f.len];
     }
 };
 
@@ -255,7 +306,7 @@ pub const Compositor = struct {
             try self.painted.appendSlice(self.gpa, items);
             full = true;
         } else {
-            var fix = Damage{};
+            var fix = Fix{};
             if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
                 const old_dst = v.rect(self.scene_canvas);
                 for (s.canvas_dst.minus(old_dst)) |b| fix.add(b.intersect(full_rect));
@@ -263,8 +314,9 @@ pub const Compositor = struct {
             }
             for (self.painted.items[0..self.scene_count], items[0..self.scene_count]) |*old, cur| {
                 if (std.meta.eql(old.*, cur)) continue;
-                fix.add(draw.bounds(ctx, old.*, v.xf, .{}).intersect(full_rect));
-                fix.add(draw.bounds(ctx, cur, v.xf, .{}).intersect(full_rect));
+                var buf: [draw.max_cover]Rect = undefined;
+                for (draw.cover(ctx, old.*, v.xf, &buf)) |r| fix.add(r.intersect(full_rect));
+                for (draw.cover(ctx, cur, v.xf, &buf)) |r| fix.add(r.intersect(full_rect));
                 old.* = cur;
             }
             for (fix.slice()) |r| {

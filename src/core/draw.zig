@@ -93,6 +93,96 @@ pub fn bounds(ctx: Ctx, ann: Annotation, xf: Xform, opts: Options) Rect {
     return b.toRect();
 }
 
+/// Most rectangles `cover` returns.
+pub const max_cover = 24;
+
+/// Rectangles (target px) that together hold everything `annotation` may
+/// write, tighter than `bounds` for thin shapes: a long diagonal arrow or
+/// callout pointer in pieces along its axis, a rect outline as its four
+/// sides. A move repaints only these (old and new place).
+pub fn cover(ctx: Ctx, ann: Annotation, xf: Xform, buf: *[max_cover]Rect) []const Rect {
+    var n: usize = 0;
+    switch (ann) {
+        .arrow => |a| {
+            const s = arrowShape(a, xf);
+            const m = Shadow.of(a.width * xf.scale).margin();
+            buf[0] = s.b.bounds().expand(m).toRect(); // head
+            n = 1 + segmentCover(s.a.a, s.a.b, s.a.r + m, buf[1..]);
+        },
+        .rect => |r| {
+            const b = boxShape(r, xf);
+            const e = b.w * 0.5 + Shadow.of(r.width * xf.scale).margin();
+            const sides = [4][2]Vec2{
+                .{ b.min, .{ .x = b.max.x, .y = b.min.y } },
+                .{ .{ .x = b.min.x, .y = b.max.y }, b.max },
+                .{ b.min, .{ .x = b.min.x, .y = b.max.y } },
+                .{ .{ .x = b.max.x, .y = b.min.y }, b.max },
+            };
+            for (sides, 0..) |sd, i| buf[i] = (Bounds{ .min = sd[0], .max = sd[1] }).expand(e).toRect();
+            n = 4;
+        },
+        .callout => |c| {
+            const g = calloutGeom(ctx, c, xf);
+            const m = Shadow.of(g.m.pxf * 0.2).margin() + 2;
+            buf[0] = g.box.bounds().expand(m).toRect();
+            n = 1;
+            if (g.pointer) |t| {
+                // The pointer narrows from its base (b, c) to the tip (a).
+                const base = t.b.add(t.c).scale(0.5);
+                n += segmentCover(t.a, base, t.b.dist(t.c) * 0.5 + m, buf[1..]);
+            }
+        },
+        else => {
+            buf[0] = bounds(ctx, ann, xf, .{});
+            n = 1;
+        },
+    }
+    return buf[0..n];
+}
+
+/// Cover the segment a..b grown by `r` with slabs across its main axis.
+/// Slabs sit on a fixed grid, so the slabs of the same segment at two
+/// places line up and a move repaints each slab once (compositor `Fix`).
+/// Returns the count (at most `out.len`).
+fn segmentCover(a: Vec2, b: Vec2, r: f32, out: []Rect) usize {
+    const d = b.sub(a).abs();
+    const along_x = d.x >= d.y;
+    const lo = (if (along_x) @min(a.x, b.x) else @min(a.y, b.y)) - r;
+    const hi = (if (along_x) @max(a.x, b.x) else @max(a.y, b.y)) + r;
+    // Slab width: a multiple of 32 px, at most out.len slabs.
+    const n_max: f32 = @floatFromInt(out.len);
+    const step = 32 * @max(1, @ceil((hi - lo) / (32 * (n_max - 1))));
+    var k: usize = 0;
+    var s0 = @floor(lo / step) * step;
+    while (s0 < hi and k < out.len) : (s0 += step) {
+        const s1 = s0 + step;
+        // The part of the segment inside the slab, grown by r across it.
+        const t0, const t1 = slabParams(a, b, along_x, s0 - r, s1 + r);
+        const p0 = a.add(b.sub(a).scale(t0));
+        const p1 = a.add(b.sub(a).scale(t1));
+        const cross_lo = (if (along_x) @min(p0.y, p1.y) else @min(p0.x, p1.x)) - r;
+        const cross_hi = (if (along_x) @max(p0.y, p1.y) else @max(p0.x, p1.x)) + r;
+        const bb: Bounds = if (along_x)
+            .{ .min = .{ .x = @max(s0, lo), .y = cross_lo }, .max = .{ .x = @min(s1, hi), .y = cross_hi } }
+        else
+            .{ .min = .{ .x = cross_lo, .y = @max(s0, lo) }, .max = .{ .x = cross_hi, .y = @min(s1, hi) } };
+        out[k] = bb.toRect();
+        k += 1;
+    }
+    return k;
+}
+
+/// Parameters (0..1) of the segment a..b where its main coordinate is in
+/// [lo, hi], clamped to the segment.
+fn slabParams(a: Vec2, b: Vec2, along_x: bool, lo: f32, hi: f32) struct { f32, f32 } {
+    const av = if (along_x) a.x else a.y;
+    const bv = if (along_x) b.x else b.y;
+    if (@abs(bv - av) < 1e-6) return .{ 0, 1 };
+    const ta = std.math.clamp((lo - av) / (bv - av), 0, 1);
+    const tb = std.math.clamp((hi - av) / (bv - av), 0, 1);
+    return .{ @min(ta, tb), @max(ta, tb) };
+}
+
 /// Target-pixel rectangle of the shape itself: no shadow, no anti-aliasing
 /// margin. The canvas grows on a side only when this crosses it (extent.zig).
 pub fn bodyBounds(ctx: Ctx, ann: Annotation, xf: Xform) Rect {
@@ -358,6 +448,36 @@ fn drawCallout(ctx: Ctx, cv: *Canvas, clip: Rect, c: ann_mod.Callout, xf: Xform,
     const g = calloutGeom(ctx, c, xf);
     drawLabelBody(cv, clip, g.shape(), c.color, g.m);
     try blendText(ctx, cv, clip, c.text, g.m.px, g.text_pos, c.color.contrast(), caret);
+}
+
+test "cover holds every pixel an annotation writes" {
+    const gpa = std.testing.allocator;
+    var font = try Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    const ctx = Ctx{ .gpa = gpa, .font = &font };
+    var cv = try Canvas.init(gpa, 400, 300);
+    defer cv.deinit(gpa);
+    const red = color.palette[0].color;
+    const anns = [_]Annotation{
+        .{ .arrow = .{ .tail = .{ .x = 20, .y = 250 }, .head = .{ .x = 380, .y = 40 }, .width = 8, .color = red } },
+        .{ .rect = .{ .a = .{ .x = 30, .y = 30 }, .b = .{ .x = 350, .y = 260 }, .width = 8, .color = red } },
+        .{ .callout = .{ .target = .{ .x = 20, .y = 20 }, .anchor = .{ .x = 300, .y = 250 }, .text = "Hi", .size = 20, .color = red } },
+    };
+    for (anns) |a| {
+        cv.fill(color.white);
+        try annotation(ctx, &cv, cv.bounds(), a, .identity, .{});
+        var buf: [max_cover]Rect = undefined;
+        const rs = cover(ctx, a, .identity, &buf);
+        var covered: u64 = 0;
+        for (rs) |r| covered += r.intersect(cv.bounds()).area();
+        try std.testing.expect(covered < bounds(ctx, a, .identity, .{}).area() * 3 / 4); // tighter
+        for (0..300) |y| for (0..400) |x| {
+            if (cv.at(@intCast(x), @intCast(y)) == color.white.toPixel()) continue;
+            var in = false;
+            for (rs) |r| in = in or (x >= r.x0 and x < r.x1 and y >= r.y0 and y < r.y1);
+            try std.testing.expect(in);
+        };
+    }
 }
 
 test "arrow head is proportional and points at the head" {
