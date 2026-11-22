@@ -44,9 +44,9 @@ image files. Build: `coreModule` in build.zig.
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md; a tool key pressed again (`ToolInfo.again`) |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
-| `draw.zig` | Draw one annotation through an `Xform`; its damage bounds |
+| `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
-| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it |
+| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it (arrow and callout tools) |
 | `topbar.zig` | Top bar geometry and hit test: Undo and Redo buttons (only these: save and copy stay on keys) |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops) |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
@@ -92,11 +92,14 @@ image files. Build: `coreModule` in build.zig.
   repaints the old and new bounds of any annotation that differs, the bands
   the canvas gained or lost, and grows each repaint rect to hold any
   pixelate it touches (a pixelate averages the pixels under it).
-- Arrow styles: each arrow stores its `style` (straight, stairs). The
-  editor's `arrow_style` is the style of new arrows. `a` with the arrow
-  tool active, or the switch above the dock (only with the arrow tool),
-  sets it, with a toast; an arrow in progress follows. It stays for the
-  session, across tool switches (it is not saved). A stairs arrow
+- Arrow styles: each arrow and each callout stores its `style` (straight,
+  stairs). The editor's `arrow_style` is the style of new arrows and new
+  callout pointers: one setting for both. `a` with the arrow tool active,
+  `c` with the callout tool active, or the switch above the dock (only
+  with these two tools, over the active tool's slot) sets it, with a toast
+  in the words of the tool ("Arrow: stairs", "Pointer: stairs"); a shape
+  in progress follows. It stays for the session, across tool switches (it
+  is not saved). A stairs arrow
   (stairs.zig) is an elbow connector: along the dominant axis to the
   midpoint, along the other axis, along the dominant axis into the head.
   Its two corners are quarter circles of `cornerRadius(width)`, clamped so
@@ -109,9 +112,20 @@ image files. Build: `coreModule` in build.zig.
   (outside the crop or past the reach) is skipped: it stops at the last
   place where it shows. Annotations made after the last crop grow and
   shrink the canvas as they move.
+- Callout pointer: an arrow (`draw.calloutPointer`) with the callout's
+  stroke `width` (the arrow width of its size level), color and style,
+  from `anchor` to `target`, drawn before the box, so the box covers its
+  start. The box sits on the far side of `anchor` from the target along
+  the dominant axis, so `anchor` is the middle of the box side that faces
+  the target: a straight pointer leaves there, and a stairs pointer runs
+  along that same axis first, so it leaves across the side. A target
+  nearer `anchor` than one head length (`headLength(width)`) shows no
+  pointer (it would be only a head stuck to the box); the tip handle
+  still pulls it out. Hit tests, outlines, bounds, clips and move
+  repaints take the box and the pointer (`CalloutShape`, `draw.cover`).
 - Callout move: a press on the tip (handle radius 9 px at 1080p) moves the
-  tip alone; anywhere else on the callout moves the box alone and the tip
-  stays on its target. An arrow longer than four handle radii: a press on
+  tip alone; anywhere else on the callout (box or pointer) moves the box
+  alone, the tip stays on its target and the pointer re-routes. An arrow longer than four handle radii: a press on
   an end moves that end alone.
   The canvas grows at most `extent.limit` past the kept rectangle (2048 to
   4096 px a side, a memory bound); the editor refuses a shape out of reach
