@@ -58,6 +58,14 @@ pub fn build(b: *std.Build) void {
         shot_step.dependOn(&r.step);
     }
 
+    // bench: always ReleaseFast, whatever -Doptimize says.
+    const bench_exe = addExe(b, target, .ReleaseFast);
+    const bench_run = b.addRunArtifact(bench_exe);
+    bench_run.setCwd(b.path("."));
+    bench_run.addArg("--bench");
+    if (b.args) |args| bench_run.addArgs(args);
+    b.step("bench", "Measure startup and frame times, ReleaseFast (args after --: [--size WxH] [image])").dependOn(&bench_run.step);
+
     // docs: regenerate docs/keymap.md from src/core/keymap.zig.
     const km = b.addRunArtifact(exe);
     km.addArg("--keymap-md");

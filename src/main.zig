@@ -5,6 +5,7 @@ const core = @import("core");
 const cli = @import("cli.zig");
 const headless = @import("backend/headless.zig");
 const x11 = @import("backend/x11.zig");
+const bench = @import("bench.zig");
 
 pub fn main() !u8 {
     var start = try std.time.Timer.start();
@@ -46,10 +47,10 @@ pub fn main() !u8 {
             .timing = opts.timing,
             .smoke = opts.smoke,
         }, &start) catch |err| return fail(err, opts.image.?),
-        .bench => {
-            std.debug.print("annotate: not implemented yet\n", .{});
-            return 1;
-        },
+        .bench => bench.run(gpa, .{
+            .image_path = opts.image,
+            .size = opts.size orelse .{ 1920, 1080 },
+        }) catch |err| return fail(err, opts.image orelse "(synthetic)"),
     }
     return 0;
 }
