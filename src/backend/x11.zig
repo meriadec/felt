@@ -80,6 +80,7 @@ const Surface = struct {
             return .{ .img = img, .shm = info, .w = w, .h = h };
         }
         const data: [*c]u8 = @ptrCast(std.c.malloc(@as(usize, w) * h * 4) orelse return error.OutOfMemory);
+        errdefer std.c.free(data);
         const img = c.XCreateImage(dpy, visual, depth, c.ZPixmap, 0, data, w, h, 32, 0) orelse return error.XCreateImageFailed;
         return .{ .img = img, .shm = null, .w = w, .h = h };
     }
@@ -96,18 +97,18 @@ const Surface = struct {
         }
     }
 
-    fn present(self: *Surface, dpy: *c.Display, win: c.Window, gc: c.GC, frame: *const Canvas, rects: []const core.geom.Rect) void {
-        const bpl: usize = @intCast(self.img.*.bytes_per_line);
-        const base: [*]u8 = @ptrCast(self.img.*.data);
-        const bounds = core.geom.Rect.fromSize(0, 0, @intCast(@min(self.w, frame.width)), @intCast(@min(self.h, frame.height)));
+    /// The image memory as a canvas: the compositor renders straight into it.
+    fn canvas(self: *const Surface) Canvas {
+        std.debug.assert(self.img.*.bytes_per_line == self.w * 4 and self.img.*.bits_per_pixel == 32);
+        const px: [*]u32 = @ptrCast(@alignCast(self.img.*.data));
+        return .{ .width = self.w, .height = self.h, .pixels = px[0 .. @as(usize, self.w) * self.h] };
+    }
+
+    fn present(self: *Surface, dpy: *c.Display, win: c.Window, gc: c.GC, rects: []const core.geom.Rect) void {
+        const bounds = core.geom.Rect.fromSize(0, 0, @intCast(self.w), @intCast(self.h));
         for (rects) |r_in| {
             const r = r_in.intersect(bounds);
             if (r.isEmpty()) continue;
-            var y = r.y0;
-            while (y < r.y1) : (y += 1) {
-                const dst: [*]u32 = @ptrCast(@alignCast(base + @as(usize, @intCast(y)) * bpl));
-                @memcpy(dst[@intCast(r.x0)..@intCast(r.x1)], frame.row(y, r.x0, r.x1));
-            }
             const x: c_int = r.x0;
             const yy: c_int = r.y0;
             const w: c_uint = @intCast(r.width());
@@ -194,6 +195,13 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     _ = c.XFlush(dpy);
     const t_window = start.read();
 
+    // While the image decodes: create the frame buffer and fault its pages in.
+    const use_shm = c.XShmQueryExtension(dpy) == c.True;
+    var surf = try Surface.create(dpy, visual, depth, sw, sh, use_shm);
+    defer surf.destroy(dpy);
+    var frame_cv = surf.canvas();
+    frame_cv.fill(core.compositor.background);
+
     loader.join();
     joined = true;
     const image = try load.image;
@@ -201,9 +209,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
 
     const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path });
     defer app.destroy();
-    const use_shm = c.XShmQueryExtension(dpy) == c.True;
-    var surf = try Surface.create(dpy, visual, depth, sw, sh, use_shm);
-    defer surf.destroy(dpy);
+    app.comp.setFrameBuffer(surf.canvas());
 
     var ev: c.XEvent = undefined;
     var exposed = false;
@@ -224,10 +230,9 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
                     const h: u32 = @intCast(ev.xconfigure.height);
                     if (w != app.editor.view.screen_w or h != app.editor.view.screen_h) {
                         _ = try app.handle(.{ .resize = .{ .w = w, .h = h } });
-                        if (w > surf.w or h > surf.h or w * 2 < surf.w or h * 2 < surf.h) {
-                            surf.destroy(dpy);
-                            surf = try Surface.create(dpy, visual, depth, w, h, use_shm);
-                        }
+                        surf.destroy(dpy);
+                        surf = try Surface.create(dpy, visual, depth, w, h, use_shm);
+                        app.comp.setFrameBuffer(surf.canvas());
                         need_render = true;
                     }
                 },
@@ -283,7 +288,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
             var t = try std.time.Timer.start();
             const dmg = try app.render();
             const t_render = t.lap();
-            surf.present(dpy, win, gc, app.frame(), dmg.slice());
+            surf.present(dpy, win, gc, dmg.slice());
             const t_present = t.read();
             need_render = false;
             frames += 1;

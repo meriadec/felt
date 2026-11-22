@@ -56,10 +56,14 @@ pub const Damage = struct {
 
 pub const Compositor = struct {
     gpa: std.mem.Allocator,
+    /// Background + image only; built lazily on the first scene rebuild
+    /// (undo), so startup draws the image straight into `scene`.
     base: ?Canvas = null,
     scene: ?Canvas = null,
     frame: ?Canvas = null,
-    base_key: [3]u32 = .{ 0, 0, 0 },
+    /// false: `frame` is a borrowed buffer (e.g. X11 shared memory).
+    owns_frame: bool = true,
+    view_key: [3]u32 = .{ 0, 0, 0 },
     scene_valid: bool = false,
     scene_count: usize = 0,
     scene_removals: u64 = 0,
@@ -69,7 +73,20 @@ pub const Compositor = struct {
     force_full: bool = true,
 
     pub fn deinit(self: *Compositor) void {
-        inline for (.{ &self.base, &self.scene, &self.frame }) |c| if (c.*) |*cv| cv.deinit(self.gpa);
+        if (self.base) |*cv| cv.deinit(self.gpa);
+        if (self.scene) |*cv| cv.deinit(self.gpa);
+        if (self.owns_frame) if (self.frame) |*cv| cv.deinit(self.gpa);
+        self.base = null;
+        self.scene = null;
+        self.frame = null;
+    }
+
+    /// Render into `cv` (not owned, must match the view size) from now on.
+    pub fn setFrameBuffer(self: *Compositor, cv: Canvas) void {
+        if (self.owns_frame) if (self.frame) |*f| f.deinit(self.gpa);
+        self.frame = cv;
+        self.owns_frame = false;
+        self.force_full = true;
     }
 
     /// Next render repaints and reports the whole frame (e.g. after Expose).
@@ -77,25 +94,31 @@ pub const Compositor = struct {
         self.force_full = true;
     }
 
-    fn ensureSize(self: *Compositor, w: u32, h: u32) !bool {
-        if (self.frame) |f| if (f.width == w and f.height == h) return false;
-        self.deinit();
-        self.base = null;
-        self.scene = null;
-        self.frame = null;
-        self.base = try Canvas.init(self.gpa, w, h);
-        self.scene = try Canvas.init(self.gpa, w, h);
-        self.frame = try Canvas.init(self.gpa, w, h);
-        return true;
+    fn ensureCanvas(self: *Compositor, slot: *?Canvas, w: u32, h: u32) !void {
+        if (slot.*) |*cv| {
+            if (cv.width == w and cv.height == h) return;
+            cv.deinit(self.gpa);
+            slot.* = null;
+        }
+        slot.* = try Canvas.init(self.gpa, w, h);
     }
 
-    fn buildBase(self: *Compositor, image: *const Canvas, ed: *const Editor) !void {
-        const base = &self.base.?;
-        base.fill(background);
+    /// Background around the image, downscaled image inside `view.dst`.
+    fn drawBase(self: *Compositor, cv: *Canvas, image: *const Canvas, ed: *const Editor) !void {
         const dst = ed.view.dst;
+        const full = cv.bounds();
+        // Background only where the image is not.
+        cv.fillRect(.{ .x0 = 0, .y0 = 0, .x1 = full.x1, .y1 = dst.y0 }, background);
+        cv.fillRect(.{ .x0 = 0, .y0 = dst.y1, .x1 = full.x1, .y1 = full.y1 }, background);
+        cv.fillRect(.{ .x0 = 0, .y0 = dst.y0, .x1 = dst.x0, .y1 = dst.y1 }, background);
+        cv.fillRect(.{ .x0 = dst.x1, .y0 = dst.y0, .x1 = full.x1, .y1 = dst.y1 }, background);
+        if (dst.width() == image.width and dst.height() == image.height) {
+            cv.blit(image, dst.x0, dst.y0); // 1:1, no copy
+            return;
+        }
         var scaled = try resample.downscale(self.gpa, image, @intCast(dst.width()), @intCast(dst.height()));
         defer scaled.deinit(self.gpa);
-        base.blit(&scaled, dst.x0, dst.y0);
+        cv.blit(&scaled, dst.x0, dst.y0);
     }
 
     /// Bring `frame` up to date; returns the screen rectangles that changed.
@@ -107,10 +130,17 @@ pub const Compositor = struct {
         var full = self.force_full;
         self.force_full = false;
 
+        if (self.owns_frame) {
+            try self.ensureCanvas(&self.frame, w, h);
+        } else if (self.frame.?.width != w or self.frame.?.height != h) {
+            return error.FrameBufferSizeMismatch;
+        }
         const key = [3]u32{ w, h, @bitCast(ed.view.xf.scale) };
-        if (try self.ensureSize(w, h) or !std.mem.eql(u32, &key, &self.base_key)) {
-            try self.buildBase(image, ed);
-            self.base_key = key;
+        if (!std.mem.eql(u32, &key, &self.view_key)) {
+            if (self.base) |*b| b.deinit(self.gpa);
+            self.base = null;
+            try self.ensureCanvas(&self.scene, w, h);
+            self.view_key = key;
             self.scene_valid = false;
         }
         const scene = &self.scene.?;
@@ -119,7 +149,15 @@ pub const Compositor = struct {
         const items = doc.items.items;
 
         // Scene: append new annotations, or rebuild after a removal.
-        if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count) {
+        if (!self.scene_valid) {
+            try self.drawBase(scene, image, ed);
+            for (items) |a| try draw.annotation(ctx, scene, full_rect, a, xf, .{});
+            full = true;
+        } else if (doc.removals != self.scene_removals or items.len < self.scene_count) {
+            if (self.base == null) {
+                try self.ensureCanvas(&self.base, w, h);
+                try self.drawBase(&self.base.?, image, ed);
+            }
             scene.copyRect(&self.base.?, full_rect);
             for (items) |a| try draw.annotation(ctx, scene, full_rect, a, xf, .{});
             full = true;
