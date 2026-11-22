@@ -122,7 +122,7 @@ pub const Editor = struct {
 
     /// Refit the view when the document crop changed (crop, undo, redo).
     fn syncView(self: *Editor) bool {
-        const want = self.doc.visible(self.view.image_w, self.view.image_h);
+        const want = self.doc.kept(self.view.image_w, self.view.image_h);
         if (std.meta.eql(want, self.view.src)) return false;
         self.view = View.fitRect(self.view.image_w, self.view.image_h, want, self.view.screen_w, self.view.screen_h);
         return true;
@@ -494,7 +494,7 @@ test "crop drag crops, refits the view, goes back to the tool; undo restores" {
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.cropPreview().?);
     try std.testing.expect(t.ed.toast() != null);
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = 120, .y = 60 } });
-    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.doc.crop.?);
+    try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.doc.crop().?.rect);
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 10, .x1 = 120, .y1 = 60 }, t.ed.view.src);
     try std.testing.expectEqual(Tool.rect, t.ed.tool);
     // Screen (50, 25) is the image point (20, 10) after the refit (centered 1:1).

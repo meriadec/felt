@@ -8,7 +8,7 @@ const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 
 pub fn render(ctx: draw.Ctx, image: *const Canvas, doc: *const Document) !Canvas {
-    const keep = doc.visible(image.width, image.height);
+    const keep = doc.kept(image.width, image.height);
     var out = try image.copyOut(ctx.gpa, keep);
     errdefer out.deinit(ctx.gpa);
     const all = out.bounds();
