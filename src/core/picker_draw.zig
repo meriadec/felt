@@ -32,6 +32,8 @@ const Pill = struct {
     text_x: f32 = 0,
     dot: ?Vec2 = null,
     dot_on: bool = false,
+    /// Semi-transparent background (the size pill over the selection).
+    translucent: bool = false,
 };
 
 const Items = struct {
@@ -79,17 +81,28 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
     d.dot_on = p.delayOn();
     it.delay = d;
 
-    // The size pill above the top-left corner of the highlight, inside it if there is no room.
+    // The size pill is centered in the highlight once it is big enough, so
+    // it never hides the edges. A small highlight gets it above its top-left corner.
     const hi = it.hi orelse return;
     const sl = picker.sizeLabel(&it.label_buf, hi);
     var l = pill(ctx, sl, px, 0, 0, s, false);
     const lw: f32 = @floatFromInt(l.rect.width());
     const lh: f32 = @floatFromInt(l.rect.height());
-    var y: f32 = @floatFromInt(hi.y0 - it.border);
-    y -= 6 * s + lh;
-    if (y < 0) y = @as(f32, @floatFromInt(hi.y0)) + 6 * s;
-    const x = std.math.clamp(@as(f32, @floatFromInt(hi.x0)), 0, @max(0, w - lw));
-    l = pill(ctx, sl, px, x, y, s, false);
+    const margin = 12 * s;
+    const hw: f32 = @floatFromInt(hi.width());
+    const hh: f32 = @floatFromInt(hi.height());
+    if (hw >= lw + 2 * margin and hh >= lh + 2 * margin) {
+        const cx = @as(f32, @floatFromInt(hi.x0)) + (hw - lw) / 2;
+        const cy = @as(f32, @floatFromInt(hi.y0)) + (hh - lh) / 2;
+        l = pill(ctx, sl, px, cx, cy, s, false);
+        l.translucent = true;
+    } else {
+        var y: f32 = @floatFromInt(hi.y0 - it.border);
+        y -= 6 * s + lh;
+        if (y < 0) y = @as(f32, @floatFromInt(hi.y0)) + 6 * s;
+        const x = std.math.clamp(@as(f32, @floatFromInt(hi.x0)), 0, @max(0, w - lw));
+        l = pill(ctx, sl, px, x, y, s, false);
+    }
     it.label = l;
 }
 
@@ -108,8 +121,8 @@ fn drawPill(ctx: Ctx, cv: *Canvas, clip: Rect, p: Pill, s: f32) !void {
     if (p.rect.isEmpty() or !p.rect.intersects(clip)) return;
     const b = p.rect.toBounds();
     const radius = 6 * s;
-    raster.fill(cv, clip, rrect(b, radius), .{ .solid = nord.n1 }, .{});
-    raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), radius - 0.5), 1), .{ .solid = nord.n2 }, .{});
+    raster.fill(cv, clip, rrect(b, radius), .{ .solid = if (p.translucent) nord.n1.withAlpha(170) else nord.n1 }, .{});
+    if (!p.translucent) raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), radius - 0.5), 1), .{ .solid = nord.n2 }, .{});
     if (p.dot) |c| raster.fill(cv, clip, sdf.Disc{ .c = c, .r = 4 * s }, .{ .solid = if (p.dot_on) nord.n14 else nord.n3 }, .{});
     var mask = try text.render(ctx.gpa, ctx.font, p.s, p.px, 0, 0, false);
     defer mask.deinit(ctx.gpa);
