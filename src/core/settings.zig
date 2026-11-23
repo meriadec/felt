@@ -13,8 +13,8 @@ pub const CanvasBg = enum {
     light,
     dark,
 
-    /// Light: near white. Dark: nord0, the color of the screen background
-    /// around the canvas; the grid on that background (compositor.zig) marks
+    /// Light: near white. Dark: nord0, lighter than the screen background
+    /// around the canvas; the grid on that background (compositor.zig) also marks
     /// the canvas edge.
     pub fn color(bg: CanvasBg) Color {
         return switch (bg) {

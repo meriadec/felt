@@ -22,10 +22,10 @@ const Editor = @import("editor.zig").Editor;
 const Rect = geom.Rect;
 const View = @import("view.zig").View;
 
-pub const background = color.nord.n0;
-/// Grid lines on the screen background: a faint step above nord0, so the
+pub const background = color.Color.rgb(0x20242D);
+/// Grid lines on the screen background: a faint step above the background, so the
 /// canvas stays distinct from it, whatever the canvas color.
-pub const grid_color = color.Color.rgb(0x3B4252);
+pub const grid_color = color.Color.rgb(0x282D38);
 /// Distance between grid lines (screen px).
 pub const grid_step: i32 = 32;
 
