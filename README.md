@@ -1,9 +1,39 @@
-# Felt
+<p align="center">
+  <img src="assets/felt-mark.svg" alt="Felt logo" width="128">
+</p>
 
-Fast full-screen screenshot annotation for X11. Opens an image, you draw
-arrows, text labels, boxes, numbered bubbles, callouts and
-pixelation with one-letter tools, crop it, then save (Ctrl+S) or copy (Ctrl+C). Built to replace
-`ksnip -e` in an i3 setup.
+<h1 align="center">Felt</h1>
+
+<p align="center">
+  Fast full-screen screenshot annotation for X11.<br>
+  Capture, mark, save. All with one-letter keys.
+</p>
+
+<p align="center">
+  <img src="assets/screenshot.png" alt="Felt annotating a web page with callouts and arrows" width="720">
+</p>
+
+Felt opens an image full screen. You draw on it with one-letter tools, then
+save (Ctrl+S) or copy (Ctrl+C). It starts in tens of milliseconds, so it fits a
+screenshot hotkey. It replaces `ksnip -e` in an i3 setup.
+
+## Features
+
+| Key | Tool |
+| --- | --- |
+| `c` | Callout: a text box with a pointer (stairs or straight) |
+| `a` | Arrow |
+| `t` | Text label |
+| `r` | Box |
+| `n` | Numbered bubble |
+| `p` | Pixelate (hide secrets) |
+| `m` | Move any annotation |
+| `x` | Crop |
+
+- Undo and redo, zoom and pan, 4K-aware UI scale.
+- The canvas grows when you draw past the image edge.
+- Software renderer: no GPU needed. Pure Zig core with a thin X11 backend.
+- A headless mode replays scripts, so every tool has a golden test.
 
 ## Install
 
@@ -13,6 +43,7 @@ Needs Zig 0.15.2 (pinned in `mise.toml`), X11 headers (`libx11-dev`,
 ```sh
 mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local install
 # -> ~/.local/bin/felt
+# -> ~/.local/share/applications/felt.desktop and the icons
 ```
 
 ## Use
@@ -47,7 +78,7 @@ Full key map: [docs/keymap.md](docs/keymap.md).
 
 ### Settings
 
-felt keeps the canvas background for the next sessions in
+Felt keeps the canvas background for the next sessions in
 `$XDG_CONFIG_HOME/felt/config` (default `~/.config/felt/config`):
 
 ```
@@ -70,8 +101,8 @@ for_window [class="felt"] floating enable, fullscreen enable
 
 The first line opens the newest file in your home directory (`ls -1td` with a
 glob gives full paths, so the working directory of i3 does not matter).
-felt asks for full screen itself; the `for_window` line keeps i3 from
-tiling it for a moment. To shoot and felt in one key:
+Felt asks for full screen itself; the `for_window` line keeps i3 from
+tiling it for a moment. To shoot and annotate in one key:
 
 ```
 bindsym Print exec "maim -s /tmp/shot.png && felt -o $HOME/shot-$(date +%s).png /tmp/shot.png"
