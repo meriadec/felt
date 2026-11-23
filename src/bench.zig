@@ -565,5 +565,47 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         try zoom.add(gpa, t.read());
     }
     try zoom.report(w, "frame: Ctrl+wheel zoom");
+    try benchCapture(gpa, w, opts);
     try w.flush();
+}
+
+/// The capture picker on a frozen screen of the screen size: first frame, a
+/// drag from 20% to 80% of the screen (one frame per motion event), the crop.
+fn benchCapture(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void {
+    const W = opts.size[0];
+    const H = opts.size[1];
+    var frozen = try synthetic(gpa, W, H);
+    defer frozen.deinit(gpa);
+    var frame = try Canvas.init(gpa, W, H);
+    defer frame.deinit(gpa);
+    var font = try core.font.Font.init(gpa, core.font_ttf);
+    defer font.deinit();
+    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font };
+    var picker = core.picker.Picker.init(W, H, &.{}, 0);
+    var scene = core.picker_draw.Scene{};
+    var t = try std.time.Timer.start();
+    _ = try scene.render(ctx, &picker, &frozen, &frame);
+    try w.print("\n{s:<26} {d:>7.3} ms\n", .{ "capture: first frame", ms(t.read()) });
+    const fw: f32 = @floatFromInt(W);
+    const fh: f32 = @floatFromInt(H);
+    _ = picker.handle(.{ .mouse_down = .{ .x = fw * 0.2, .y = fh * 0.2 } });
+    var drag = Stats{};
+    defer drag.deinit(gpa);
+    var damage_px: u64 = 0;
+    for (0..100) |i| {
+        const f = @as(f32, @floatFromInt(i + 1)) / 100;
+        _ = picker.handle(.{ .mouse_move = .{ .x = fw * (0.2 + 0.6 * f), .y = fh * (0.2 + 0.6 * f) } });
+        t.reset();
+        const d = try scene.render(ctx, &picker, &frozen, &frame);
+        try drag.add(gpa, t.read());
+        damage_px += d.area();
+    }
+    try drag.report(w, "capture: drag frame");
+    try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / 100, @as(f64, @floatFromInt(damage_px / 100)) * 100 / (fw * fh) });
+    _ = picker.handle(.{ .mouse_up = .{ .x = fw * 0.8, .y = fh * 0.8 } });
+    if (picker.result == null) return error.BenchCaptureNotConfirmed;
+    t.reset();
+    var crop = try core.picker.crop(gpa, &frozen, picker.result.?);
+    defer crop.deinit(gpa);
+    try w.print("{s:<26} {d:>7.3} ms ({d}x{d})\n", .{ "capture: crop", ms(t.read()), crop.width, crop.height });
 }
