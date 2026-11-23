@@ -47,9 +47,17 @@ pub const Script = struct {
     size: ?[2]u32 = null,
     /// Image to replay on (path from the repo root); wins over the CLI image.
     image: ?[]const u8 = null,
+    /// `capture`: replay on the capture picker, with the image as the
+    /// frozen screen (the screen has the image's size).
+    capture: bool = false,
+    /// `window`: top-level windows for the picker, topmost first.
+    windows: std.ArrayList(core.geom.Rect) = .empty,
+    /// `delay`: the picker's initial delay, ms.
+    delay_ms: u32 = 0,
 
     pub fn deinit(self: *Script, gpa: std.mem.Allocator) void {
         self.events.deinit(gpa);
+        self.windows.deinit(gpa);
         if (self.image) |p| gpa.free(p);
     }
 };
@@ -95,6 +103,16 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         const path = it.next() orelse return fail(err, "image needs a path");
         if (s.image) |old| gpa.free(old);
         s.image = try gpa.dupe(u8, path);
+    } else if (std.mem.eql(u8, cmd, "capture")) {
+        s.capture = true;
+    } else if (std.mem.eql(u8, cmd, "window")) {
+        const x: i32 = @intFromFloat(try num(err, &it));
+        const y: i32 = @intFromFloat(try num(err, &it));
+        const w: i32 = @intFromFloat(try num(err, &it));
+        const h: i32 = @intFromFloat(try num(err, &it));
+        try s.windows.append(gpa, core.geom.Rect.fromSize(x, y, w, h));
+    } else if (std.mem.eql(u8, cmd, "delay")) {
+        s.delay_ms = @intFromFloat(@round(try num(err, &it) * 1000));
     } else if (std.mem.eql(u8, cmd, "size")) {
         s.size = .{ @intFromFloat(try num(err, &it)), @intFromFloat(try num(err, &it)) };
     } else if (std.mem.eql(u8, cmd, "move")) {
@@ -167,7 +185,7 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
     } else if (std.mem.eql(u8, cmd, "resize")) {
         try ev.append(gpa, .{ .resize = .{ .w = @intFromFloat(try num(err, &it)), .h = @intFromFloat(try num(err, &it)) } });
     } else {
-        return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize, ui)");
+        return fail(err, "unknown command (image, size, move, down, up, click, drag, key, type, wheel, resize, ui, capture, window, delay)");
     }
 }
 
@@ -244,4 +262,16 @@ test "parse script" {
     try std.testing.expectError(error.BadScript, parse(gpa, "ui tool lasso", &err));
     try std.testing.expectError(error.BadScript, parse(gpa, "ui arrow-style curly", &err));
     try std.testing.expectError(error.BadScript, parse(gpa, "ui canvas-bg white", &err));
+}
+
+test "parse capture script" {
+    const gpa = std.testing.allocator;
+    var err: ParseError = undefined;
+    var s = try parse(gpa, "capture\nwindow 10 20 300 200\nwindow 0 0 640 480\ndelay 1.5\ndrag 5 5 50 50 3\nkey tab\n", &err);
+    defer s.deinit(gpa);
+    try std.testing.expect(s.capture);
+    try std.testing.expectEqual(@as(usize, 2), s.windows.items.len);
+    try std.testing.expectEqual(core.geom.Rect.fromSize(10, 20, 300, 200), s.windows.items[0]);
+    try std.testing.expectEqual(@as(u32, 1500), s.delay_ms);
+    try std.testing.expectError(error.BadScript, parse(gpa, "window 1 2 3", &err));
 }

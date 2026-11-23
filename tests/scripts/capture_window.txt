@@ -1,0 +1,10 @@
+# Capture picker: hover highlights the window under the pointer, a click
+# selects it. `window` lines go topmost first: the pointer at 600 450 is in
+# all three, so the first one wins.
+capture
+window 400 300 400 300
+window 150 120 520 380
+window 0 0 1200 750
+move 200 150
+move 600 450
+click 600 450

@@ -85,6 +85,9 @@ One command per line, screen coordinates, `#` starts a comment.
 | `wheel up\|down [n] [at X Y] [ctrl]` | Wheel steps at a point (size; with `ctrl`: zoom about the point) |
 | `ui tool NAME`, `ui color N`, `ui size`, `ui help`, `ui undo`, `ui redo`, `ui canvas-bg [light\|dark]`, `ui arrow-style [straight\|stairs]` | Click a dock or top bar item at its place for the screen size (scripts survive layout changes). `canvas-bg` with no name clicks the top bar switch (a toggle); with a name it clicks only if the canvas is not that one yet. `arrow-style` (alias `pointer-style`) with no name clicks the style not in use; with a name it clicks only if the style is not that one yet; the switch shows only with the arrow or the callout tool, over that tool's slot |
 | `resize W H` | Window resize |
+| `capture` | Replay on the capture picker (src/core/picker.zig), not the editor: the image is the frozen screen and the screen has its size (`size` is ignored). The frame is the last picker frame; the export is the crop if the script confirmed a selection (a drag released, or a click on a window). `ui` is an error. The delay never waits: the crop is of the frozen picture |
+| `window X Y W H` | A top-level window for the picker, topmost first (the first one that holds the pointer wins) |
+| `delay SECONDS` | The picker's initial delay (`--delay`); `key tab` toggles it |
 
 The replay renders after each event that asks for a redraw, like the X11
 loop. A raw left press (`click`, `down`, `drag`) on the dock, its style

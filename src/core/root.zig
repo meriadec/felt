@@ -30,6 +30,8 @@ pub const topbar = @import("topbar.zig");
 pub const chrome = @import("chrome.zig");
 pub const compositor = @import("compositor.zig");
 pub const exporter = @import("exporter.zig");
+pub const picker = @import("picker.zig");
+pub const picker_draw = @import("picker_draw.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

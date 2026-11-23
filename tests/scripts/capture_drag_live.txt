@@ -1,0 +1,7 @@
+# Capture picker mid-drag (no release): bright rectangle, border, size pill,
+# and the delay pill switched on with Tab. The pointer drags up and left.
+capture
+key tab
+down 800 600
+move 700 500
+move 450 330

@@ -1,0 +1,6 @@
+# Capture picker: Esc cancels, nothing is cropped.
+capture
+delay 2
+down 100 100
+move 400 300
+key esc

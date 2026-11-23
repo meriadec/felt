@@ -51,6 +51,49 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
     return app;
 }
 
+/// The outcome of a capture script: the last picker frame and, if the
+/// script confirmed a selection, the cropped image (of the frozen screen:
+/// headless has no live screen, so the delay changes only the pill).
+pub const CaptureReplay = struct {
+    picker: core.picker.Picker,
+    frame: Canvas,
+    crop: ?Canvas,
+    scene: core.picker_draw.Scene,
+
+    pub fn deinit(self: *CaptureReplay, gpa: std.mem.Allocator) void {
+        self.frame.deinit(gpa);
+        if (self.crop) |*c| c.deinit(gpa);
+    }
+};
+
+/// Replay a `capture` script on the picker. `frozen` is the screen: the
+/// frame has its size. Borrows `script` (the picker points at its windows).
+pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *const script_mod.Script) !CaptureReplay {
+    var font = try core.font.Font.init(gpa, core.font_ttf);
+    defer font.deinit();
+    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font };
+    var r = CaptureReplay{
+        .picker = core.picker.Picker.init(frozen.width, frozen.height, script.windows.items, script.delay_ms),
+        .frame = try Canvas.init(gpa, frozen.width, frozen.height),
+        .crop = null,
+        .scene = .{},
+    };
+    errdefer r.deinit(gpa);
+    _ = try r.scene.render(ctx, &r.picker, frozen, &r.frame);
+    for (script.events.items) |step| switch (step) {
+        .event => |ev| {
+            if (r.picker.finished()) break;
+            if (r.picker.handle(ev).redraw) _ = try r.scene.render(ctx, &r.picker, frozen, &r.frame);
+        },
+        .ui, .hover => {
+            std.log.err("script: `ui` and `move ui` need the editor, not the capture picker", .{});
+            return error.BadScript;
+        },
+    };
+    if (r.picker.result) |rect| r.crop = try core.picker.crop(gpa, frozen, rect);
+    return r;
+}
+
 /// A raw left press of a script that would land on the dock, its style
 /// switch or the top bar is an error: chrome moves (a new slot, a switch
 /// that shows with a tool), so a script that meant to draw there would
@@ -149,6 +192,25 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         std.debug.print("felt: cannot load {s}: {s}\n", .{ image_path, @errorName(err) });
         return error.WriteReported;
     };
+    if (script.capture) {
+        var frozen = image;
+        defer frozen.deinit(gpa);
+        var r = try replayCapture(gpa, &frozen, &script);
+        defer r.deinit(gpa);
+        if (opts.frame_out) |p| {
+            try save(gpa, &r.frame, p);
+            std.debug.print("frame  {d}x{d} -> {s}\n", .{ r.frame.width, r.frame.height, p });
+        }
+        if (opts.export_out) |p| {
+            const crop = r.crop orelse {
+                std.debug.print("note: the script did not confirm a selection ({s}), no crop written\n", .{@tagName(r.picker.phase)});
+                return;
+            };
+            try save(gpa, &crop, p);
+            std.debug.print("crop   {d}x{d} -> {s}\n", .{ crop.width, crop.height, p });
+        }
+        return;
+    }
     const app = try replay(gpa, image, &script, opts.size, appConfig(opts));
     defer app.destroy();
     if (opts.frame_out) |p| {

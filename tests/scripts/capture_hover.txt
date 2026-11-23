@@ -1,0 +1,7 @@
+# Capture picker: hover only (no click). The window under the pointer lights up.
+capture
+window 150 120 520 380
+window 500 400 500 300
+move 300 200
+move 520 420
+move 300 200

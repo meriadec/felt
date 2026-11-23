@@ -130,6 +130,44 @@ fn replayScript(gpa: std.mem.Allocator, name: []const u8) !*App {
     return headless.replay(gpa, image, &script, null, .{ .output_path = null, .clipboard = .none });
 }
 
+/// A `capture` script: the picker frame and the crop are the goldens
+/// (`<name>.frame`, `<name>.export`), and the damage-tracked frame must
+/// equal a full repaint. Null: not a capture script. Else the failures.
+fn captureGolden(gpa: std.mem.Allocator, name: []const u8) !?usize {
+    const path = try std.fmt.allocPrint(gpa, "{s}/{s}.txt", .{ scripts_dir, name });
+    defer gpa.free(path);
+    var script = try headless.loadScript(gpa, path);
+    defer script.deinit(gpa);
+    if (!script.capture) return null;
+    var frozen = try core.image_io.load(gpa, script.image orelse fixture);
+    defer frozen.deinit(gpa);
+    var r = try headless.replayCapture(gpa, &frozen, &script);
+    defer r.deinit(gpa);
+    var failed: usize = 0;
+
+    var font = try core.font.Font.init(gpa, core.font_ttf);
+    defer font.deinit();
+    var fresh = try Canvas.init(gpa, frozen.width, frozen.height);
+    defer fresh.deinit(gpa);
+    var scene = core.picker_draw.Scene{};
+    _ = try scene.render(.{ .gpa = gpa, .font = &font }, &r.picker, &frozen, &fresh);
+    if (compare(&r.frame, &fresh, null).bad > 0) {
+        std.debug.print("golden {s}: incremental picker frame differs from a full repaint (damage tracking bug)\n", .{name});
+        writeOut(gpa, &r.frame, name, "damage.incremental");
+        writeOut(gpa, &fresh, name, "damage.full");
+        failed += 1;
+    }
+    const frame_name = try std.fmt.allocPrint(gpa, "{s}.frame", .{name});
+    defer gpa.free(frame_name);
+    if (!try check(gpa, frame_name, &r.frame)) failed += 1;
+    if (r.crop) |*crop| {
+        const crop_name = try std.fmt.allocPrint(gpa, "{s}.export", .{name});
+        defer gpa.free(crop_name);
+        if (!try check(gpa, crop_name, crop)) failed += 1;
+    }
+    return failed;
+}
+
 test "golden replays" {
     const gpa = std.testing.allocator;
     std.fs.cwd().deleteTree(out_dir) catch {};
@@ -141,6 +179,10 @@ test "golden replays" {
     try std.testing.expect(names.len > 0);
     var failed: usize = 0;
     for (names) |name| {
+        if (try captureGolden(gpa, name)) |bad| {
+            failed += bad;
+            continue;
+        }
         const app = try replayScript(gpa, name);
         defer app.destroy();
 
