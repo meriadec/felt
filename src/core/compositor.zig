@@ -23,6 +23,22 @@ const Rect = geom.Rect;
 const View = @import("view.zig").View;
 
 pub const background = color.nord.n0;
+/// Grid lines on the screen background: a faint step above nord0, so the
+/// canvas stays distinct from it, whatever the canvas color.
+pub const grid_color = color.Color.rgb(0x3B4252);
+/// Distance between grid lines (screen px).
+pub const grid_step: i32 = 32;
+
+/// Fill `r` with the screen background and its grid. The lines hang on the
+/// image origin of the view, so a pan (an integer scroll of the scene) keeps
+/// the pattern aligned with the strips it paints.
+fn fillBackground(cv: *Canvas, r: Rect, origin_x: i32, origin_y: i32) void {
+    cv.fillRect(r, background);
+    var x = r.x0 + @mod(origin_x - r.x0, grid_step);
+    while (x < r.x1) : (x += grid_step) cv.fillRect(.{ .x0 = x, .y0 = r.y0, .x1 = x + 1, .y1 = r.y1 }, grid_color);
+    var y = r.y0 + @mod(origin_y - r.y0, grid_step);
+    while (y < r.y1) : (y += grid_step) cv.fillRect(.{ .x0 = r.x0, .y0 = y, .x1 = r.x1, .y1 = y + 1 }, grid_color);
+}
 
 /// A short list of screen rectangles to repaint and present.
 pub const Damage = struct {
@@ -217,7 +233,9 @@ pub const Compositor = struct {
         const cv = &self.scene.?;
         const r = r_in.intersect(cv.bounds());
         if (r.isEmpty()) return;
-        for (r.minus(s.canvas_dst)) |b| cv.fillRect(b, background);
+        const ox: i32 = @intFromFloat(@round(s.xf.offset.x));
+        const oy: i32 = @intFromFloat(@round(s.xf.offset.y));
+        for (r.minus(s.canvas_dst)) |b| fillBackground(cv, b, ox, oy);
         for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
         try self.paintImage(cv, s, r);
         for (s.doc.items.items[0..n], 0..) |a, i| {

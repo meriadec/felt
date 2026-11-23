@@ -13,11 +13,9 @@ pub const CanvasBg = enum {
     light,
     dark,
 
-    /// Light: nord4, a clear light grey: a white (nord6) mark and the white
-    /// of a screenshot both stand out on it. Dark: nord3, a mid-dark grey a
-    /// step above the panels (nord1) and the screen background (nord0)
-    /// around the canvas, so the canvas edge, the dock and the dark (nord0)
-    /// marks all stay visible.
+    /// Light: near white. Dark: nord0, the color of the screen background
+    /// around the canvas; the grid on that background (compositor.zig) marks
+    /// the canvas edge.
     pub fn color(bg: CanvasBg) Color {
         return switch (bg) {
             .light => color_light,
