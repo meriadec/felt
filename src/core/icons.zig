@@ -9,6 +9,7 @@ const Canvas = @import("canvas.zig").Canvas;
 const Color = @import("color.zig").Color;
 const Tool = @import("keymap.zig").Tool;
 const ArrowStyle = @import("annotation.zig").ArrowStyle;
+const TextStyle = @import("annotation.zig").TextStyle;
 const stairs = @import("stairs.zig");
 
 const Vec2 = geom.Vec2;
@@ -117,6 +118,22 @@ pub fn drawArrowStyle(cv: *Canvas, clip: Rect, st: ArrowStyle, c: Vec2, size: f3
     }
 }
 
+/// A text style: the letter T alone (plain), or a T cut out of a filled
+/// rounded box (boxed).
+pub fn drawTextStyle(cv: *Canvas, clip: Rect, st: TextStyle, c: Vec2, size: f32, color: Color) void {
+    const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) };
+    switch (st) {
+        .plain => draw(cv, clip, .text, c, size, color),
+        .boxed => {
+            const letter = sdf.unite(sdf.unite(
+                sdf.Capsule{ .a = pen.p(-0.4, -0.3), .b = pen.p(0.4, -0.3), .r = pen.w * 0.5 },
+                sdf.Capsule{ .a = pen.p(0, -0.3), .b = pen.p(0, 0.4), .r = pen.w * 0.5 },
+            ), sdf.Capsule{ .a = pen.p(-0.2, 0.4), .b = pen.p(0.2, 0.4), .r = pen.w * 0.5 });
+            pen.fill(sdf.Subtract(sdf.RoundRect, @TypeOf(letter)){ .a = pen.box(-0.85, -0.7, 0.85, 0.7, 0.25), .b = letter }, 1);
+        },
+    }
+}
+
 /// Undo (curved arrow to the left) or, with `redo`, its mirror.
 pub fn drawUndo(cv: *Canvas, clip: Rect, redo: bool, c: Vec2, size: f32, color: Color) void {
     const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11), .sx = if (redo) -1 else 1 };
@@ -158,6 +175,16 @@ test "every icon draws inside its box" {
     for ([_]ArrowStyle{ .straight, .stairs }) |st| {
         cv.fill(.{ .r = 0, .g = 0, .b = 0 });
         drawArrowStyle(&cv, cv.bounds(), st, .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
+        var ink: usize = 0;
+        for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
+            ink += 1;
+            try std.testing.expect(i % 40 >= 6 and i % 40 < 34 and i / 40 >= 6 and i / 40 < 34);
+        };
+        try std.testing.expect(ink > 20);
+    }
+    for ([_]TextStyle{ .plain, .boxed }) |st| {
+        cv.fill(.{ .r = 0, .g = 0, .b = 0 });
+        drawTextStyle(&cv, cv.bounds(), st, .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
         var ink: usize = 0;
         for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
             ink += 1;

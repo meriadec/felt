@@ -1,0 +1,22 @@
+# Text labels, boxed style (the switch above the dock): red, white, black.
+# The last text is plain again after the second switch click.
+size 900 500
+ui tool text
+ui text-style boxed
+click 120 300
+type Rotate this key now!
+key enter
+key 7 ]
+click 560 140
+type Spike on Friday\n(deploy at 14:00)
+key esc
+key 8 [
+click 150 395
+type Owner since 2019
+key enter
+key 1
+ui text-style plain
+click 520 240
+type Plain again
+key enter
+ui text-style boxed

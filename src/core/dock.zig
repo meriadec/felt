@@ -2,7 +2,7 @@
 //! tool (in key map order), the color swatches, the size slot and the help
 //! button. With the arrow or the callout tool active, a small switch floats
 //! above the dock, over that tool's slot: one slot per arrow style (arrows
-//! and callout pointers share it). Pure
+//! and callout pointers share it). The text tool has one too: plain, boxed. Pure
 //! layout from the screen size and the tool, no font: chrome.zig draws it
 //! and the editor hit-tests clicks with the same numbers.
 const std = @import("std");
@@ -11,6 +11,7 @@ const keymap = @import("keymap.zig");
 const color = @import("color.zig");
 const style = @import("style.zig");
 const ArrowStyle = @import("annotation.zig").ArrowStyle;
+const TextStyle = @import("annotation.zig").TextStyle;
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -21,10 +22,13 @@ pub const Hit = union(enum) {
     size,
     help,
     arrow_style: ArrowStyle,
+    text_style: TextStyle,
 };
 
 /// The styles in the switch, left to right.
 pub const arrow_styles = [_]ArrowStyle{ .straight, .stairs };
+/// The styles in the switch with the text tool, left to right.
+pub const text_styles = [_]TextStyle{ .plain, .boxed };
 
 const n_tools: comptime_int = keymap.tools.len;
 const n_colors: comptime_int = color.palette.len;
@@ -53,6 +57,8 @@ pub const Dock = struct {
     help: Bounds,
     /// x of the two separator lines.
     seps: [2]f32,
+    /// The tool the dock was laid out for (picks what the switch means).
+    tool: keymap.Tool,
     /// The arrow style switch panel (null: no tool with a style is active).
     switch_panel: ?Bounds,
     styles: [arrow_styles.len]Bounds,
@@ -71,6 +77,7 @@ pub const Dock = struct {
 
         var d: Dock = undefined;
         d.s = s;
+        d.tool = tool;
         const pw = naturalWidth() * s;
         const ph = (slot + 2 * pad) * s;
         const x0 = @round((W - pw) / 2);
@@ -116,7 +123,9 @@ pub const Dock = struct {
     /// What a click at `p` hits, or null outside the dock.
     pub fn hit(d: *const Dock, p: Vec2) ?Hit {
         if (d.switch_panel) |sp| if (inside(sp, p)) {
-            for (d.styles, arrow_styles) |b, st| if (inside(b, p)) return .{ .arrow_style = st };
+            if (d.tool == .text) {
+                for (d.styles, text_styles) |b, st| if (inside(b, p)) return .{ .text_style = st };
+            } else for (d.styles, arrow_styles) |b, st| if (inside(b, p)) return .{ .arrow_style = st };
             return null;
         };
         if (!inside(d.panel, p)) return null;
@@ -134,9 +143,10 @@ pub const Dock = struct {
     }
 };
 
-/// The tool draws with an arrow style: the switch shows above the dock.
+/// The tool has a style: the switch shows above the dock (arrow styles, or
+/// the text styles with the text tool).
 pub fn hasStyleSwitch(tool: keymap.Tool) bool {
-    return tool == .arrow or tool == .callout;
+    return tool == .arrow or tool == .callout or tool == .text;
 }
 
 fn toolIndex(tool: keymap.Tool) usize {
@@ -190,4 +200,12 @@ test "with the callout tool the switch sits over the callout slot" {
     }
     // The arrow tool: the switch starts at the dock's left end.
     try std.testing.expectEqual(d.panel.min.x, Dock.of(1920, 1080, .arrow).switch_panel.?.min.x);
+}
+
+test "the text tool has a style switch of its own" {
+    const d = Dock.of(1920, 1080, .text);
+    try std.testing.expect(d.switch_panel != null);
+    for (d.styles, text_styles) |b, st| {
+        try std.testing.expectEqual(Hit{ .text_style = st }, d.hit(b.min.add(b.max).scale(0.5)).?);
+    }
 }

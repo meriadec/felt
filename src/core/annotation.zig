@@ -24,8 +24,12 @@ pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color, sty
 /// Rectangle outline.
 pub const Box = struct { a: Vec2, b: Vec2, width: f32, color: Color };
 
+/// How free text looks: plain letters in the annotation color with a soft
+/// shadow (the start style), or on a filled rounded box like a callout.
+pub const TextStyle = enum { plain, boxed };
+
 /// Free text; `pos` is the top-left of the first line.
-pub const Text = struct { pos: Vec2, text: []const u8, size: f32, color: Color };
+pub const Text = struct { pos: Vec2, text: []const u8, size: f32, color: Color, style: TextStyle = .plain };
 
 /// Numbered bubble centered on `center`; `size` is the font size.
 pub const Number = struct { center: Vec2, value: u32, size: f32, color: Color };

@@ -49,7 +49,7 @@ image files. Build: `coreModule` in build.zig.
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
-| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it (arrow and callout tools) |
+| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the style switch above it (arrow and callout tools: arrow style; text tool: text style) |
 | `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch, the canvas padding slider (notch geometry, nearest step); save and copy stay on keys |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
@@ -152,6 +152,15 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   (outside the crop or past the reach) is skipped: it stops at the last
   place where it shows. Annotations made after the last crop grow and
   shrink the canvas as they move.
+- Text styles: each text stores its `style` (`annotation.TextStyle`: plain,
+  boxed). Plain (the start style) draws the letters in the annotation color
+  with a hard offset shadow, no box; boxed draws the callout look (filled
+  rounded box, contrast-color letters). The box geometry is the same for
+  both, so hit tests, outlines, bounds and clips do not depend on the style.
+  The editor's `text_style` is the style of new texts: `t` with the text
+  tool active, or the switch above the dock (text tool only), sets it, with
+  a toast ("Text: boxed"); a text in progress follows. It stays for the
+  session (not saved).
 - Callout pointer: an arrow (`draw.calloutPointer`) with the callout's
   stroke `width` (the arrow width of its size level), color and style,
   from `anchor` to `target`, drawn before the box, so the box covers its

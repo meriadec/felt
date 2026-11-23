@@ -24,6 +24,7 @@ const Canvas = @import("canvas.zig").Canvas;
 const Ctx = @import("draw.zig").Ctx;
 const Editor = @import("editor.zig").Editor;
 const ArrowStyle = @import("annotation.zig").ArrowStyle;
+const TextStyle = @import("annotation.zig").TextStyle;
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -36,6 +37,7 @@ pub const State = struct {
     color_idx: u8,
     size_idx: u8,
     arrow_style: ArrowStyle = .straight,
+    text_style: TextStyle = .plain,
     help_visible: bool,
     /// The dock and the top bar (Space hides both).
     dock_visible: bool = true,
@@ -52,6 +54,7 @@ pub const State = struct {
             .color_idx = ed.color_idx,
             .size_idx = ed.size_idx,
             .arrow_style = ed.arrow_style,
+            .text_style = ed.text_style,
             .help_visible = ed.help_visible,
             .dock_visible = ed.dock_visible,
             .toast = ed.toast(),
@@ -74,7 +77,7 @@ pub const State = struct {
                 h.update(std.mem.asBytes(&s.hover.dockKey()));
             },
             .style_switch => {
-                h.update(&.{ @intFromEnum(s.tool), @intFromEnum(s.arrow_style) });
+                h.update(&.{ @intFromEnum(s.tool), @intFromEnum(s.arrow_style), @intFromEnum(s.text_style) });
                 h.update(std.mem.asBytes(&s.hover.dockKey()));
             },
             .top_bar => {
@@ -109,6 +112,7 @@ pub const Hover = struct {
             .size => 128,
             .help => 129,
             .arrow_style => |st| 130 + @as(u32, @intFromEnum(st)),
+            .text_style => |st| 132 + @as(u32, @intFromEnum(st)),
         } else 0;
     }
 
@@ -134,6 +138,7 @@ const Op = union(enum) {
     glyph: struct { c: Vec2, s: []const u8, px: u16, color: Color },
     icon: struct { tool: keymap.Tool, c: Vec2, size: f32, color: Color },
     arrow_style: struct { style: ArrowStyle, c: Vec2, size: f32, color: Color },
+    text_style: struct { style: TextStyle, c: Vec2, size: f32, color: Color },
     undo: struct { redo: bool, c: Vec2, size: f32, color: Color },
     canvas_bg: struct { c: Vec2, size: f32, color: Color },
 };
@@ -232,14 +237,24 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     // Arrow style switch: the active style filled like the active tool.
     if (d.switch_panel) |sp| {
         l.panel(.style_switch, sp, 10 * s);
-        for (d.styles, dock.arrow_styles) |b, as| {
-            const active = as == st.arrow_style;
-            const hovered = if (st.hover.dock) |hd| hd == .arrow_style and hd.arrow_style == as else false;
+        for (d.styles, 0..) |b, i| {
+            const text_tool = st.tool == .text;
+            const active = if (text_tool) dock.text_styles[i] == st.text_style else dock.arrow_styles[i] == st.arrow_style;
+            const hovered = if (st.hover.dock) |hd| switch (hd) {
+                .arrow_style => |h| !text_tool and h == dock.arrow_styles[i],
+                .text_style => |h| text_tool and h == dock.text_styles[i],
+                else => false,
+            } else false;
             if (active or hovered) {
                 const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
                 l.push(.{ .rrect = .{ .b = hb, .radius = 7 * s, .color = if (active) accent else hover_bg } });
             }
-            l.push(.{ .arrow_style = .{ .style = as, .c = center(b), .size = 18 * s, .color = if (active) nord.n0 else nord.n4 } });
+            const col = if (active) nord.n0 else nord.n4;
+            if (text_tool) {
+                l.push(.{ .text_style = .{ .style = dock.text_styles[i], .c = center(b), .size = 18 * s, .color = col } });
+            } else {
+                l.push(.{ .arrow_style = .{ .style = dock.arrow_styles[i], .c = center(b), .size = 18 * s, .color = col } });
+            }
         }
     }
 }
@@ -533,6 +548,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .disc_ring => |d| raster.fill(cv, clip, sdf.ring(sdf.Disc{ .c = d.c, .r = d.r }, d.w), .{ .solid = d.color }, .{}),
         .icon => |i| icons.draw(cv, clip, i.tool, i.c, i.size, i.color),
         .arrow_style => |i| icons.drawArrowStyle(cv, clip, i.style, i.c, i.size, i.color),
+        .text_style => |i| icons.drawTextStyle(cv, clip, i.style, i.c, i.size, i.color),
         .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
         .canvas_bg => |i| icons.drawCanvasBg(cv, clip, i.c, i.size, i.color),
         .text => |t| {

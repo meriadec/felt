@@ -154,6 +154,17 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
             for (core.dock.arrow_styles, d.styles) |s, b| if (s == st) return mid(b);
             unreachable;
         },
+        .text_style => |want| {
+            if (d.switch_panel == null or app.editor.tool != .text) {
+                std.log.err("script: ui text-style: the switch shows only with the text tool", .{});
+                return error.UiItemHidden;
+            }
+            const cur = app.editor.text_style;
+            if (why == .click and want != null and want.? == cur) return null;
+            const st = want orelse (if (cur == .plain) core.annotation.TextStyle.boxed else .plain);
+            for (core.dock.text_styles, d.styles) |s, b| if (s == st) return mid(b);
+            unreachable;
+        },
     };
 }
 

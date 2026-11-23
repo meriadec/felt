@@ -22,7 +22,7 @@ pub const Again = struct { action: Action, label: []const u8 };
 
 pub const tools = [_]ToolInfo{
     .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Drag from the tail to the head. Style: stairs (an elbow with round corners, the start style) or straight; `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too).", .again = .{ .action = .arrow_style, .label = "arrow style: straight / stairs" } },
-    .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases." },
+    .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session.", .again = .{ .action = .text_style, .label = "text style: plain / boxed" } },
     .{ .tool = .rect, .key = 'r', .name = "rect", .mouse = "Drag from corner to corner." },
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },
     .{ .tool = .callout, .key = 'c', .name = "callout", .mouse = "The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer.", .again = .{ .action = .arrow_style, .label = "pointer style: straight / stairs" } },
@@ -54,6 +54,8 @@ pub const Action = union(enum) {
     tool: Tool,
     /// Switch the style of new arrows and callout pointers (straight, stairs).
     arrow_style,
+    /// Switch the style of new texts (plain, boxed).
+    text_style,
     next_tool,
     prev_tool,
     color: u8,
@@ -145,7 +147,7 @@ pub const extra = [_]Extra{
     .{ .input = "Middle drag", .effect = "Pan the view", .short = "pan" },
     .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
-    .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers)", .short = "pick" },
+    .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers); with the text tool, the text style (plain or boxed)", .short = "pick" },
     .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions)", .short = "undo, redo, canvas, pad" },
     .{ .input = "Esc or q while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
     .{ .input = "Esc or q with unsaved changes", .effect = "Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, again quits" },

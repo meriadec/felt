@@ -110,6 +110,8 @@ pub const Editor = struct {
     /// Style of new arrows and callout pointers (one setting for both). It
     /// stays for the session, across tool switches.
     arrow_style: ann.ArrowStyle = default_arrow_style,
+    /// Style of new texts (plain or boxed). Stays for the session.
+    text_style: ann.TextStyle = .plain,
     /// User settings (settings.zig): not document state, not undo steps.
     settings: Settings = .{},
     /// The shortcut overlay (`?`/F1).
@@ -480,7 +482,7 @@ pub const Editor = struct {
             .idle, .moving => null,
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| switch (t.kind) {
-                .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c } },
+                .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .style = self.text_style } },
                 .callout => self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             },
         };
@@ -593,6 +595,7 @@ pub const Editor = struct {
                 if (Dock.of(self.view.screen_w, self.view.screen_h, self.tool).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
                     .arrow_style => |st| self.setArrowStyle(st),
+                    .text_style => |st| self.setTextStyle(st),
                     .color => |i| self.color_idx = i,
                     .size => self.size_idx = @intCast((@as(usize, self.size_idx) + 1) % style.sizes.len),
                     .help => self.help_visible = true,
@@ -779,6 +782,12 @@ pub const Editor = struct {
         self.setToast("{s}: {s}", .{ if (self.tool == .callout) "Pointer" else "Arrow", @tagName(s) });
     }
 
+    /// Set the style of new texts (a text in progress follows) and say it.
+    fn setTextStyle(self: *Editor, s: ann.TextStyle) void {
+        self.text_style = s;
+        self.setToast("Text: {s}", .{@tagName(s)});
+    }
+
     /// Set the canvas background and say it. A setting, not an undo step:
     /// it changes no annotation and no export size, only the color around
     /// the image, so undo keeps walking the drawing.
@@ -809,6 +818,7 @@ pub const Editor = struct {
                 return self.run(ag.action, was_armed);
             } else try self.setTool(t),
             .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
+            .text_style => self.setTextStyle(if (self.text_style == .plain) .boxed else .plain),
             .canvas_bg => {
                 self.setCanvasBg(self.settings.canvas_bg.other());
                 return .{ .redraw = true, .command = .save_settings };
@@ -1522,4 +1532,25 @@ test "padding slider: click and drag snap to notches, wheel steps, release saves
     _ = try t.ed.handle(.{ .wheel = .{ .delta = -3, .x = m.x, .y = m.y } });
     try std.testing.expectEqual(@as(u16, 0), t.ed.settings.padding);
     try std.testing.expectEqual(style.default_size, t.ed.size_idx); // the wheel did not change the size
+}
+
+test "text style: plain at start, `t` again and the switch change it for new texts" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.key("t");
+    try std.testing.expectEqual(ann.TextStyle.plain, t.ed.text_style);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 20 } });
+    _ = try t.key("a");
+    try std.testing.expectEqual(ann.TextStyle.plain, t.ed.preview().?.text.style);
+    _ = try t.key("enter");
+    try std.testing.expectEqual(ann.TextStyle.plain, t.doc.items.items[0].text.style);
+    _ = try t.key("t"); // the text tool is active: a second press
+    try std.testing.expectEqual(ann.TextStyle.boxed, t.ed.text_style);
+    try std.testing.expectEqualStrings("Text: boxed", t.ed.toast().?);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 60 } });
+    _ = try t.key("b");
+    _ = try t.key("enter");
+    try std.testing.expectEqual(ann.TextStyle.boxed, t.doc.items.items[1].text.style);
+    try std.testing.expectEqual(ann.TextStyle.plain, t.doc.items.items[0].text.style);
 }

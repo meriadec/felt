@@ -25,7 +25,7 @@ fits on a screenshot key.
 | --- | --- |
 | `c` | Callout: a text box with a pointer (stairs or straight) |
 | `a` | Arrow |
-| `t` | Text label |
+| `t` | Text: plain letters, or on a box (`t` again) |
 | `r` | Box |
 | `n` | Numbered bubble |
 | `p` | Pixelate (hide secrets) |

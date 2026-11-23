@@ -1,7 +1,8 @@
-# Text labels: red default, a white two-line text, a black one, the smallest
+# Text labels, plain style (the start style): red default, a white two-line text, a black one, the smallest
 # size on the dark header, the biggest in green, one in progress (caret).
 size 900 500
-key t
+ui tool text
+ui text-style plain
 click 120 300
 type Rotate this key now!
 key enter

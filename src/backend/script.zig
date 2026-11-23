@@ -19,6 +19,7 @@ pub const UiTarget = union(enum) {
     /// A slot of the arrow style switch. With a name, it clicks only if the
     /// style is not that one yet (null: the style not in use, a toggle).
     arrow_style: ?core.annotation.ArrowStyle,
+    text_style: ?core.annotation.TextStyle,
     /// The canvas background switch of the top bar. With a name, it clicks
     /// only if the canvas is not that one yet (null: always, a toggle).
     canvas_bg: ?core.settings.CanvasBg,
@@ -210,6 +211,10 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
         const name = it.next() orelse return .{ .arrow_style = null };
         return .{ .arrow_style = std.meta.stringToEnum(core.annotation.ArrowStyle, name) orelse return fail(err, "ui arrow-style: straight or stairs (none: the other one)") };
     }
+    if (eq(u8, what, "text-style")) {
+        const name = it.next() orelse return .{ .text_style = null };
+        return .{ .text_style = std.meta.stringToEnum(core.annotation.TextStyle, name) orelse return fail(err, "ui text-style: plain or boxed (none: the other one)") };
+    }
     if (eq(u8, what, "canvas-bg")) {
         const name = it.next() orelse return .{ .canvas_bg = null };
         return .{ .canvas_bg = std.meta.stringToEnum(core.settings.CanvasBg, name) orelse return fail(err, "ui canvas-bg: light or dark (none: the other one)") };
@@ -226,7 +231,7 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     return fail(err, ui_help);
 }
 
-const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark], padding PX or arrow-style [straight|stairs] (alias pointer-style)";
+const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark], padding PX, arrow-style [straight|stairs] (alias pointer-style) or text-style [plain|boxed]";
 
 test "parse script" {
     const gpa = std.testing.allocator;

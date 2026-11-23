@@ -461,8 +461,19 @@ fn drawLabelBody(cv: *Canvas, clip: Rect, shape: anytype, c: Color, m: LabelMetr
 
 fn drawText(ctx: Ctx, cv: *Canvas, clip: Rect, t: ann_mod.Text, xf: Xform, caret: bool) !void {
     const g = textGeom(ctx, t, xf);
-    drawLabelBody(cv, clip, g.box, t.color, g.m);
-    try blendText(ctx, cv, clip, t.text, g.m.px, g.text_pos, t.color.contrast(), caret);
+    switch (t.style) {
+        .boxed => {
+            drawLabelBody(cv, clip, g.box, t.color, g.m);
+            try blendText(ctx, cv, clip, t.text, g.m.px, g.text_pos, t.color.contrast(), caret);
+        },
+        .plain => {
+            // The shadow of the other shapes (its offset), as a harder mask:
+            // letters stay readable on any background, white on white too.
+            const sh = Shadow.of(g.m.pxf * 0.2);
+            try blendText(ctx, cv, clip, t.text, g.m.px, g.text_pos.add(sh.offset), .{ .r = 0, .g = 0, .b = 0, .a = 150 }, false);
+            try blendText(ctx, cv, clip, t.text, g.m.px, g.text_pos, t.color, caret);
+        },
+    }
 }
 
 // ---- numbered bubble ---------------------------------------------------
