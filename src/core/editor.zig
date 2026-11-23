@@ -126,6 +126,9 @@ pub const Editor = struct {
     saved_revision: u64 = 0,
     /// Canvas background of the last save (or of the start).
     saved_bg: settings.CanvasBg = .light,
+    /// A press on the padding slider is held: moves set the step, the
+    /// release asks the App to save the settings.
+    slider_drag: bool = false,
     /// Canvas padding of the last save (or of the start).
     saved_padding: u16 = 0,
     toast_buf: [256]u8 = undefined,
@@ -531,6 +534,10 @@ pub const Editor = struct {
                     self.pan(dx, dy);
                     return .{ .redraw = true };
                 }
+                if (self.slider_drag) {
+                    self.sliderTo(m.x);
+                    return .{ .redraw = true };
+                }
                 if (self.mode == .drag) {
                     const p = Vec2.init(m.x, m.y);
                     self.mode.drag.cur_screen = p;
@@ -544,6 +551,10 @@ pub const Editor = struct {
                 return .{ .redraw = self.chromeHover().key() != hover_before };
             },
             .wheel => |wh| {
+                if (self.pointerOnSlider(wh.x, wh.y)) {
+                    const changed = self.setPadding(settings.stepPadding(self.settings.padding, wh.delta));
+                    return .{ .redraw = true, .command = if (changed) .save_settings else null };
+                }
                 if (wh.mods.ctrl) self.zoom(wh.delta, .{ .x = wh.x, .y = wh.y }) else self.changeSize(wh.delta);
                 return .{ .redraw = true };
             },
@@ -552,6 +563,17 @@ pub const Editor = struct {
                 return .{ .redraw = true };
             },
         }
+    }
+
+    /// The slider's step nearest to screen x.
+    fn sliderTo(self: *Editor, x: f32) void {
+        const bar = TopBar.of(self.view.screen_w, self.view.screen_h);
+        _ = self.setPadding(settings.padding_steps[bar.stepAt(x)]);
+    }
+
+    fn pointerOnSlider(self: *const Editor, x: f32, y: f32) bool {
+        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving) return false;
+        return TopBar.of(self.view.screen_w, self.view.screen_h).hit(.{ .x = x, .y = y }) == .padding;
     }
 
     fn changeSize(self: *Editor, delta: i32) void {
@@ -581,6 +603,10 @@ pub const Editor = struct {
                     .canvas_bg => {
                         self.setCanvasBg(self.settings.canvas_bg.other());
                         return .{ .redraw = true, .command = .save_settings };
+                    },
+                    .padding => {
+                        self.slider_drag = true;
+                        self.sliderTo(x);
                     },
                 };
             }
@@ -619,6 +645,11 @@ pub const Editor = struct {
     }
 
     fn onUp(self: *Editor, x: f32, y: f32, button: input.Button) !Effect {
+        if (button == .left and self.slider_drag) {
+            self.slider_drag = false;
+            self.sliderTo(x);
+            return .{ .redraw = true, .command = .save_settings };
+        }
         if (button == .left and self.mode == .moving) {
             self.moveTo(self.view.toImage(.{ .x = x, .y = y }));
             try self.finishMove();
@@ -760,13 +791,13 @@ pub const Editor = struct {
     /// A setting, not an undo step, like the canvas background: it changes
     /// no annotation, only the margin of the canvas and the export. The
     /// canvas changes, so the view refits.
-    fn setPadding(self: *Editor, px: u16) Effect {
-        if (px == self.settings.padding) return .{};
+    fn setPadding(self: *Editor, px: u16) bool {
+        if (px == self.settings.padding) return false;
         self.settings.padding = px;
         self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
         self.fit();
         self.setToast("Padding: {d} px", .{px});
-        return .{ .redraw = true, .command = .save_settings };
+        return true;
     }
 
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {
@@ -781,6 +812,10 @@ pub const Editor = struct {
             .canvas_bg => {
                 self.setCanvasBg(self.settings.canvas_bg.other());
                 return .{ .redraw = true, .command = .save_settings };
+            },
+            .padding_up, .padding_down => {
+                const changed = self.setPadding(settings.stepPadding(self.settings.padding, if (action == .padding_up) 1 else -1));
+                return .{ .redraw = true, .command = if (changed) .save_settings else null };
             },
             .next_tool => try self.setTool(keymap.cycleTool(self.tool, 1)),
             .prev_tool => try self.setTool(keymap.cycleTool(self.tool, -1)),
@@ -1074,6 +1109,7 @@ test "startup: the callout tool with a stairs pointer; a drag with no key draws 
     defer ed.deinit();
     try std.testing.expectEqual(Tool.callout, ed.tool);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, ed.arrow_style);
+    ed.dock_visible = false; // the top bar would cover a 200 px wide screen
     _ = try ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
     _ = try ed.handle(.{ .mouse_move = .{ .x = 120, .y = 70 } });
     _ = try ed.handle(.{ .mouse_up = .{ .x = 120, .y = 70 } });
@@ -1421,4 +1457,69 @@ test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back t
     try std.testing.expect(!a.elbow.pinned);
     try std.testing.expect(a.elbow.at > (75.0 - 10.0) / 180.0);
     try std.testing.expectEqualStrings("Bend: auto", t.ed.toast().?);
+}
+
+test "padding: keys step it, the canvas and the view follow, it is no undo step, it is unsaved" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    try std.testing.expectEqual(@as(i32, 200), t.ed.canvas.width());
+    const eff = try t.key(".");
+    try std.testing.expectEqual(Command.save_settings, eff.command.?);
+    try std.testing.expectEqual(@as(u16, 64), t.ed.settings.padding);
+    try std.testing.expectEqual(@as(i32, 200 + 128), t.ed.canvas.width());
+    try std.testing.expectEqual(@as(i32, 100 + 128), t.ed.canvas.height());
+    try std.testing.expect(t.ed.view.xf.scale < 1); // refit
+    try std.testing.expect(t.ed.dirty());
+    try std.testing.expect(!t.ed.canUndo());
+    _ = try t.key(",");
+    try std.testing.expectEqual(@as(u16, 0), t.ed.settings.padding);
+    try std.testing.expect(!t.ed.dirty());
+    try std.testing.expectEqual(@as(?Command, null), (try t.key(",")).command); // at the first step
+    for (0..9) |_| _ = try t.key(".");
+    try std.testing.expectEqual(@as(u16, 192), t.ed.settings.padding);
+    t.ed.markSaved();
+    try std.testing.expect(!t.ed.dirty());
+}
+
+test "padding: a shape in the padding is added, shows, and keeps the canvas; undo works" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.startWith(.{ .padding = 128 });
+    try std.testing.expectEqual(@as(i32, 200 + 256), t.ed.canvas.width());
+    const s = t.ed.view.xf.scale;
+    const o = t.ed.view.xf.offset;
+    // An arrow from the image into the left padding (image x -100).
+    try t.drag(o.x + 100 * s, o.y + 50 * s, o.x - 100 * s, o.y + 50 * s);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expectEqual(@as(i32, 200 + 256), t.ed.canvas.width());
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+}
+
+test "padding slider: click and drag snap to notches, wheel steps, release saves" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.resize(1920, 1080);
+    t.ed.dock_visible = true;
+    const b = TopBar.of(1920, 1080);
+    const y = b.trackY();
+    var eff = try t.ed.handle(.{ .mouse_down = .{ .x = b.notchX(2) + 3, .y = y } });
+    try std.testing.expectEqual(@as(?Command, null), eff.command);
+    try std.testing.expectEqual(@as(u16, 96), t.ed.settings.padding);
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = b.notchX(4), .y = y + 200 } }); // a drag follows x only
+    try std.testing.expectEqual(@as(u16, 192), t.ed.settings.padding);
+    eff = try t.ed.handle(.{ .mouse_up = .{ .x = b.notchX(1), .y = y } });
+    try std.testing.expectEqual(Command.save_settings, eff.command.?);
+    try std.testing.expectEqual(@as(u16, 64), t.ed.settings.padding);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len); // never draws
+    const m = b.slider().min.add(b.slider().max).scale(0.5);
+    eff = try t.ed.handle(.{ .wheel = .{ .delta = 1, .x = m.x, .y = m.y } });
+    try std.testing.expectEqual(@as(u16, 96), t.ed.settings.padding);
+    try std.testing.expectEqual(Command.save_settings, eff.command.?);
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = -3, .x = m.x, .y = m.y } });
+    try std.testing.expectEqual(@as(u16, 0), t.ed.settings.padding);
+    try std.testing.expectEqual(style.default_size, t.ed.size_idx); // the wheel did not change the size
 }

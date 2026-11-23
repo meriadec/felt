@@ -138,6 +138,11 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
         .undo => mid(bar.slots[0]),
         .redo => mid(bar.slots[1]),
         .canvas_bg => |want| if (why == .click and want != null and want.? == app.editor.settings.canvas_bg) null else mid(bar.slots[2]),
+        .padding => |px| {
+            const step = core.settings.paddingIndex(px);
+            if (why == .click and core.settings.padding_steps[step] == app.editor.settings.padding) return null;
+            return .{ .x = bar.notchX(step), .y = bar.trackY() };
+        },
         .arrow_style => |want| {
             if (d.switch_panel == null) {
                 std.log.err("script: ui arrow-style: the switch shows only with the arrow or the callout tool", .{});

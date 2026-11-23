@@ -1,6 +1,6 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
 //! colors, size, help button, the arrow style switch; geometry in dock.zig), the top bar (undo,
-//! redo, canvas background; geometry in topbar.zig), the help overlay with
+//! redo, canvas background, canvas padding slider; geometry in topbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
 //! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
@@ -17,6 +17,7 @@ const style = @import("style.zig");
 const icons = @import("icons.zig");
 const dock = @import("dock.zig");
 const topbar = @import("topbar.zig");
+const settings = @import("settings.zig");
 const Dock = dock.Dock;
 const TopBar = topbar.TopBar;
 const Canvas = @import("canvas.zig").Canvas;
@@ -41,6 +42,8 @@ pub const State = struct {
     toast: ?[]const u8,
     can_undo: bool = false,
     can_redo: bool = false,
+    /// Canvas padding (image px), for the top bar slider.
+    padding: u16 = 0,
     hover: Hover = .{},
 
     pub fn of(ed: *const Editor) State {
@@ -54,6 +57,7 @@ pub const State = struct {
             .toast = ed.toast(),
             .can_undo = ed.canUndo(),
             .can_redo = ed.canRedo(),
+            .padding = ed.settings.padding,
             .hover = ed.chromeHover(),
         };
     }
@@ -75,6 +79,7 @@ pub const State = struct {
             },
             .top_bar => {
                 h.update(&.{ @intFromBool(s.can_undo), @intFromBool(s.can_redo) });
+                h.update(std.mem.asBytes(&s.padding));
                 h.update(std.mem.asBytes(&s.hover.barKey()));
             },
             .help => {}, // a fixed text, laid out from the screen size (its rect)
@@ -248,9 +253,13 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         const enabled = switch (btn) {
             .undo => st.can_undo,
             .redo => st.can_redo,
-            .canvas_bg => true,
+            .canvas_bg, .padding => true,
         };
         const hovered = st.hover.bar == btn;
+        if (btn == .padding) {
+            layoutSlider(l, st, b, hovered);
+            continue;
+        }
         if (enabled and hovered) {
             const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
             l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
@@ -259,10 +268,44 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         switch (btn) {
             .undo, .redo => l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } }),
             .canvas_bg => l.push(.{ .canvas_bg = .{ .c = center(r), .size = 20 * s, .color = ink } }),
+            .padding => unreachable,
         }
     }
     const cy = center(b.panel).y;
     l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.sep - 0.5 * s, .y = cy - 12 * s }, .max = .{ .x = b.sep + 0.5 * s, .y = cy + 12 * s } }, .radius = 0, .color = nord.n3 } });
+}
+
+/// Slider labels, one per step ("pad 64"), static: an op borrows its text.
+const padLabels = blk: {
+    var a: [settings.padding_steps.len][]const u8 = undefined;
+    for (settings.padding_steps, 0..) |p, i| a[i] = std.fmt.comptimePrint("pad {d}", .{p});
+    break :blk a;
+};
+
+/// The padding slider: a label ("pad 64"), a flat track filled up to the
+/// knob, one notch per step, the knob on the current step.
+fn layoutSlider(l: *Layout, st: State, b: *const TopBar, hovered: bool) void {
+    const s = b.s;
+    const r = b.slider();
+    if (hovered) {
+        const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
+        l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
+    }
+    const label = padLabels[settings.paddingIndex(st.padding)];
+    l.push(.{ .text = .{ .pos = .{ .x = @round(b.notchX(0) - 4 * s), .y = @round(r.min.y + 3 * s) }, .s = label, .px = px(12 * s), .color = if (hovered) nord.n6 else nord.n4 } });
+    const i = settings.paddingIndex(st.padding);
+    const ty = b.trackY();
+    const x0 = b.notchX(0);
+    const x1 = b.notchX(settings.padding_steps.len - 1);
+    const kx = b.notchX(i);
+    const th = 1.5 * s;
+    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = x0, .y = ty - th }, .max = .{ .x = x1, .y = ty + th } }, .radius = th, .color = nord.n3 } });
+    if (i > 0) l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = x0, .y = ty - th }, .max = .{ .x = kx, .y = ty + th } }, .radius = th, .color = accent } });
+    for (0..settings.padding_steps.len) |k| {
+        if (k == i) continue;
+        l.push(.{ .disc = .{ .c = .{ .x = b.notchX(k), .y = ty }, .r = 2.5 * s, .color = if (k < i) accent else nord.n3 } });
+    }
+    l.push(.{ .disc = .{ .c = .{ .x = kx, .y = ty }, .r = 6.5 * s, .color = if (hovered) nord.n6 else nord.n5 } });
 }
 
 // ---- help overlay ------------------------------------------------------

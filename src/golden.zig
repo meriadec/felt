@@ -221,6 +221,7 @@ test "export is at original resolution with annotations mapped from screen" {
     image.fill(core.color.Color.rgb(0x808080));
     const app = try App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none });
     defer app.destroy();
+    app.editor.dock_visible = false; // the top bar would cover a 200 px wide screen
     try std.testing.expectEqual(@as(f32, 0.5), app.editor.view.xf.scale);
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'r' } } });
     _ = try app.handle(.{ .mouse_down = .{ .x = 20, .y = 20 } });
@@ -246,6 +247,7 @@ test "crop exports the kept part at original resolution; undo restores" {
     image.fill(core.color.Color.rgb(0x808080));
     const app = try App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none });
     defer app.destroy();
+    app.editor.dock_visible = false; // the top bar would cover a 200 px wide screen
     const ev = struct {
         fn key(c: u21) core.input.Event {
             return .{ .key = .{ .key = .{ .char = c } } };

@@ -22,6 +22,9 @@ pub const UiTarget = union(enum) {
     /// The canvas background switch of the top bar. With a name, it clicks
     /// only if the canvas is not that one yet (null: always, a toggle).
     canvas_bg: ?core.settings.CanvasBg,
+    /// The padding slider of the top bar: click the notch of the step
+    /// nearest to this many px, unless that step is already set.
+    padding: u16,
 };
 
 pub const Step = union(enum) {
@@ -211,6 +214,11 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
         const name = it.next() orelse return .{ .canvas_bg = null };
         return .{ .canvas_bg = std.meta.stringToEnum(core.settings.CanvasBg, name) orelse return fail(err, "ui canvas-bg: light or dark (none: the other one)") };
     }
+    if (eq(u8, what, "padding")) {
+        const px = try num(err, it);
+        if (px < 0 or px > 65535) return fail(err, "ui padding: px, 0 to 65535 (the nearest step is used)");
+        return .{ .padding = @intFromFloat(px) };
+    }
     if (eq(u8, what, "size")) return .size;
     if (eq(u8, what, "help")) return .help;
     if (eq(u8, what, "undo")) return .undo;
@@ -218,7 +226,7 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     return fail(err, ui_help);
 }
 
-const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark] or arrow-style [straight|stairs] (alias pointer-style)";
+const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark], padding PX or arrow-style [straight|stairs] (alias pointer-style)";
 
 test "parse script" {
     const gpa = std.testing.allocator;
@@ -274,4 +282,14 @@ test "parse capture script" {
     try std.testing.expectEqual(core.geom.Rect.fromSize(10, 20, 300, 200), s.windows.items[0]);
     try std.testing.expectEqual(@as(u32, 1500), s.delay_ms);
     try std.testing.expectError(error.BadScript, parse(gpa, "window 1 2 3", &err));
+}
+
+test "parse ui padding" {
+    const gpa = std.testing.allocator;
+    var err: ParseError = undefined;
+    var s = try parse(gpa, "ui padding 96\nmove ui padding 0", &err);
+    defer s.deinit(gpa);
+    try std.testing.expectEqual(UiTarget{ .padding = 0 }, s.events.pop().?.hover);
+    try std.testing.expectEqual(UiTarget{ .padding = 96 }, s.events.pop().?.ui);
+    try std.testing.expectError(error.BadScript, parse(gpa, "ui padding wide", &err));
 }

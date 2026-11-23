@@ -1,0 +1,10 @@
+# Canvas padding with a crop: the padding goes around the cropped rectangle,
+# a number sits in it; a step change refits.
+size 900 500
+ui padding 64
+ui tool crop
+drag 300 150 650 380
+ui tool number
+click 150 250
+ui padding 192
+ui padding 96

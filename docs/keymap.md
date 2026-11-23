@@ -44,6 +44,8 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `F1` | help |
 | `Space` | hide / show the panels |
 | `b` | canvas: light / dark grey |
+| `.` | canvas padding: more |
+| `,` | canvas padding: less |
 | `=` | zoom in |
 | `+` | zoom in |
 | `-` | zoom out (room to draw around) |
@@ -63,7 +65,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Drawing past the image | The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image |
 | Right click | Cancel the shape or text in progress |
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers) |
-| Click on the top bar | Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`) |
+| Click on the top bar | Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions) |
 | Esc or q while drawing | Cancel the shape in progress |
 | Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |
 | Esc, q or a click with help open | Close the help |

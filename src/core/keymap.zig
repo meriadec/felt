@@ -73,6 +73,9 @@ pub const Action = union(enum) {
     pan: [2]i8,
     /// Switch the canvas background (outside the image): light / dark grey.
     canvas_bg,
+    /// Canvas padding one step bigger / smaller (settings.padding_steps).
+    padding_up,
+    padding_down,
 };
 
 pub const Chord = struct {
@@ -113,6 +116,8 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = ch(' ') }, .action = .toggle_dock, .label = "hide / show the panels" },
         .{ .chord = .{ .key = ch('b') }, .action = .canvas_bg, .label = "canvas: light / dark grey" },
+        .{ .chord = .{ .key = ch('.') }, .action = .padding_up, .label = "canvas padding: more" },
+        .{ .chord = .{ .key = ch(',') }, .action = .padding_down, .label = "canvas padding: less" },
         .{ .chord = .{ .key = ch('=') }, .action = .zoom_in, .label = "zoom in" },
         .{ .chord = .{ .key = ch('+') }, .action = .zoom_in, .label = "zoom in" },
         .{ .chord = .{ .key = ch('-') }, .action = .zoom_out, .label = "zoom out (room to draw around)" },
@@ -141,7 +146,7 @@ pub const extra = [_]Extra{
     .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers)", .short = "pick" },
-    .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`)", .short = "undo, redo, canvas" },
+    .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions)", .short = "undo, redo, canvas, pad" },
     .{ .input = "Esc or q while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
     .{ .input = "Esc or q with unsaved changes", .effect = "Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, again quits" },
     .{ .input = "Esc, q or a click with help open", .effect = "Close the help", .short = "close help" },
