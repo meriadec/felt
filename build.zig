@@ -91,6 +91,13 @@ pub fn build(b: *std.Build) void {
     smoke.has_side_effects = true;
     b.step("smoke-x11", "Open the window on $DISPLAY, draw with xdotool, save, quit, check (needs xdotool, ImageMagick)").dependOn(&smoke.step);
 
+    // smoke-capture: drive `felt --capture` on $DISPLAY with xdotool.
+    const smoke_cap = b.addSystemCommand(&.{"scripts/x11-capture-smoke.sh"});
+    smoke_cap.setCwd(b.path("."));
+    smoke_cap.addArtifactArg(exe);
+    smoke_cap.has_side_effects = true;
+    b.step("smoke-capture", "Run felt --capture on $DISPLAY with xdotool: drag, Esc, delay (needs xdotool, ImageMagick)").dependOn(&smoke_cap.step);
+
     // docs: regenerate docs/keymap.md from src/core/keymap.zig.
     const km = b.addRunArtifact(exe);
     km.addArg("--keymap-md");
