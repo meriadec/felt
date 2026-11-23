@@ -24,7 +24,7 @@ pub const Arrow = struct { tail: Vec2, head: Vec2, width: f32, color: Color, sty
 /// Rectangle outline.
 pub const Box = struct { a: Vec2, b: Vec2, width: f32, color: Color };
 
-/// How free text looks: plain letters in the annotation color with a soft
+/// How free text looks: plain letters in the annotation color, no
 /// shadow (the start style), or on a filled rounded box like a callout.
 pub const TextStyle = enum { plain, boxed };
 
