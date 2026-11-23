@@ -22,9 +22,9 @@ pub fn main() !u8 {
     var diag: cli.Diag = .{};
     const opts = cli.parse(args[1..], &diag) catch {
         if (diag.arg) |a| {
-            std.debug.print("annotate: {s}: {s}\nTry: annotate --help\n", .{ diag.msg, a });
+            std.debug.print("felt: {s}: {s}\nTry: felt --help\n", .{ diag.msg, a });
         } else {
-            std.debug.print("annotate: {s}\nTry: annotate --help\n", .{diag.msg});
+            std.debug.print("felt: {s}\nTry: felt --help\n", .{diag.msg});
         }
         return 2;
     };
@@ -73,14 +73,14 @@ pub fn main() !u8 {
 
 fn fail(err: anyerror, image: []const u8) u8 {
     switch (err) {
-        error.DecodeFailed => std.debug.print("annotate: cannot decode {s} (PNG, JPEG or BMP expected)\n", .{image}),
-        error.FileNotFound => std.debug.print("annotate: cannot open {s}: file not found\n", .{image}),
-        error.IsDir => std.debug.print("annotate: {s} is a directory\n", .{image}),
+        error.DecodeFailed => std.debug.print("felt: cannot decode {s} (PNG, JPEG or BMP expected)\n", .{image}),
+        error.FileNotFound => std.debug.print("felt: cannot open {s}: file not found\n", .{image}),
+        error.IsDir => std.debug.print("felt: {s} is a directory\n", .{image}),
         error.WriteReported => {}, // already printed with the path
         error.BadScript => {}, // already printed with file:line
-        error.NoDisplay => std.debug.print("annotate: cannot open X display (DISPLAY not set?). Without a display use --headless.\n", .{}),
-        error.UnsupportedVisual => std.debug.print("annotate: X visual is not 24/32-bit TrueColor RGB\n", .{}),
-        else => std.debug.print("annotate: {s}\n", .{@errorName(err)}),
+        error.NoDisplay => std.debug.print("felt: cannot open X display (DISPLAY not set?). Without a display use --headless.\n", .{}),
+        error.UnsupportedVisual => std.debug.print("felt: X visual is not 24/32-bit TrueColor RGB\n", .{}),
+        else => std.debug.print("felt: {s}\n", .{@errorName(err)}),
     }
     return 1;
 }

@@ -125,7 +125,7 @@ pub fn loadScript(gpa: std.mem.Allocator, path: []const u8) !script_mod.Script {
 
 fn save(gpa: std.mem.Allocator, cv: *const Canvas, path: []const u8) !void {
     core.image_io.savePng(gpa, cv, path) catch |err| {
-        std.debug.print("annotate: cannot write {s}: {s} (does the directory exist?)\n", .{ path, @errorName(err) });
+        std.debug.print("felt: cannot write {s}: {s} (does the directory exist?)\n", .{ path, @errorName(err) });
         return error.WriteReported;
     };
 }
@@ -146,7 +146,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     defer script.deinit(gpa);
     const image_path = script.image orelse opts.image_path;
     const image = core.image_io.load(gpa, image_path) catch |err| {
-        std.debug.print("annotate: cannot load {s}: {s}\n", .{ image_path, @errorName(err) });
+        std.debug.print("felt: cannot load {s}: {s}\n", .{ image_path, @errorName(err) });
         return error.WriteReported;
     };
     const app = try replay(gpa, image, &script, opts.size, appConfig(opts));
@@ -198,10 +198,10 @@ test "headless never reads or writes the config file" {
     defer gpa.free(dir_z);
     // XDG_CONFIG_HOME and HOME both point at the tmp dir, each with a dark config.
     const cfg = "canvas_bg=dark\n";
-    try tmp.dir.makePath("annotate");
-    try tmp.dir.makePath(".config/annotate");
-    try tmp.dir.writeFile(.{ .sub_path = "annotate/config", .data = cfg });
-    try tmp.dir.writeFile(.{ .sub_path = ".config/annotate/config", .data = cfg });
+    try tmp.dir.makePath("felt");
+    try tmp.dir.makePath(".config/felt");
+    try tmp.dir.writeFile(.{ .sub_path = "felt/config", .data = cfg });
+    try tmp.dir.writeFile(.{ .sub_path = ".config/felt/config", .data = cfg });
     const xdg = try EnvSwap.set(gpa, "XDG_CONFIG_HOME", dir_z);
     defer xdg.restore(gpa);
     const home = try EnvSwap.set(gpa, "HOME", dir_z);
@@ -220,7 +220,7 @@ test "headless never reads or writes the config file" {
     try std.testing.expectEqual(core.settings.CanvasBg.dark, app.editor.settings.canvas_bg);
     // Both files stay as they were, with no temp file next to them.
     var buf: [64]u8 = undefined;
-    for ([_][]const u8{ "annotate", ".config/annotate" }) |sub| {
+    for ([_][]const u8{ "felt", ".config/felt" }) |sub| {
         var d = try tmp.dir.openDir(sub, .{ .iterate = true });
         defer d.close();
         try std.testing.expectEqualStrings(cfg, try d.readFile("config", &buf));

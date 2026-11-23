@@ -1,4 +1,4 @@
-//! X11 backend: one full-screen window (WM_CLASS "annotate"), Xlib events
+//! X11 backend: one full-screen window (WM_CLASS "felt"), Xlib events
 //! translated to core input events, frames blitted with MIT-SHM
 //! (XShmPutImage, damaged rectangles only). Falls back to XPutImage without SHM.
 //! The image decodes on a thread while the window comes up.
@@ -183,10 +183,10 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     defer _ = c.XDestroyWindow(dpy, win);
     _ = c.XSelectInput(dpy, win, c.KeyPressMask | c.ButtonPressMask | c.ButtonReleaseMask | c.PointerMotionMask | c.StructureNotifyMask | c.ExposureMask);
 
-    var class_hint = c.XClassHint{ .res_name = @constCast("annotate"), .res_class = @constCast("annotate") };
+    var class_hint = c.XClassHint{ .res_name = @constCast("felt"), .res_class = @constCast("felt") };
     _ = c.XSetClassHint(dpy, win, &class_hint);
     var title_buf: [512]u8 = undefined;
-    const title = std.fmt.bufPrintZ(&title_buf, "annotate: {s}", .{std.fs.path.basename(opts.image_path)}) catch "annotate";
+    const title = std.fmt.bufPrintZ(&title_buf, "felt: {s}", .{std.fs.path.basename(opts.image_path)}) catch "felt";
     _ = c.XStoreName(dpy, win, title.ptr);
     var wm_hints = std.mem.zeroes(c.XWMHints);
     wm_hints.flags = c.InputHint;

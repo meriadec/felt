@@ -162,7 +162,7 @@ test "b switches the canvas, writes the config file, and is no undo step" {
     defer tmp.cleanup();
     const dir = try tmp.dir.realpathAlloc(gpa, ".");
     defer gpa.free(dir);
-    const p = try std.fs.path.join(gpa, &.{ dir, "annotate", "config" });
+    const p = try std.fs.path.join(gpa, &.{ dir, "felt", "config" });
     defer gpa.free(p);
     const image = try Canvas.init(gpa, 40, 30);
     const app = try App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none, .settings = .{ .canvas_bg = .dark }, .settings_path = p });

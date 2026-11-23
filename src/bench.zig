@@ -1,4 +1,4 @@
-//! Benchmark (`annotate --bench`, `zig build bench`): times decode, startup
+//! Benchmark (`felt --bench`, `zig build bench`): times decode, startup
 //! render, per-frame render while dragging (arrows, a stairs callout) and
 //! typing, move drags (arrows, a callout box), auto-routing among stairs
 //! paths (drag, move, commits that re-route), undo rebuild, export, crop,
@@ -167,10 +167,10 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
 /// switch), in a temp dir: the bench never touches the user's config.
 fn benchConfig(gpa: std.mem.Allocator, w: *std.Io.Writer) !void {
     const base = std.posix.getenv("TMPDIR") orelse "/tmp";
-    const dir = try std.fmt.allocPrint(gpa, "{s}/annotate-bench-{d}", .{ base, std.os.linux.getpid() });
+    const dir = try std.fmt.allocPrint(gpa, "{s}/felt-bench-{d}", .{ base, std.os.linux.getpid() });
     defer gpa.free(dir);
     defer std.fs.cwd().deleteTree(dir) catch {};
-    const p = try std.fs.path.join(gpa, &.{ dir, "annotate", "config" });
+    const p = try std.fs.path.join(gpa, &.{ dir, "felt", "config" });
     defer gpa.free(p);
     var rd = Stats{};
     defer rd.deinit(gpa);

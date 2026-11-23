@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     // run: zig build run -- <args>
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
-    b.step("run", "Run annotate (pass args after --)").dependOn(&run.step);
+    b.step("run", "Run felt (pass args after --)").dependOn(&run.step);
 
     // test: unit tests of the core and of the app, plus golden replays.
     const test_step = b.step("test", "Run unit tests and golden replays (-Dupdate-goldens=true to accept new output)");
@@ -25,8 +25,8 @@ pub fn build(b: *std.Build) void {
         const t_run = b.addRunArtifact(t);
         t_run.setCwd(b.path("."));
         t_run.has_side_effects = true; // tests read tests/ and docs/ from disk
-        if (update_goldens) t_run.setEnvironmentVariable("ANNOTATE_UPDATE_GOLDENS", "1");
-        if (exact_goldens) t_run.setEnvironmentVariable("ANNOTATE_EXACT_GOLDENS", "1");
+        if (update_goldens) t_run.setEnvironmentVariable("FELT_UPDATE_GOLDENS", "1");
+        if (exact_goldens) t_run.setEnvironmentVariable("FELT_EXACT_GOLDENS", "1");
         test_step.dependOn(&t_run.step);
     }
 
@@ -131,5 +131,5 @@ fn addExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
     mod.addImport("core", coreModule(b, target, optimize));
     mod.linkSystemLibrary("X11", .{});
     mod.linkSystemLibrary("Xext", .{});
-    return b.addExecutable(.{ .name = "annotate", .root_module = mod });
+    return b.addExecutable(.{ .name = "felt", .root_module = mod });
 }

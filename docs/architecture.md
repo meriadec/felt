@@ -55,14 +55,14 @@ image files. Build: `coreModule` in build.zig.
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, the canvas background outside the image) |
 
-`src/` (the `annotate` executable module):
+`src/` (the `felt` executable module):
 
 | File | Role |
 |---|---|
 | `main.zig` | Entry point, dispatch by mode |
 | `cli.zig` | Argument parsing, `--help` text |
 | `app.zig` | One open image: font + document + editor + compositor; runs save/copy and writes the settings |
-| `config.zig` | Settings file `$XDG_CONFIG_HOME/annotate/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
+| `config.zig` | Settings file `$XDG_CONFIG_HOME/felt/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
 | `clipboard.zig` | Pipe a PNG to xclip |
 | `backend/x11.zig` | Xlib window, event translation, MIT-SHM present |
 | `backend/headless.zig` | Replay a script, write frame/export PNGs |

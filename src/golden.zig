@@ -22,12 +22,12 @@ const channel_tolerance = 8;
 const max_bad_fraction = 0.0005;
 
 fn updating() bool {
-    return std.process.hasEnvVarConstant("ANNOTATE_UPDATE_GOLDENS");
+    return std.process.hasEnvVarConstant("FELT_UPDATE_GOLDENS");
 }
 
 /// No tolerance: any changed pixel fails.
 fn exact() bool {
-    return std.process.hasEnvVarConstant("ANNOTATE_EXACT_GOLDENS");
+    return std.process.hasEnvVarConstant("FELT_EXACT_GOLDENS");
 }
 
 const Diff = struct { bad: usize, max_delta: u32 };

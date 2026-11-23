@@ -1,4 +1,4 @@
-# annotate
+# Felt
 
 Full-screen screenshot annotation tool for X11 (replaces ksnip in i3). Zig 0.15.2.
 A pure core (document, tools, editor state machine, software renderer) with

@@ -1,4 +1,4 @@
-# annotate
+# Felt
 
 Fast full-screen screenshot annotation for X11. Opens an image, you draw
 arrows, text labels, boxes, numbered bubbles, callouts and
@@ -12,15 +12,15 @@ Needs Zig 0.15.2 (pinned in `mise.toml`), X11 headers (`libx11-dev`,
 
 ```sh
 mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local install
-# -> ~/.local/bin/annotate
+# -> ~/.local/bin/felt
 ```
 
 ## Use
 
 ```sh
-annotate shot.png            # Ctrl+S overwrites shot.png
-annotate -e shot.png         # same (ksnip-compatible flag)
-annotate -o out.png shot.png # Ctrl+S writes out.png
+felt shot.png            # Ctrl+S overwrites shot.png
+felt -e shot.png         # same (ksnip-compatible flag)
+felt -o out.png shot.png # Ctrl+S writes out.png
 ```
 
 The image fits the screen (never upscaled). A small icon dock at the bottom
@@ -40,15 +40,15 @@ it (a setting, not an undo step). Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
 middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
 height (2x at 4K). Esc or q quits (q is a letter while you type); with unsaved changes, press it twice. Ctrl+C
-counts as saved, because xclip keeps the image in the clipboard after annotate
+counts as saved, because xclip keeps the image in the clipboard after felt
 exits.
 
 Full key map: [docs/keymap.md](docs/keymap.md).
 
 ### Settings
 
-annotate keeps the canvas background for the next sessions in
-`$XDG_CONFIG_HOME/annotate/config` (default `~/.config/annotate/config`):
+felt keeps the canvas background for the next sessions in
+`$XDG_CONFIG_HOME/felt/config` (default `~/.config/felt/config`):
 
 ```
 canvas_bg=dark
@@ -64,17 +64,17 @@ tests) never read or write the file.
 Replace the ksnip lines with:
 
 ```
-bindsym $mod+e exec "annotate -e $(/bin/ls -1td /home/mpillet/* | head -n 1)"
-for_window [class="annotate"] floating enable, fullscreen enable
+bindsym $mod+e exec "felt -e $(/bin/ls -1td /home/mpillet/* | head -n 1)"
+for_window [class="felt"] floating enable, fullscreen enable
 ```
 
 The first line opens the newest file in your home directory (`ls -1td` with a
 glob gives full paths, so the working directory of i3 does not matter).
-annotate asks for full screen itself; the `for_window` line keeps i3 from
-tiling it for a moment. To shoot and annotate in one key:
+felt asks for full screen itself; the `for_window` line keeps i3 from
+tiling it for a moment. To shoot and felt in one key:
 
 ```
-bindsym Print exec "maim -s /tmp/shot.png && annotate -o $HOME/shot-$(date +%s).png /tmp/shot.png"
+bindsym Print exec "maim -s /tmp/shot.png && felt -o $HOME/shot-$(date +%s).png /tmp/shot.png"
 ```
 
 ## Develop

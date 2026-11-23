@@ -1,5 +1,5 @@
 //! Clipboard: hand a PNG to `xclip -selection clipboard -t image/png`.
-//! xclip forks and keeps serving the clipboard after annotate exits.
+//! xclip forks and keeps serving the clipboard after felt exits.
 const std = @import("std");
 
 pub fn copyPng(gpa: std.mem.Allocator, png: []const u8) !void {

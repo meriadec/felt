@@ -43,3 +43,4 @@ Keep each entry to one line. Delete entries whose fix makes them obvious.
 - 2026-11-23: a script could not state its arrow style without a side effect: `ui arrow-style NAME` always clicked (a toast), unlike `ui canvas-bg NAME`. Fix: it clicks only if the style is not NAME yet.
 - 2026-11-23: changing the start tool needed every script, the bench and the app tests that drew with the default to be found by hand. Fix: they all set their start tool and style (`ui tool`, `ui arrow-style`, editor fields); architecture.md says so.
 - 2026-11-23: smoke-x11 once drew no arrow and passed (a key sent before the window had the focus; no check looked for the arrow). Fix: `xdotool windowfocus --sync` before the first key, and a pixel check on the stairs arrow.
+- 2026-11-23: renaming the package in build.zig.zon fails with "invalid fingerprint" (the fingerprint hashes the name). Fix: paste the value the error prints; noted in the rename commit.

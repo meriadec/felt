@@ -3,7 +3,7 @@ const std = @import("std");
 const core = @import("core");
 
 pub const usage =
-    \\Usage: annotate [options] <image>
+    \\Usage: felt [options] <image>
     \\
     \\Opens <image> full screen for annotation (X11). Esc or q quits, Ctrl+S saves,
     \\Ctrl+C copies, ? shows the keys. Key map: docs/keymap.md.
@@ -29,8 +29,8 @@ pub const usage =
     \\  --clipboard-out <png>  Ctrl+C in the script writes here
     \\  (headless never reads or writes the config file; --canvas-bg applies)
     \\
-    \\Config file: $XDG_CONFIG_HOME/annotate/config (default ~/.config/annotate/config),
-    \\one line `canvas_bg=light` or `canvas_bg=dark`. annotate writes it when you
+    \\Config file: $XDG_CONFIG_HOME/felt/config (default ~/.config/felt/config),
+    \\one line `canvas_bg=light` or `canvas_bg=dark`. felt writes it when you
     \\switch the canvas background; a missing or broken file gives the defaults.
     \\
     \\Benchmark:

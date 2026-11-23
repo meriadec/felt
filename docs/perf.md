@@ -5,7 +5,7 @@
 ```sh
 zig build bench                                  # synthetic 2560x1440 image, 1920x1080 screen
 zig build bench -- --size 3840x2160 shot.png     # your own image and screen size
-DISPLAY=:0 zig-out/bin/annotate --smoke shot.png # real window: prints timings, exits after the first frame
+DISPLAY=:0 zig-out/bin/felt --smoke shot.png # real window: prints timings, exits after the first frame
 ```
 
 Move drags also print a split: scene repaint, frame composition (chrome

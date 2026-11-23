@@ -63,7 +63,7 @@ pub fn parse(src: []const u8) Settings {
 /// Config text for `s`: every setting, so the file documents itself.
 pub fn write(s: Settings, w: *std.Io.Writer) !void {
     try w.print(
-        \\# annotate settings (written by annotate; `b` switches the canvas)
+        \\# felt settings (written by felt; `b` switches the canvas)
         \\# canvas_bg: light or dark, the canvas outside the image
         \\canvas_bg={s}
         \\

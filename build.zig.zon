@@ -1,7 +1,7 @@
 .{
-    .name = .annotate,
+    .name = .felt,
     .version = "0.1.0",
-    .fingerprint = 0x50b579bb982d3fce,
+    .fingerprint = 0xef35ef86b5d32e3f,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{},
     .paths = .{ "build.zig", "build.zig.zon", "src", "vendor", "tests", "docs" },
