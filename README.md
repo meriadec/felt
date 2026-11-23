@@ -14,7 +14,7 @@
 </p>
 
 Felt opens an image full screen. You draw on it with one-letter tools, then
-save (Ctrl+S) or copy (Ctrl+C). It starts in tens of milliseconds, so it fits a
+save (Ctrl+S) or copy (Ctrl+C). The first frame shows in about 0.1 s, so it fits a
 screenshot hotkey. It replaces `ksnip -e` in an i3 setup.
 
 ## Features
