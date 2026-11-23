@@ -1,0 +1,13 @@
+# Move/select tool (m): the dragged rect stays selected (outlined) after the
+# release and after the pointer left it.
+size 900 500
+ui tool arrow
+ui arrow-style straight
+drag 120 100 260 160
+key r
+drag 300 80 420 150
+key n
+click 650 110
+key m
+drag 300 115 330 215
+move 760 420

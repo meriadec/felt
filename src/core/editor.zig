@@ -122,6 +122,10 @@ pub const Editor = struct {
     pointer: ?Vec2 = null,
     /// Move tool: the annotation part under the pointer.
     hover: ?Grab = null,
+    /// Move/select tool: the annotation kept selected (index in the document):
+    /// outlined while idle, deleted by Delete or Backspace. Cleared by a press
+    /// on empty space, Esc, another tool, undo and redo.
+    selected: ?usize = null,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
     quit_armed: bool = false,
@@ -239,13 +243,16 @@ pub const Editor = struct {
         return null;
     }
 
-    /// The move tool's target to outline: the part under the pointer. None
+    /// The move tool's target to outline: the part under the pointer, else
+    /// the selected annotation (`selected`). None
     /// while it moves: the shape itself shows where it goes, and a frame
     /// then pays for one raster less (docs/perf.md).
     pub fn outlined(self: *const Editor) ?Grab {
         if (self.tool != .move or self.mode != .idle or self.help_visible) return null;
-        const g = self.hover orelse return null;
-        return if (g.index < self.doc.items.items.len) g else null;
+        const n = self.doc.items.items.len;
+        if (self.hover) |g| if (g.index < n) return g;
+        if (self.selected) |i| if (i < n) return .{ .index = i, .part = .whole };
+        return null;
     }
 
     fn updateHover(self: *Editor) bool {
@@ -630,7 +637,9 @@ pub const Editor = struct {
         const sp = Vec2.init(x, y);
         const ip = self.view.toImage(sp);
         if (self.tool == .move) {
-            if (self.grabAt(sp)) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
+            const grab = self.grabAt(sp);
+            self.selected = if (grab) |g| g.index else null;
+            if (grab) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
             return .{ .redraw = true };
         }
         if (!extent.reachable(extent.keptPad(self.ctx(), self.doc, self.image_w, self.image_h), ip)) {
@@ -761,18 +770,39 @@ pub const Editor = struct {
     fn setTool(self: *Editor, t: Tool) !void {
         try self.commitTyping();
         self.cancel();
+        self.selected = null;
         if (t == .crop and self.tool != .crop) self.tool_before_crop = self.tool;
         self.tool = t;
     }
 
     /// Drop the shape or text in progress, else undo the last step.
     fn undo(self: *Editor) !void {
-        if (self.mode != .idle) self.cancel() else _ = try self.doc.undo(self.gpa);
+        if (self.mode != .idle) self.cancel() else {
+            self.selected = null; // its index may mean another annotation after the step
+            _ = try self.doc.undo(self.gpa);
+        }
     }
 
     fn redo(self: *Editor) !void {
         self.cancel();
+        self.selected = null;
         _ = try self.doc.redo(self.gpa);
+    }
+
+    /// Delete the selected annotation (move/select tool) as one undo step,
+    /// with the re-routes of the stairs paths that it left (they go in the
+    /// same step). Nothing selected: nothing.
+    fn deleteSelected(self: *Editor) !void {
+        const i = self.selected orelse return;
+        if (self.tool != .move or self.mode != .idle) return;
+        self.selected = null;
+        self.hover = null;
+        if (i >= self.doc.items.items.len) return;
+        const region = draw.bodyBounds(self.ctx(), self.doc.items.items[i], .identity).toBounds();
+        try self.doc.remove(self.gpa, i);
+        var changed: [route.max_settle]route.Rerouted = undefined;
+        const n = route.settle(self.ctx(), self.doc.items.items, region, &changed);
+        try self.commitRerouted(changed[0..n], null, true);
     }
 
     /// Set the style of new arrows and callout pointers (a shape in
@@ -818,6 +848,7 @@ pub const Editor = struct {
                 return self.run(ag.action, was_armed);
             } else try self.setTool(t),
             .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
+            .delete_selected => try self.deleteSelected(),
             .text_style => self.setTextStyle(if (self.text_style == .plain) .boxed else .plain),
             .canvas_bg => {
                 self.setCanvasBg(self.settings.canvas_bg.other());
@@ -845,6 +876,8 @@ pub const Editor = struct {
                     self.cancel();
                 } else if (self.help_visible) {
                     self.help_visible = false;
+                } else if (self.selected != null) {
+                    self.selected = null;
                 } else {
                     if (!self.dirty() or was_armed) return .{ .command = .quit };
                     self.quit_armed = true;
@@ -1553,4 +1586,55 @@ test "text style: plain at start, `t` again and the switch change it for new tex
     _ = try t.key("enter");
     try std.testing.expectEqual(ann.TextStyle.boxed, t.doc.items.items[1].text.style);
     try std.testing.expectEqual(ann.TextStyle.plain, t.doc.items.items[0].text.style);
+}
+
+test "move/select: a press selects, Delete deletes as one undo step, undo restores, Esc and other tools clear" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    try t.drag(10, 10, 60, 40);
+    try t.drag(10, 70, 90, 70);
+    _ = try t.key("m");
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 35, .y = 25 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 35, .y = 25 } });
+    try std.testing.expectEqual(@as(?usize, 0), t.ed.selected);
+    // The pointer leaves: the outline stays.
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 150, .y = 90 } });
+    try std.testing.expectEqual(@as(?Grab, .{ .index = 0, .part = .whole }), t.ed.outlined());
+    // Esc clears the selection first; it does not quit.
+    const eff = try t.key("esc");
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    try std.testing.expectEqual(@as(?Command, null), eff.command);
+    try std.testing.expectEqual(@as(?Grab, null), t.ed.outlined());
+    // Delete with nothing selected does nothing.
+    _ = try t.key("delete");
+    try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
+    // Select the second, Backspace deletes it.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 50, .y = 70 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 50, .y = 70 } });
+    try std.testing.expectEqual(@as(?usize, 1), t.ed.selected);
+    const h = t.doc.history.items.len;
+    _ = try t.key("backspace");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expectEqual(h + 1, t.doc.history.items.len);
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
+    try std.testing.expectEqual(@as(f32, 90), t.doc.items.items[1].arrow.head.x);
+    _ = try t.key("ctrl+shift+z");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    // A click on empty space and a tool switch clear the selection.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 35, .y = 25 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 35, .y = 25 } });
+    try std.testing.expectEqual(@as(?usize, 0), t.ed.selected);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 150, .y = 90 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 150, .y = 90 } });
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 35, .y = 25 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 35, .y = 25 } });
+    _ = try t.key("a");
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    _ = try t.key("delete");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
 }

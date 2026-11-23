@@ -199,7 +199,11 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     const eq = std.mem.eql;
     if (eq(u8, what, "tool")) {
         const name = it.next() orelse return fail(err, ui_help);
-        for (core.keymap.tools) |info| if (eq(u8, info.name, name)) return .{ .tool = info.tool };
+        for (core.keymap.tools) |info| {
+            // The name up to a slash: `move` for "move/select".
+            const short = info.name[0 .. std.mem.indexOfScalar(u8, info.name, '/') orelse info.name.len];
+            if (eq(u8, info.name, name) or eq(u8, short, name)) return .{ .tool = info.tool };
+        }
         return fail(err, "ui tool: unknown tool name (see the key map)");
     }
     if (eq(u8, what, "color")) {

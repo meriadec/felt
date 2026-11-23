@@ -1,7 +1,8 @@
 //! Document: the ordered list of annotations, the crops, and the undo/redo
-//! history of both, moves included. Every change bumps `revision`; every
-//! removal of an annotation also bumps `removals`, which tells the compositor
-//! that appending on top of its cache is not enough. A move changes an
+//! history of both, moves and deletions included. Every change bumps
+//! `revision`; every removal or insertion of an annotation but an append also
+//! bumps `removals`, which tells the compositor that appending on top of its
+//! cache is not enough. A move changes an
 //! annotation in place (same index, same text): the compositor finds it by
 //! comparing with what it painted. A step may carry chained moves: the
 //! re-routes of other stairs paths that the step caused (route.zig). Undo
@@ -22,14 +23,21 @@ pub const Crop = struct { rect: Rect, first: usize };
 /// part of the step before it (a re-route that step caused).
 pub const Move = struct { index: usize, other: Annotation, chained: bool = false };
 
-/// One undoable step.
-const Change = union(enum) { add, crop, move: Move };
+/// A deleted annotation: it sat at `index`; the last `shifted` crops had
+/// counted it (their `first` is one less while it is gone). The history owns
+/// its text while the annotation is deleted.
+const Removed = struct { index: usize, ann: Annotation, shifted: usize };
 
-/// One undone step for redo.
+/// One undoable step.
+const Change = union(enum) { add, crop, move: Move, remove: Removed };
+
+/// One undone step for redo. An undone `remove` holds no annotation: it is
+/// back in `items`, and a redo deletes it again.
 const Undone = union(enum) {
     add: Annotation,
     crop: Crop,
     move: Move,
+    remove: struct { index: usize, shifted: usize },
 
     fn deinit(u: Undone, gpa: std.mem.Allocator) void {
         if (u == .add) u.add.deinit(gpa);
@@ -48,6 +56,7 @@ pub const Document = struct {
 
     pub fn deinit(self: *Document, gpa: std.mem.Allocator) void {
         for (self.items.items) |a| a.deinit(gpa);
+        for (self.history.items) |c| if (c == .remove) c.remove.ann.deinit(gpa);
         for (self.undone.items) |u| u.deinit(gpa);
         self.items.deinit(gpa);
         self.crops.deinit(gpa);
@@ -95,6 +104,30 @@ pub const Document = struct {
         self.history.appendAssumeCapacity(.add);
         self.clearRedo(gpa);
         self.revision += 1;
+    }
+
+    /// Delete annotation `i` as one undo step; the history keeps it (and its
+    /// text) for the undo. Later annotations move down one place, and so do
+    /// the crops that counted it. Clears the redo stack.
+    pub fn remove(self: *Document, gpa: std.mem.Allocator, i: usize) !void {
+        try self.history.ensureUnusedCapacity(gpa, 1);
+        const a = self.items.orderedRemove(i);
+        self.history.appendAssumeCapacity(.{ .remove = .{ .index = i, .ann = a, .shifted = self.shiftCrops(i, -1) } });
+        self.clearRedo(gpa);
+        self.revision += 1;
+        self.removals += 1;
+    }
+
+    /// Move `first` of the crops that count the annotation at `i` by `d`
+    /// (-1 after its removal, +1 before its return); how many. Crops that
+    /// count it are the newest ones: `first` never decreases along the stack.
+    fn shiftCrops(self: *Document, i: usize, d: i32) usize {
+        var n: usize = 0;
+        for (self.crops.items) |*c| if (c.first > i) {
+            c.first = @intCast(@as(i64, @intCast(c.first)) + d);
+            n += 1;
+        };
+        return n;
     }
 
     /// Replace annotation `i` by `a` (same kind and text, new geometry)
@@ -152,7 +185,15 @@ pub const Document = struct {
         var n: usize = 1;
         while (isChained(self.history.items[self.history.items.len - n])) n += 1;
         try self.undone.ensureUnusedCapacity(gpa, n);
+        try self.items.ensureUnusedCapacity(gpa, 1);
         for (0..n) |_| switch (self.history.pop().?) {
+            .remove => |r| {
+                self.items.insertAssumeCapacity(r.index, r.ann);
+                const shifted = r.shifted;
+                for (self.crops.items[self.crops.items.len - shifted ..]) |*c| c.first += 1;
+                self.undone.appendAssumeCapacity(.{ .remove = .{ .index = r.index, .shifted = shifted } });
+                self.removals += 1;
+            },
             .add => {
                 self.undone.appendAssumeCapacity(.{ .add = self.items.pop().? });
                 self.removals += 1;
@@ -183,6 +224,12 @@ pub const Document = struct {
                 break :blk .crop;
             },
             .move => |m| .{ .move = self.swapMove(m) },
+            .remove => |r| blk: {
+                const a = self.items.orderedRemove(r.index);
+                for (self.crops.items[self.crops.items.len - r.shifted ..]) |*c| c.first -= 1;
+                self.removals += 1;
+                break :blk .{ .remove = .{ .index = r.index, .ann = a, .shifted = r.shifted } };
+            },
         });
         self.revision += 1;
         return true;
@@ -338,4 +385,41 @@ test "an annotation is clipped by every later crop" {
     try doc.setCrop(gpa, Rect.fromSize(-20, 10, 60, 60));
     try std.testing.expectEqual(Rect{ .x0 = 0, .y0 = 10, .x1 = 40, .y1 = 50 }, doc.clipOf(0).?);
     try std.testing.expectEqual(Rect.fromSize(-20, 10, 60, 60), doc.clipOf(1).?);
+}
+
+test "a deletion is one undo step: undo puts the annotation back in place, crops included" {
+    const gpa = std.testing.allocator;
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    const at = struct {
+        fn f(x: f32) Annotation {
+            return .{ .number = .{ .center = .{ .x = x, .y = 0 }, .value = 1, .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } };
+        }
+    }.f;
+    try doc.add(gpa, at(0));
+    try doc.add(gpa, .{ .text = .{ .pos = .{ .x = 1, .y = 0 }, .text = try gpa.dupe(u8, "hi"), .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } });
+    try doc.setCrop(gpa, Rect.fromSize(0, 0, 50, 50));
+    try doc.add(gpa, at(2));
+    const removals = doc.removals;
+    try doc.remove(gpa, 1); // the text, made before the crop
+    try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+    try std.testing.expectEqual(@as(usize, 1), doc.crop().?.first);
+    try std.testing.expect(doc.removals > removals);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(usize, 3), doc.items.items.len);
+    try std.testing.expectEqualStrings("hi", doc.items.items[1].text.text);
+    try std.testing.expectEqual(@as(usize, 2), doc.crop().?.first);
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+    try std.testing.expectEqual(@as(usize, 1), doc.crop().?.first);
+    // Deleting an annotation made after the crop leaves the crop alone.
+    try doc.remove(gpa, 1);
+    try std.testing.expectEqual(@as(usize, 1), doc.crop().?.first);
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(usize, 1), doc.crop().?.first);
+    try std.testing.expect(try doc.undo(gpa)); // the first deletion is still in the history
+    try std.testing.expectEqual(@as(usize, 2), doc.crop().?.first);
+    // A new step clears the redo stack; the deleted text is freed with the history.
+    try doc.remove(gpa, 1);
+    try std.testing.expect(!try doc.redo(gpa));
 }

@@ -27,7 +27,7 @@ pub const tools = [_]ToolInfo{
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },
     .{ .tool = .callout, .key = 'c', .name = "callout", .mouse = "The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer.", .again = .{ .action = .arrow_style, .label = "pointer style: straight / stairs" } },
     .{ .tool = .pixelate, .key = 'p', .name = "pixelate", .mouse = "Drag over a secret to pixelate it." },
-    .{ .tool = .move, .key = 'm', .name = "move", .mouse = "Point at an annotation: it lights up. Drag it to move it. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back." },
+    .{ .tool = .move, .key = 'm', .name = "move/select", .mouse = "Point at an annotation: it lights up. Drag it to move it; it stays selected (outlined) after you let go, and Delete or Backspace deletes it (undo brings it back). A click on empty space, Esc, another tool, undo or redo clears the selection. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back." },
     .{ .tool = .crop, .key = 'x', .name = "crop", .mouse = "Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores." },
 };
 
@@ -56,6 +56,8 @@ pub const Action = union(enum) {
     arrow_style,
     /// Switch the style of new texts (plain, boxed).
     text_style,
+    /// Delete the selected annotation (move/select tool).
+    delete_selected,
     next_tool,
     prev_tool,
     color: u8,
@@ -112,6 +114,8 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = ch('y'), .ctrl = true }, .action = .redo, .label = "redo" },
         .{ .chord = .{ .key = ch('s'), .ctrl = true }, .action = .save, .label = "save" },
         .{ .chord = .{ .key = ch('c'), .ctrl = true }, .action = .copy, .label = "copy" },
+        .{ .chord = .{ .key = .{ .named = .delete } }, .action = .delete_selected, .label = "delete selection (move/select)" },
+        .{ .chord = .{ .key = .{ .named = .backspace } }, .action = .delete_selected, .label = "delete selection (move/select)" },
         .{ .chord = .{ .key = .{ .named = .escape } }, .action = .quit, .label = "quit" },
         .{ .chord = .{ .key = ch('q') }, .action = .quit, .label = "quit" },
         .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
@@ -150,6 +154,7 @@ pub const extra = [_]Extra{
     .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers); with the text tool, the text style (plain or boxed)", .short = "pick" },
     .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions)", .short = "undo, redo, canvas, pad" },
     .{ .input = "Esc or q while drawing", .effect = "Cancel the shape in progress", .short = "cancel" },
+    .{ .input = "Esc with a selection", .effect = "Clear the selection", .short = "deselect" },
     .{ .input = "Esc or q with unsaved changes", .effect = "Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image.", .short = "warn, again quits" },
     .{ .input = "Esc, q or a click with help open", .effect = "Close the help", .short = "close help" },
     .{ .input = "Esc or q while typing", .effect = "Esc finishes the text; q is a letter", .short = "Esc: done, q: letter" },
@@ -186,6 +191,7 @@ fn namedName(n: input.Named) []const u8 {
         .tab => "Tab",
         .enter => "Enter",
         .backspace => "Backspace",
+        .delete => "Delete",
         .left => "←",
         .right => "→",
         .up => "↑",

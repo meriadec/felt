@@ -12,7 +12,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
 | `c` | callout | The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
-| `m` | move | Point at an annotation: it lights up. Drag it to move it. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back. |
+| `m` | move/select | Point at an annotation: it lights up. Drag it to move it; it stays selected (outlined) after you let go, and Delete or Backspace deletes it (undo brings it back). A click on empty space, Esc, another tool, undo or redo clears the selection. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back. |
 | `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |
 
 ## Keys
@@ -39,6 +39,8 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `Ctrl+Y` | redo |
 | `Ctrl+S` | save |
 | `Ctrl+C` | copy |
+| `Delete` | delete selection (move/select) |
+| `Backspace` | delete selection (move/select) |
 | `Esc` | quit |
 | `q` | quit |
 | `?` | help |
@@ -68,6 +70,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers); with the text tool, the text style (plain or boxed) |
 | Click on the top bar | Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions) |
 | Esc or q while drawing | Cancel the shape in progress |
+| Esc with a selection | Clear the selection |
 | Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |
 | Esc, q or a click with help open | Close the help |
 | Esc or q while typing | Esc finishes the text; q is a letter |

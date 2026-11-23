@@ -1,0 +1,19 @@
+# Move/select tool: select the arrow with a click, Backspace deletes it; then
+# the number, Delete deletes it too. Only the rect is left. Click on empty
+# space (nothing is selected) and Delete do nothing.
+size 900 500
+ui tool arrow
+ui arrow-style straight
+drag 120 100 260 160
+key r
+drag 300 80 420 150
+key n
+click 650 110
+key m
+click 190 130
+key backspace
+click 650 110
+key delete
+click 760 420
+key delete
+move 760 440

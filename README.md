@@ -29,7 +29,7 @@ fits on a screenshot key.
 | `r` | Box |
 | `n` | Numbered bubble |
 | `p` | Pixelate (hide secrets) |
-| `m` | Move any annotation |
+| `m` | Move / select any annotation (Delete removes the selected one) |
 | `x` | Crop |
 
 - **Built-in capture.** Pick a region or a window; the screen is frozen while you choose.
@@ -91,9 +91,11 @@ list is in [docs/keymap.md](docs/keymap.md).
   style (stairs or straight). Press `c` or `a` again, or use the switch above the
   dock, to change it.
 - **Tools.** Tab and Shift+Tab cycle them.
-- **Move** (`m`) drags any annotation, which lights up under the pointer. A
-  callout box moves alone (the tip stays), or its tip moves alone. An arrow end
-  moves alone.
+- **Move / select** (`m`) drags any annotation, which lights up under the
+  pointer. A callout box moves alone (the tip stays), or its tip moves alone. An
+  arrow end moves alone. The last annotation you pressed stays selected
+  (outlined): Delete or Backspace deletes it (undo brings it back); Esc, a click
+  on empty space or another tool clears the selection.
 - **Crop** (`x`) keeps the part you drag. Undo restores it.
 - **Undo and redo** are in the top bar and on the usual keys.
 - **Canvas.** Draw past the image edge and the canvas grows, in the window and

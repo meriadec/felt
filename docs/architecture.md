@@ -146,6 +146,20 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   the middle segment and the head keep room; a rise under the stroke width
   draws straight. Hit tests, bounds, clips and move repaints follow the
   real path (`draw.arrowShape`, `draw.cover`).
+- Select and delete (move tool, `m`, named "move/select"): `Editor.selected`
+  is the index of the annotation the last press hit (null: a press on empty
+  space, Esc, another tool, undo or redo; indexes change with those, so it
+  is dropped, never fixed up). `Editor.outlined` is the hovered part, else
+  the selected one (whole), drawn only while idle: the compositor compares
+  the outline (annotation and rect) each frame, so a changed selection
+  damages the old and new outline. Delete and Backspace
+  (`Action.delete_selected`) call `Document.remove`: one undo step that
+  keeps the annotation and its text in the history (`Removed`), moves the
+  later annotations down one place and shifts the `first` of the crops that
+  counted it (the step stores how many). Undo inserts it back in place;
+  both bump `Document.removals`, so the compositor repaints the scene in
+  full. The stairs paths near it re-route as chained moves of the same step
+  (`route.settle`, like an add).
 - Move and crops: an annotation made before a crop stays under that crop.
   Its clip stays cut by the crop, it never grows the canvas, and the pointer
   grabs it only where it shows. A move position that would hide its body

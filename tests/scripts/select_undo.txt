@@ -1,0 +1,19 @@
+# Move/select tool: delete the rect, delete the arrow, undo both: they come
+# back in their old order, nothing is selected, then redo the first deletion.
+size 900 500
+ui tool arrow
+ui arrow-style straight
+drag 120 100 260 160
+key r
+drag 300 80 420 150
+key n
+click 650 110
+key m
+click 300 115
+key delete
+click 190 130
+key delete
+key ctrl+z
+key ctrl+z
+key ctrl+shift+z
+move 760 440
