@@ -76,8 +76,6 @@ pub fn parse(src: []const u8) Settings {
         const val = std.mem.trim(u8, line[eq + 1 ..], " \t");
         if (std.mem.eql(u8, key, "canvas_bg")) {
             if (std.meta.stringToEnum(CanvasBg, val)) |v| s.canvas_bg = v;
-        } else if (std.mem.eql(u8, key, "padding")) {
-            if (std.fmt.parseInt(i64, val, 10)) |v| s.padding = padding_steps[paddingIndex(v)] else |_| {}
         }
     }
     return s;
@@ -89,10 +87,8 @@ pub fn write(s: Settings, w: *std.Io.Writer) !void {
         \\# felt settings (written by felt; `b` switches the canvas)
         \\# canvas_bg: light or dark, the canvas outside the image
         \\canvas_bg={s}
-        \\# padding: empty margin around the image, in px (0, 64, 96, 128 or 192)
-        \\padding={d}
         \\
-    , .{ @tagName(s.canvas_bg), s.padding });
+    , .{@tagName(s.canvas_bg)});
 }
 
 test "parse: good, defaults, bad lines" {
@@ -115,16 +111,12 @@ test "padding steps: nearest, stepping, clamping" {
     try std.testing.expectEqual(@as(u16, 0), stepPadding(0, -1));
     try std.testing.expectEqual(@as(u16, 192), stepPadding(192, 1));
     try std.testing.expectEqual(@as(u16, 128), stepPadding(100, 1)); // 100 reads as 96
-    try std.testing.expectEqual(@as(u16, 128), parse("padding=130\n").padding);
-    try std.testing.expectEqual(@as(u16, 192), parse("padding=99999\n").padding);
-    try std.testing.expectEqual(@as(u16, 0), parse("padding=-5\n").padding);
-    try std.testing.expectEqual(@as(u16, 0), parse("padding=wide\n").padding);
+    // The padding is not in the config file: every session starts at 0.
+    try std.testing.expectEqual(@as(u16, 0), parse("padding=128\n").padding);
     var buf: [256]u8 = undefined;
-    for (padding_steps) |p| {
-        var w = std.Io.Writer.fixed(&buf);
-        try write(.{ .padding = p }, &w);
-        try std.testing.expectEqual(p, parse(w.buffered()).padding);
-    }
+    var w = std.Io.Writer.fixed(&buf);
+    try write(.{ .padding = 128 }, &w);
+    try std.testing.expectEqual(@as(u16, 0), parse(w.buffered()).padding);
 }
 
 test "write then parse gives the same settings" {

@@ -110,17 +110,16 @@ The canvas background and the padding are settings, not undo steps.
 
 ## Settings
 
-Felt keeps the canvas background and the padding for the next sessions in
+Felt keeps the canvas background for the next sessions in
 `$XDG_CONFIG_HOME/felt/config` (default `~/.config/felt/config`):
 
 ```
 canvas_bg=dark
-padding=64
 ```
 
-It writes the file when you switch the background or move the slider. A missing
-or broken file gives the defaults (`light`, 0). A padding that is not a step
-snaps to the nearest one. `--canvas-bg light|dark` overrides the file for one
+It writes the file when you switch the background. A missing
+or broken file gives the defaults (`light`). The padding is not kept: every
+session starts at 0. `--canvas-bg light|dark` overrides the file for one
 run and does not change it. Headless runs (`--headless`, tests) never read or
 write the file.
 
