@@ -38,25 +38,8 @@ pub fn path(gpa: std.mem.Allocator, env: Env) !?[]u8 {
 /// big or unreadable (a bad line keeps its default, see settings.parse).
 pub fn load(p: []const u8) Settings {
     var buf: [settings.max_file + 1]u8 = undefined;
-    const src = std.fs.cwd().readFile(p, &buf) catch |err| {
-        if (err != error.FileNotFound) return .{};
-        return loadLegacy(p);
-    };
+    const src = std.fs.cwd().readFile(p, &buf) catch return .{};
     return settings.parse(src); // a file over max_file reads as the defaults
-}
-
-/// The tool was named "annotate" before "felt". Without a file at `p`
-/// (`.../felt/config`), read `.../annotate/config` once; the next save
-/// writes the new place.
-fn loadLegacy(p: []const u8) Settings {
-    const new_tail = "/felt/config";
-    if (!std.mem.endsWith(u8, p, new_tail)) return .{};
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const stem = p[0 .. p.len - new_tail.len];
-    const old = std.fmt.bufPrint(&path_buf, "{s}/annotate/config", .{stem}) catch return .{};
-    var buf: [settings.max_file + 1]u8 = undefined;
-    const src = std.fs.cwd().readFile(old, &buf) catch return .{};
-    return settings.parse(src);
 }
 
 /// Write `s` to `p`: a temporary file in the same directory, renamed over
@@ -146,15 +129,4 @@ test "the command line flag wins over the file" {
     try std.testing.expectEqual(settings.CanvasBg.dark, resolve(dark, null).canvas_bg);
     try std.testing.expectEqual(settings.CanvasBg.dark, resolve(.{}, .dark).canvas_bg);
     try std.testing.expectEqual(settings.CanvasBg.light, resolve(.{}, null).canvas_bg);
-}
-
-test "load: a missing felt/config falls back to annotate/config" {
-    const gpa = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    try tmp.dir.makePath("annotate");
-    try tmp.dir.writeFile(.{ .sub_path = "annotate/config", .data = "canvas_bg=dark\n" });
-    const p = try tmpPath(gpa, &tmp, "felt/config");
-    defer gpa.free(p);
-    try std.testing.expectEqual(settings.CanvasBg.dark, load(p).canvas_bg);
 }
