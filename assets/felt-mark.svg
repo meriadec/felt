@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="64 64 384 384" role="img" aria-label="Felt logo"><title>Felt</title>
+<defs>
+<style>.f{stroke:#2B2D42}@media (prefers-color-scheme:dark){.f{stroke:#F4F1EA}}</style>
+<radialGradient id="dot" cx="0.38" cy="0.32" r="0.8"><stop offset="0" stop-color="#FF8A7A"/><stop offset="0.55" stop-color="#FF4D4D"/><stop offset="1" stop-color="#D93049"/></radialGradient>
+<linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF7A6B"/><stop offset="1" stop-color="#E23A52"/></linearGradient>
+</defs>
+<g class="f" fill="none" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"><path d="M124 196V124H196"/><path d="M316 124H388V196"/><path d="M388 316V388H316"/><path d="M196 388H124V316"/></g>
+<circle cx="256" cy="256" r="74" fill="url(#ring)" fill-opacity=".22"/>
+<circle cx="256" cy="256" r="74" fill="none" stroke="url(#ring)" stroke-width="8"/>
+<circle cx="256" cy="256" r="38" fill="url(#dot)"/>
+</svg>
