@@ -177,7 +177,7 @@ test "dock is centered at the bottom and hit-tests its slots" {
 test "the arrow style switch shows above the dock with the arrow and the callout tool only" {
     const other = Dock.of(1920, 1080, .rect);
     try std.testing.expectEqual(@as(?Bounds, null), other.switch_panel);
-    const d = Dock.of(1920, 1080, .arrow);
+    const d = Dock.of(1920, 1080, .callout);
     const sp = d.switch_panel.?;
     try std.testing.expect(sp.max.y < d.panel.min.y);
     try std.testing.expectEqual(d.panel.min.x, sp.min.x);
@@ -190,16 +190,14 @@ test "the arrow style switch shows above the dock with the arrow and the callout
     }
 }
 
-test "with the callout tool the switch sits over the callout slot" {
-    const d = Dock.of(1920, 1080, .callout);
+test "with the arrow tool the switch sits over the arrow slot" {
+    const d = Dock.of(1920, 1080, .arrow);
     const sp = d.switch_panel.?;
-    const slot_b = d.tools[toolIndex(.callout)];
-    try std.testing.expectApproxEqAbs((slot_b.min.x + slot_b.max.x) / 2, (sp.min.x + sp.max.x) / 2, 1);
+    const slot_b = d.tools[toolIndex(.arrow)];
+    try std.testing.expect(sp.min.x <= slot_b.min.x + (slot_b.max.x - slot_b.min.x) / 2 and sp.max.x >= slot_b.min.x + (slot_b.max.x - slot_b.min.x) / 2);
     for (d.styles, arrow_styles) |b, st| {
         try std.testing.expectEqual(Hit{ .arrow_style = st }, d.hit(b.min.add(b.max).scale(0.5)).?);
     }
-    // The arrow tool: the switch starts at the dock's left end.
-    try std.testing.expectEqual(d.panel.min.x, Dock.of(1920, 1080, .arrow).switch_panel.?.min.x);
 }
 
 test "the text tool has a style switch of its own" {

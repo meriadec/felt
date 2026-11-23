@@ -50,8 +50,9 @@ image files. Build: `coreModule` in build.zig.
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
 | `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the style switch above it (arrow and callout tools: arrow style; text tool: text style) |
-| `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch, the canvas padding slider (notch geometry, nearest step); save and copy stay on keys |
-| `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
+| `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch; save and copy stay on keys |
+| `padbar.zig` | Padding widget geometry and hit test, bottom right: the canvas padding slider (notch geometry, nearest step) |
+| `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
 | `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, size pill, delay pill; `Scene.render` repaints only the difference |
@@ -261,7 +262,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   palette color reads on both (the dark palette color on dark grey and
   white on light grey are the weakest, kept visible by their shadow).
 - Canvas padding (settings `padding`, one of `settings.padding_steps`: 0, 64,
-  96, 128, 192 image px, all four sides; the slider in the top bar, `,` `.`,
+  96, 128, 192 image px, all four sides; the slider at the bottom right, `,` `.`,
   the wheel over the slider): an empty margin of canvas background around
   the kept rectangle, on screen and in the export. It enters the core as
   `draw.Ctx.pad` (the editor and the App fill it from the settings), and
@@ -291,7 +292,7 @@ annotation moved or the canvas grew or shrank, and in the bands around the
 image when the canvas background changes, repainted in full when the padding changes; repainted in full after the
 undo of an add or a crop, resize or zoom), `frame` (scene +
 canvas the shape in progress adds + crop dimming + move outline +
-chrome + preview). Each chrome panel (dock, style switch, top bar, help,
+chrome + preview). Each chrome panel (dock, style switch, top bar, padding widget, help,
 toast) repaints only when its rect or its signature changes: a toast that
 changes each frame does not repaint the dock. A
 move repaints the scene only in slabs along the old and the new place

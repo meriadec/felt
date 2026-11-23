@@ -123,6 +123,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
     const h = app.editor.view.screen_h;
     const d = core.dock.Dock.of(w, h, app.editor.tool);
     const bar = core.topbar.TopBar.of(w, h);
+    const pbar = core.padbar.PadBar.of(w, h);
     const mid = struct {
         fn f(b: core.geom.Bounds) core.geom.Vec2 {
             return b.min.add(b.max).scale(0.5);
@@ -141,7 +142,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
         .padding => |px| {
             const step = core.settings.paddingIndex(px);
             if (why == .click and core.settings.padding_steps[step] == app.editor.settings.padding) return null;
-            return .{ .x = bar.notchX(step), .y = bar.trackY() };
+            return .{ .x = pbar.notchX(step), .y = pbar.trackY() };
         },
         .arrow_style => |want| {
             if (d.switch_panel == null) {

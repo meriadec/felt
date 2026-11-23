@@ -6,11 +6,11 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
+| `c` | callout | The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `a` | arrow | Drag from the tail to the head. Style: stairs (an elbow with round corners, the start style) or straight; `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too). |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
-| `c` | callout | The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
 | `m` | move/select | Point at an annotation: it lights up. Drag it to move it; it stays selected (outlined) after you let go, and Delete or Backspace deletes it (undo brings it back). A click on empty space, Esc, another tool, undo or redo clears the selection. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back. |
 | `x` | crop | Drag the part to keep. On release the image is cropped and the previous tool comes back. Undo restores. |
@@ -19,9 +19,9 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Action |
 |---|---|
+| `c` again (callout tool active) | pointer style: straight / stairs |
 | `a` again (arrow tool active) | arrow style: straight / stairs |
 | `t` again (text tool active) | text style: plain / boxed |
-| `c` again (callout tool active) | pointer style: straight / stairs |
 | `1` | color red |
 | `2` | color orange |
 | `3` | color yellow |

@@ -23,7 +23,7 @@ pub const UiTarget = union(enum) {
     /// The canvas background switch of the top bar. With a name, it clicks
     /// only if the canvas is not that one yet (null: always, a toggle).
     canvas_bg: ?core.settings.CanvasBg,
-    /// The padding slider of the top bar: click the notch of the step
+    /// The padding widget: click the notch of the step
     /// nearest to this many px, unless that step is already set.
     padding: u16,
 };

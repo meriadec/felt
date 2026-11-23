@@ -1,6 +1,7 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
 //! colors, size, help button, the arrow style switch; geometry in dock.zig), the top bar (undo,
-//! redo, canvas background, canvas padding slider; geometry in topbar.zig), the help overlay with
+//! redo, canvas background; geometry in topbar.zig), the padding widget at the
+//! bottom right (a slider; geometry in padbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
 //! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
@@ -17,9 +18,11 @@ const style = @import("style.zig");
 const icons = @import("icons.zig");
 const dock = @import("dock.zig");
 const topbar = @import("topbar.zig");
+const padbar = @import("padbar.zig");
 const settings = @import("settings.zig");
 const Dock = dock.Dock;
 const TopBar = topbar.TopBar;
+const PadBar = padbar.PadBar;
 const Canvas = @import("canvas.zig").Canvas;
 const Ctx = @import("draw.zig").Ctx;
 const Editor = @import("editor.zig").Editor;
@@ -44,7 +47,7 @@ pub const State = struct {
     toast: ?[]const u8,
     can_undo: bool = false,
     can_redo: bool = false,
-    /// Canvas padding (image px), for the top bar slider.
+    /// Canvas padding (image px), for the padding widget.
     padding: u16 = 0,
     hover: Hover = .{},
 
@@ -82,8 +85,11 @@ pub const State = struct {
             },
             .top_bar => {
                 h.update(&.{ @intFromBool(s.can_undo), @intFromBool(s.can_redo) });
-                h.update(std.mem.asBytes(&s.padding));
                 h.update(std.mem.asBytes(&s.hover.barKey()));
+            },
+            .pad_bar => {
+                h.update(std.mem.asBytes(&s.padding));
+                h.update(&.{@intFromBool(s.hover.pad)});
             },
             .help => {}, // a fixed text, laid out from the screen size (its rect)
             .toast => h.update(s.toast orelse ""),
@@ -93,16 +99,18 @@ pub const State = struct {
 };
 
 /// The floating panels of the chrome, each damaged on its own.
-pub const Panel = enum { dock, style_switch, top_bar, help, toast };
+pub const Panel = enum { dock, style_switch, top_bar, pad_bar, help, toast };
 
 /// The chrome item under the pointer.
 pub const Hover = struct {
     dock: ?dock.Hit = null,
     bar: ?topbar.Button = null,
+    /// The pointer is on the padding widget.
+    pad: bool = false,
 
     /// A small value that changes when the hovered item changes.
     pub fn key(h: Hover) u32 {
-        return h.dockKey() | h.barKey() << 16;
+        return h.dockKey() | h.barKey() << 16 | @as(u32, @intFromBool(h.pad)) << 24;
     }
 
     fn dockKey(h: Hover) u32 {
@@ -268,13 +276,9 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         const enabled = switch (btn) {
             .undo => st.can_undo,
             .redo => st.can_redo,
-            .canvas_bg, .padding => true,
+            .canvas_bg => true,
         };
         const hovered = st.hover.bar == btn;
-        if (btn == .padding) {
-            layoutSlider(l, st, b, hovered);
-            continue;
-        }
         if (enabled and hovered) {
             const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
             l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
@@ -283,7 +287,6 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         switch (btn) {
             .undo, .redo => l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } }),
             .canvas_bg => l.push(.{ .canvas_bg = .{ .c = center(r), .size = 20 * s, .color = ink } }),
-            .padding => unreachable,
         }
     }
     const cy = center(b.panel).y;
@@ -299,9 +302,11 @@ const padLabels = blk: {
 
 /// The padding slider: a label ("pad 64"), a flat track filled up to the
 /// knob, one notch per step, the knob on the current step.
-fn layoutSlider(l: *Layout, st: State, b: *const TopBar, hovered: bool) void {
+fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
     const s = b.s;
-    const r = b.slider();
+    const hovered = st.hover.pad;
+    l.panel(.pad_bar, b.panel, 12 * s);
+    const r = b.slot;
     if (hovered) {
         const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
         l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
@@ -516,6 +521,7 @@ pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
     if (st.dock_visible) {
         layoutDock(&l, st, &d);
         layoutTopBar(&l, st, &bar);
+        layoutPadBar(&l, st, &PadBar.of(w, h));
     }
     if (st.help_visible) layoutOverlay(ctx, &l, &d, w, h);
     const s = style.uiScale(h);

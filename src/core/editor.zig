@@ -16,6 +16,7 @@ const View = @import("view.zig").View;
 const Font = @import("font.zig").Font;
 const Dock = @import("dock.zig").Dock;
 const TopBar = @import("topbar.zig").TopBar;
+const PadBar = @import("padbar.zig").PadBar;
 const Hover = @import("chrome.zig").Hover;
 const settings = @import("settings.zig");
 const Settings = settings.Settings;
@@ -202,7 +203,7 @@ pub const Editor = struct {
         if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.panning != null) return .{};
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p) };
+        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p) };
     }
 
     /// The annotation part a press at screen point `p` would move: the
@@ -362,12 +363,12 @@ pub const Editor = struct {
         try self.commitRerouted(changed[0..n], null, true);
     }
 
-    /// The point is on the dock or the top bar: a click there never draws.
+    /// The point is on the dock, the top bar or the padding widget: a click there never draws.
     pub fn onChrome(self: *const Editor, p: Vec2) bool {
         if (!self.dock_visible) return false;
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p);
+        return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p) or PadBar.of(w, h).contains(p);
     }
 
     /// Unsaved changes: the document changed, the padding changed, or the
@@ -576,13 +577,13 @@ pub const Editor = struct {
 
     /// The slider's step nearest to screen x.
     fn sliderTo(self: *Editor, x: f32) void {
-        const bar = TopBar.of(self.view.screen_w, self.view.screen_h);
+        const bar = PadBar.of(self.view.screen_w, self.view.screen_h);
         _ = self.setPadding(settings.padding_steps[bar.stepAt(x)]);
     }
 
     fn pointerOnSlider(self: *const Editor, x: f32, y: f32) bool {
         if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving) return false;
-        return TopBar.of(self.view.screen_w, self.view.screen_h).hit(.{ .x = x, .y = y }) == .padding;
+        return PadBar.of(self.view.screen_w, self.view.screen_h).contains(.{ .x = x, .y = y });
     }
 
     fn changeSize(self: *Editor, delta: i32) void {
@@ -614,11 +615,11 @@ pub const Editor = struct {
                         self.setCanvasBg(self.settings.canvas_bg.other());
                         return .{ .redraw = true, .command = .save_settings };
                     },
-                    .padding => {
-                        self.slider_drag = true;
-                        self.sliderTo(x);
-                    },
                 };
+                if (PadBar.of(self.view.screen_w, self.view.screen_h).contains(p)) {
+                    self.slider_drag = true;
+                    self.sliderTo(x);
+                }
             }
             return .{ .redraw = true };
         }
@@ -1053,10 +1054,10 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     t.ed.resize(1920, 1080);
     t.ed.dock_visible = true;
     const d = Dock.of(1920, 1080, t.ed.tool);
-    const tb = d.tools[2];
+    const tb = d.tools[3];
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
-    try std.testing.expectEqual(keymap.tools[2].tool, t.ed.tool);
+    try std.testing.expectEqual(keymap.tools[3].tool, t.ed.tool);
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = d.swatches[4].x, .y = d.swatches[4].y } });
     try std.testing.expectEqual(@as(u8, 4), t.ed.color_idx);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
@@ -1547,7 +1548,7 @@ test "padding slider: click and drag snap to notches, wheel steps, release saves
     defer t.deinit();
     t.ed.resize(1920, 1080);
     t.ed.dock_visible = true;
-    const b = TopBar.of(1920, 1080);
+    const b = PadBar.of(1920, 1080);
     const y = b.trackY();
     var eff = try t.ed.handle(.{ .mouse_down = .{ .x = b.notchX(2) + 3, .y = y } });
     try std.testing.expectEqual(@as(?Command, null), eff.command);
@@ -1558,7 +1559,7 @@ test "padding slider: click and drag snap to notches, wheel steps, release saves
     try std.testing.expectEqual(Command.save_settings, eff.command.?);
     try std.testing.expectEqual(@as(u16, 64), t.ed.settings.padding);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len); // never draws
-    const m = b.slider().min.add(b.slider().max).scale(0.5);
+    const m = b.slot.min.add(b.slot.max).scale(0.5);
     eff = try t.ed.handle(.{ .wheel = .{ .delta = 1, .x = m.x, .y = m.y } });
     try std.testing.expectEqual(@as(u16, 96), t.ed.settings.padding);
     try std.testing.expectEqual(Command.save_settings, eff.command.?);
