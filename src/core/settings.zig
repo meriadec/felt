@@ -30,8 +30,8 @@ pub const CanvasBg = enum {
     }
 };
 
-pub const color_light = color.nord.n4;
-pub const color_dark = color.nord.n3;
+pub const color_light = color.Color.rgb(0xF5F7FA);
+pub const color_dark = color.Color.rgb(0x2E3440);
 
 /// Canvas padding steps (image px, every side): the one list the slider,
 /// the keys and the config file use. The first is the default (no padding).
