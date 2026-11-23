@@ -499,7 +499,7 @@ pub const Editor = struct {
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
         const c = self.currentColor();
         return switch (d.tool) {
-            .arrow => self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
+            .arrow => self.routed(.{ .arrow = .{ .tail = d.cur, .head = d.start, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
             .callout => self.routed(.{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
@@ -940,13 +940,17 @@ const T = struct {
         _ = try self.ed.handle(.{ .mouse_move = .{ .x = x1, .y = y1 } });
         _ = try self.ed.handle(.{ .mouse_up = .{ .x = x1, .y = y1 } });
     }
+    /// An arrow drawn the way the user does: from its head to its tail.
+    fn arrow(self: *T, tx: f32, ty: f32, hx: f32, hy: f32) !void {
+        try self.drag(hx, hy, tx, ty);
+    }
 };
 
 test "arrow drag adds one arrow; a click adds nothing" {
     var t = T{};
     t.init();
     defer t.deinit();
-    try t.drag(10, 10, 50, 40);
+    try t.arrow(10, 10, 50, 40);
     try t.drag(10, 10, 11, 10);
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
     try std.testing.expectEqual(Vec2.init(50, 40), t.doc.items.items[0].arrow.head);
@@ -1227,7 +1231,7 @@ test "move: a callout box moves alone, its tip alone; an arrow end alone" {
     try std.testing.expectEqual(Vec2.init(30, 10), c.target.?);
     try std.testing.expectEqual(Vec2.init(110, 70), c.anchor);
     _ = try t.key("a");
-    try t.drag(10, 90, 190, 90);
+    try t.arrow(10, 90, 190, 90);
     _ = try t.key("m");
     try t.drag(189, 90, 179, 80); // the head
     const a = t.doc.items.items[1].arrow;
@@ -1312,7 +1316,7 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     t.init();
     defer t.deinit();
     _ = try t.key("a"); // stairs
-    try t.drag(10, 10, 190, 90); // right along y 10 to x 100, down to y 90, right to x 190
+    try t.arrow(10, 10, 190, 90); // right along y 10 to x 100, down to y 90, right to x 190
     _ = try t.key("m");
     try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 50, .y = 10 }).?);
     try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 100, .y = 30 }).?);
@@ -1427,9 +1431,9 @@ test "stairs arrows drawn side by side nest, in both orders; undo takes the new 
         const right = [4]f32{ 557, 60, 435, 360 };
         const first = if (swap) right else left;
         const second = if (swap) left else right;
-        try t.drag(first[0], first[1], first[2], first[3]);
+        try t.arrow(first[0], first[1], first[2], first[3]);
         try std.testing.expectEqual(ann.Elbow{}, t.doc.items.items[0].arrow.elbow);
-        try t.drag(second[0], second[1], second[2], second[3]);
+        try t.arrow(second[0], second[1], second[2], second[3]);
         const e = t.doc.items.items[1].arrow.elbow;
         // The one whose head is farther left turns higher.
         try std.testing.expect(if (swap) e.at < 0.5 else e.at > 0.5);
@@ -1445,9 +1449,9 @@ test "a commit re-routes the stairs paths around it in the same undo step; undo 
     t.init();
     defer t.deinit();
     _ = try t.key("a"); // stairs
-    try t.drag(10, 10, 190, 90); // the middle segment at x 100
+    try t.arrow(10, 10, 190, 90); // the middle segment at x 100
     _ = try t.key("a"); // straight
-    try t.drag(90, 50, 120, 50); // across that middle segment
+    try t.arrow(90, 50, 120, 50); // across that middle segment
     const moved = t.doc.items.items[0].arrow;
     try std.testing.expect(moved.elbow.at < (90.0 - 10.0) / 180.0 or moved.elbow.at > (120.0 - 10.0) / 180.0);
     try std.testing.expectEqual(@as(usize, 3), t.doc.history.items.len); // add, add, the chained re-route
@@ -1471,7 +1475,7 @@ test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back t
     t.init();
     defer t.deinit();
     _ = try t.key("a"); // stairs
-    try t.drag(10, 10, 190, 90); // the middle segment at x 100, its handle at (100, 50)
+    try t.arrow(10, 10, 190, 90); // the middle segment at x 100, its handle at (100, 50)
     _ = try t.key("m");
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 100, .y = 50 } });
     try std.testing.expectEqual(Grab{ .index = 0, .part = .bend }, t.ed.outlined().?);
@@ -1486,7 +1490,7 @@ test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back t
     // A straight arrow across the pinned middle segment: it stays.
     _ = try t.key("a");
     _ = try t.key("a"); // straight
-    try t.drag(50, 30, 75, 30);
+    try t.arrow(50, 30, 75, 30);
     try std.testing.expectEqual(a, t.doc.items.items[0].arrow);
     // Undo the pin: the elbow is auto again.
     _ = try t.key("ctrl+z");
@@ -1593,8 +1597,8 @@ test "move/select: a press selects, Delete deletes as one undo step, undo restor
     var t = T{};
     t.init();
     defer t.deinit();
-    try t.drag(10, 10, 60, 40);
-    try t.drag(10, 70, 90, 70);
+    try t.arrow(10, 10, 60, 40);
+    try t.arrow(10, 70, 90, 70);
     _ = try t.key("m");
     try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = 35, .y = 25 } });

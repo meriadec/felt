@@ -21,7 +21,7 @@ pub const sizes = [_]Size{
     .{ .stroke = 20, .font = 60 },
 };
 
-pub const default_size = 2;
+pub const default_size = 1;
 
 /// Pixelate block edge, screen pixels at 1080p at creation.
 pub const pixelate_block = 10;
