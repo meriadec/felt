@@ -4,14 +4,27 @@ const core = @import("core");
 
 pub const usage =
     \\Usage: felt [options] <image>
+    \\       felt [--capture] [--delay <seconds>] [options]
     \\
     \\Opens <image> full screen for annotation (X11). Esc or q quits, Ctrl+S saves,
     \\Ctrl+C copies, ? shows the keys. Key map: docs/keymap.md.
     \\
+    \\With no <image> (or --capture) felt captures the screen first: it freezes all
+    \\monitors, dims them, and you drag a rectangle (the capture is taken when you
+    \\release the button) or click a window. Tab toggles a delay before the grab
+    \\(so you can open a menu); Esc or right click cancels (exit status 1). Then the
+    \\editor opens on the capture. Ctrl+S writes $HOME/<unix time>.png unless -o
+    \\says otherwise. i3: bindsym Print exec felt --capture
+    \\
     \\Options:
+    \\  --capture              Capture the screen (the default with no <image>)
+    \\  --delay <seconds>      Capture mode: initial delay before the live grab
+    \\                         (default 0; Tab toggles it between 0 and this value,
+    \\                         or 1 s when it is 0)
     \\  -e <image>             Same as the <image> argument (ksnip compatible)
     \\  -o, --output <path>    Ctrl+S writes a PNG here (default: overwrite <image> if it
-    \\                         is a .png, else <image stem>.annotated.png)
+    \\                         is a .png, else <image stem>.annotated.png; capture
+    \\                         mode: $HOME/<unix time>.png)
     \\  --canvas-bg light|dark
     \\                         Canvas background outside the image for this run
     \\                         (wins over the config file; `b` switches it)
@@ -39,7 +52,7 @@ pub const usage =
     \\
 ;
 
-pub const Mode = enum { window, headless, bench, help, keymap_md };
+pub const Mode = enum { window, capture, headless, bench, help, keymap_md };
 
 pub const Options = struct {
     mode: Mode = .window,
@@ -52,6 +65,8 @@ pub const Options = struct {
     clipboard_out: ?[]const u8 = null,
     timing: bool = false,
     smoke: bool = false,
+    /// --delay, ms: the capture delay at startup.
+    delay_ms: u32 = 0,
     /// --canvas-bg: wins over the config file.
     canvas_bg: ?core.settings.CanvasBg = null,
 };
@@ -69,6 +84,8 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
     const msg = &diag.msg;
     var o = Options{};
     var i: usize = 0;
+    var capture = false;
+    var delay_given = false;
     const S = struct {
         fn value(a: []const []const u8, idx: *usize, m: *[]const u8, name: []const u8) Error![]const u8 {
             idx.* += 1;
@@ -84,6 +101,18 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
         const eq = std.mem.eql;
         if (eq(u8, a, "-h") or eq(u8, a, "--help")) {
             o.mode = .help;
+        } else if (eq(u8, a, "--capture")) {
+            capture = true;
+        } else if (eq(u8, a, "--delay")) {
+            const v = try S.value(args, &i, msg, "--delay needs seconds, e.g. 1 or 0.5");
+            const secs = std.fmt.parseFloat(f32, v) catch -1;
+            if (!(secs >= 0 and secs <= 60)) {
+                msg.* = "--delay needs seconds from 0 to 60, e.g. 1 or 0.5";
+                diag.arg = v;
+                return error.BadArgs;
+            }
+            o.delay_ms = @intFromFloat(@round(secs * 1000));
+            delay_given = true;
         } else if (eq(u8, a, "--keymap-md")) {
             o.mode = .keymap_md;
         } else if (eq(u8, a, "--headless")) {
@@ -133,7 +162,21 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
             o.image = a;
         }
     }
-    if ((o.mode == .window or o.mode == .headless) and o.image == null) {
+    if (capture and o.image != null) {
+        msg.* = "--capture takes no image";
+        diag.arg = o.image;
+        return error.BadArgs;
+    }
+    if (capture and (o.mode == .headless or o.mode == .bench)) {
+        msg.* = "--capture does not combine with --headless or --bench";
+        return error.BadArgs;
+    }
+    if (o.mode == .window and o.image == null) o.mode = .capture; // no image: capture the screen
+    if (delay_given and o.mode != .capture) {
+        msg.* = "--delay is for capture mode (no image given)";
+        return error.BadArgs;
+    }
+    if (o.mode == .headless and o.image == null) {
         msg.* = "no image given";
         return error.BadArgs;
     }
@@ -146,6 +189,13 @@ pub fn defaultOutput(gpa: std.mem.Allocator, image: []const u8) ![]u8 {
     const ext = std.fs.path.extension(image);
     if (std.ascii.eqlIgnoreCase(ext, ".png")) return gpa.dupe(u8, image);
     return std.fmt.allocPrint(gpa, "{s}.annotated.png", .{image[0 .. image.len - ext.len]});
+}
+
+/// Where Ctrl+S writes in capture mode: `$HOME/<unix time>.png` (the old
+/// `maim` script's name), else the working directory. Caller frees with `gpa`.
+pub fn captureOutput(gpa: std.mem.Allocator, home: ?[]const u8, unix_time: i64) ![]u8 {
+    if (home) |h| if (h.len > 0) return std.fmt.allocPrint(gpa, "{s}/{d}.png", .{ std.mem.trimRight(u8, h, "/"), unix_time });
+    return std.fmt.allocPrint(gpa, "{d}.png", .{unix_time});
 }
 
 pub fn parseSize(s: []const u8) ?[2]u32 {
@@ -175,11 +225,37 @@ test "parse" {
     try std.testing.expectEqual([2]u32{ 800, 500 }, h.size.?);
     try std.testing.expectError(error.BadArgs, parse(&.{"--nope"}, &msg));
     try std.testing.expectEqualStrings("--nope", msg.arg.?);
-    try std.testing.expectError(error.BadArgs, parse(&.{}, &msg));
+    try std.testing.expectEqual(Mode.capture, (try parse(&.{}, &msg)).mode);
+    try std.testing.expectError(error.BadArgs, parse(&.{"--headless"}, &msg));
     try std.testing.expectEqual(Mode.bench, (try parse(&.{"--bench"}, &msg)).mode);
     try std.testing.expectEqual(@as(?core.settings.CanvasBg, null), o.canvas_bg);
     try std.testing.expectEqual(core.settings.CanvasBg.dark, (try parse(&.{ "--canvas-bg", "dark", "a.png" }, &msg)).canvas_bg.?);
     try std.testing.expectError(error.BadArgs, parse(&.{ "--canvas-bg", "white", "a.png" }, &msg));
     try std.testing.expectEqualStrings("white", msg.arg.?);
     try std.testing.expectError(error.BadArgs, parse(&.{"--canvas-bg"}, &msg));
+}
+
+test "capture mode" {
+    var msg: Diag = .{};
+    try std.testing.expectEqual(Mode.capture, (try parse(&.{"--capture"}, &msg)).mode);
+    const o = try parse(&.{ "--delay", "0.5", "-o", "x.png" }, &msg);
+    try std.testing.expectEqual(Mode.capture, o.mode);
+    try std.testing.expectEqual(@as(u32, 500), o.delay_ms);
+    try std.testing.expectEqualStrings("x.png", o.output.?);
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--capture", "a.png" }, &msg));
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--delay", "1", "a.png" }, &msg));
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--delay", "soon" }, &msg));
+    try std.testing.expectEqualStrings("soon", msg.arg.?);
+    try std.testing.expectError(error.BadArgs, parse(&.{"--delay"}, &msg));
+    try std.testing.expectEqual(Mode.window, (try parse(&.{"a.png"}, &msg)).mode);
+}
+
+test "capture output is under HOME" {
+    const gpa = std.testing.allocator;
+    const a = try captureOutput(gpa, "/home/u/", 1700000000);
+    defer gpa.free(a);
+    try std.testing.expectEqualStrings("/home/u/1700000000.png", a);
+    const b = try captureOutput(gpa, null, 5);
+    defer gpa.free(b);
+    try std.testing.expectEqualStrings("5.png", b);
 }
