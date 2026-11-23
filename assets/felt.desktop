@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Felt
+GenericName=Screenshot annotator
+Comment=Annotate a screenshot full screen: arrows, callouts, text, crop
+Exec=felt %f
+Icon=felt
+Terminal=false
+Categories=Graphics;
+MimeType=image/png;image/jpeg;image/bmp;
+StartupWMClass=felt

@@ -13,6 +13,17 @@ pub fn build(b: *std.Build) void {
     const exe = addExe(b, target, optimize);
     b.installArtifact(exe);
 
+    // Desktop integration: `zig build --prefix ~/.local install` puts the
+    // launcher and the icon where XDG menus and docks look for them.
+    b.installFile("assets/felt.desktop", "share/applications/felt.desktop");
+    b.installFile("assets/felt-icon.svg", "share/icons/hicolor/scalable/apps/felt.svg");
+    for ([_][]const u8{ "16", "32", "48", "64", "128", "256", "512" }) |size| {
+        b.installFile(
+            b.fmt("assets/icons/felt-{s}.png", .{size}),
+            b.fmt("share/icons/hicolor/{s}x{s}/apps/felt.png", .{ size, size }),
+        );
+    }
+
     // run: zig build run -- <args>
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
