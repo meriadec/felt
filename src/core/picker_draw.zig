@@ -1,7 +1,7 @@
 //! Drawing of the capture picker (picker.zig) in the Nord chrome style: the
 //! frozen screen dimmed, the highlighted rectangle bright with a thin frost
-//! border, a size pill (`812x430`) at its top-left, and a delay pill at the
-//! top center. `Scene.render` repaints only what changed (the old and new
+//! border, a small size label (`812x430`) outside its bottom-right corner, and a
+//! delay pill at the top center, shown only while a delay is on. `Scene.render` repaints only what changed (the old and new
 //! highlight and pills) and returns that damage for the backend to present.
 const std = @import("std");
 const geom = @import("geom.zig");
@@ -146,7 +146,8 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
         frame.copyRect(frozen, hi.intersect(clip));
     }
     try drawPill(ctx, frame, clip, it.label, it.scale);
-    try drawPill(ctx, frame, clip, it.delay, it.scale);
+    // The delay pill shows only while a delay is on (--delay, or Tab).
+    if (it.delay.dot_on) try drawPill(ctx, frame, clip, it.delay, it.scale);
 }
 
 /// What the last frame showed, so the next one repaints only the difference.
