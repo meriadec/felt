@@ -13,9 +13,11 @@
   <img src="assets/screenshot.png" alt="Felt annotating a web page with callouts and arrows" width="720">
 </p>
 
-Felt opens an image full screen. You draw on it with one-letter tools, then
-save (Ctrl+S) or copy (Ctrl+C). The first frame shows in about 0.1 s, so it fits a
-screenshot hotkey. It replaces `ksnip -e` in an i3 setup.
+Press a hotkey, drag a rectangle around what you want to show, and you land
+in an editor with the capture already open. Draw callouts, arrows, boxes and
+numbered bubbles with one-letter keys, hide secrets with pixelate, then save
+(Ctrl+S) or copy (Ctrl+C) the PNG. The first frame shows in about 0.1 s, so it
+fits on a screenshot key.
 
 ## Features
 
@@ -30,10 +32,13 @@ screenshot hotkey. It replaces `ksnip -e` in an i3 setup.
 | `m` | Move any annotation |
 | `x` | Crop |
 
-- Undo and redo, zoom and pan, 4K-aware UI scale.
-- The canvas grows when you draw past the image edge.
-- Software renderer: no GPU needed. Pure Zig core with a thin X11 backend.
-- A headless mode replays scripts, so every tool has a golden test.
+- **Built-in capture.** Pick a region or a window; the screen is frozen while you choose.
+- **Undo and redo** for every change, including crops.
+- **Room to draw.** The canvas grows when you draw past the image edge, and a
+  slider adds padding around the image.
+- **Zoom and pan**, with a UI that scales to your screen (2x at 4K).
+- **No GPU needed.** A software renderer in pure Zig, with a thin X11 backend.
+- **Tested by replay.** A headless mode replays scripts, so every tool has a golden test.
 
 ## Install
 
@@ -46,63 +51,64 @@ mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local install
 # -> ~/.local/share/applications/felt.desktop and the icons
 ```
 
-## Use
+## Quick start
 
 ```sh
-felt                     # no image: capture a screen region first (see Capture)
-felt shot.png            # Ctrl+S overwrites shot.png
-felt -e shot.png         # same (ksnip-compatible flag)
-felt -o out.png shot.png # Ctrl+S writes out.png
+felt                     # capture a region, then annotate it
+felt shot.png            # annotate an existing image; Ctrl+S overwrites it
+felt -o out.png shot.png # Ctrl+S writes out.png instead
 ```
 
-### Capture
+Bind `felt` to a key and you have a screenshot tool (see [i3](#i3)).
 
-```sh
-felt                     # same as felt --capture: pick a region, then annotate it
-felt --capture --delay 2 # Tab in the picker toggles a 2 s delay (default: 1 s)
-```
+## Capture
 
-One command replaces `maim -s` plus opening the editor. Felt grabs all
-monitors first, so the picture is frozen. It shows the grab slightly dimmed in
-a borderless full-screen overlay. Drag a rectangle: it is bright, with a thin
-border and a size label (`812x430`), and the capture is taken **when you
-release the button** (no Enter). A plain click, without a drag, takes the
-window under the pointer (with its frame); the window lights up while you move
-the mouse. Tab toggles a delay (the pill at the top says `delay 1s: on`): after
-the selection the overlay goes away, felt waits, and grabs the region fresh from
-the live screen, so you can open a menu or place the pointer. With no delay it
-crops the frozen picture. Esc or a right click cancels: no editor, exit status 1.
+Run `felt` (or `felt --capture`). Felt grabs all monitors, then shows the
+frozen picture slightly dimmed in a full-screen overlay.
 
-Then the editor opens on the capture, in its normal window. Ctrl+S writes
-`$HOME/<unix time>.png` (like the old `maim` script; `-o` picks another path),
-Ctrl+C copies.
+- **Drag** a rectangle. It lights up with a size label (`812x430`), and the
+  capture is taken when you release the button. No Enter needed.
+- **Click** without dragging to take the window under the pointer, frame
+  included. The window lights up as you move the mouse.
+- **Tab** toggles a delay (`delay 1s: on` shows at the top). After you select,
+  the overlay goes away, felt waits, then grabs the region from the live
+  screen. Use it to open a menu or place the pointer first. `--delay 2` sets
+  the delay to 2 s.
+- **Esc** or a right click cancels: no editor, exit status 1.
 
-The image fits the screen (never upscaled). A small icon dock at the bottom
-center shows the tools (each with its key letter), the colors and the size;
-click it or use the keys. At startup the callout tool (`c`) is active,
-with a stairs pointer: drag from the point of interest to the box and type.
-Arrows and callout pointers share one style (stairs or straight): `c` again,
-`a` again or the switch above the dock changes it. A small bar at the top
-center has Undo and Redo buttons. Tab and Shift+Tab cycle the tools. Space hides or shows both
-panels; `?` or F1 shows every shortcut. Crop (`x`) keeps the part you
-drag; undo restores it. Move (`m`) drags any annotation; it lights up
-under the pointer. A callout box moves alone (the tip stays) or its tip
-alone; an arrow end moves alone. Draw past the image edge and the canvas grows
-to hold the shape (the saved PNG too); undo shrinks it back. The grown canvas is
-light grey or dark grey: `b` or the half-filled circle in the top bar switches
-it (a setting, not an undo step). The slider next to it (or `,` and `.`, or the
-wheel over it) adds empty margin around the image, 0 (default), 64, 96, 128 or
-192 px: it is canvas background in the window and in the saved PNG, and you can
-draw in it. Around a
-full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
-middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
-height (2x at 4K). Esc or q quits (q is a letter while you type); with unsaved changes, press it twice. Ctrl+C
-counts as saved, because xclip keeps the image in the clipboard after felt
-exits.
+The editor then opens on the capture in its normal window. Ctrl+S writes
+`$HOME/<unix time>.png` (`-o` picks another path). Ctrl+C copies.
 
-Full key map: [docs/keymap.md](docs/keymap.md).
+## Editing
 
-### Settings
+The image fits the screen and is never upscaled. A dock at the bottom center
+shows the tools (each with its key), the colors and the size. Click it or use
+the keys. `Space` hides the panels, `?` or F1 shows every shortcut. The full
+list is in [docs/keymap.md](docs/keymap.md).
+
+- **Callouts and arrows.** The callout tool is active at startup: drag from the
+  point of interest to the box, then type. Arrows and callout pointers share one
+  style (stairs or straight). Press `c` or `a` again, or use the switch above the
+  dock, to change it.
+- **Tools.** Tab and Shift+Tab cycle them.
+- **Move** (`m`) drags any annotation, which lights up under the pointer. A
+  callout box moves alone (the tip stays), or its tip moves alone. An arrow end
+  moves alone.
+- **Crop** (`x`) keeps the part you drag. Undo restores it.
+- **Undo and redo** are in the top bar and on the usual keys.
+- **Canvas.** Draw past the image edge and the canvas grows, in the window and
+  in the saved PNG. Undo shrinks it back. `b`, or the half-filled circle in the
+  top bar, switches the grown area between light and dark grey.
+- **Padding.** The slider next to it (or `,` and `.`, or the wheel over it) adds
+  a margin of 0, 64, 96, 128 or 192 px around the image. You can draw in it.
+- **View.** Zoom out with `-` or Ctrl+wheel to get room. `0` fits the image.
+  Middle drag or the arrow keys pan.
+- **Quit** with Esc or `q`. With unsaved changes, press it twice. Ctrl+C counts
+  as saved, because xclip keeps the image in the clipboard after felt exits.
+
+The canvas background and the padding are settings, not undo steps.
+
+## Settings
 
 Felt keeps the canvas background and the padding for the next sessions in
 `$XDG_CONFIG_HOME/felt/config` (default `~/.config/felt/config`):
@@ -112,34 +118,29 @@ canvas_bg=dark
 padding=64
 ```
 
-It writes the file when you switch (`b`) or move the slider, by atomic rename. A missing or
-broken file gives the defaults (`light`, 0). A padding that is not a step snaps to the nearest one. `--canvas-bg light|dark` overrides
-the file for one run and does not change it. Headless runs (`--headless`,
-tests) never read or write the file.
+It writes the file when you switch the background or move the slider. A missing
+or broken file gives the defaults (`light`, 0). A padding that is not a step
+snaps to the nearest one. `--canvas-bg light|dark` overrides the file for one
+run and does not change it. Headless runs (`--headless`, tests) never read or
+write the file.
 
 ## i3
 
-Replace the ksnip lines with:
-
-```
-bindsym $mod+e exec "felt -e $(/bin/ls -1td /home/mpillet/* | head -n 1)"
-for_window [class="felt"] floating enable, fullscreen enable
-```
-
-The first line opens the newest file in your home directory (`ls -1td` with a
-glob gives full paths, so the working directory of i3 does not matter).
-Felt asks for full screen itself; the `for_window` line keeps i3 from
-tiling it for a moment. To shoot and annotate in one key:
-
-```
-bindsym Print exec "maim -s /tmp/shot.png && felt -o $HOME/shot-$(date +%s).png /tmp/shot.png"
-```
-
-With the capture mode, one line does it all:
+One line gives you a screenshot key:
 
 ```
 bindsym Print exec felt --capture
 ```
+
+Felt asks for full screen itself. To keep i3 from tiling the editor window for
+a moment, add:
+
+```
+for_window [class="felt"] floating enable, fullscreen enable
+```
+
+To open the newest file in your home directory instead, use
+`bindsym $mod+e exec "felt $(/bin/ls -1td $HOME/* | head -n 1)"`.
 
 ## Develop
 
