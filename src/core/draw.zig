@@ -23,6 +23,9 @@ const Annotation = ann_mod.Annotation;
 pub const Ctx = struct {
     gpa: std.mem.Allocator,
     font: *Font,
+    /// Canvas padding (image px, settings.zig `padding_steps`): margin around
+    /// the kept rectangle that is always canvas (extent.zig). 0: none.
+    pad: i32 = 0,
 };
 
 pub const Options = struct {

@@ -33,8 +33,29 @@ pub const CanvasBg = enum {
 pub const color_light = color.nord.n4;
 pub const color_dark = color.nord.n3;
 
+/// Canvas padding steps (image px, every side): the one list the slider,
+/// the keys and the config file use. The first is the default (no padding).
+pub const padding_steps = [_]u16{ 0, 64, 96, 128, 192 };
+
+/// Index of the step nearest to `px` (a value from a file or a flag).
+pub fn paddingIndex(px: i64) usize {
+    var best: usize = 0;
+    for (padding_steps, 0..) |s, i| {
+        if (@abs(@as(i64, s) - px) < @abs(@as(i64, padding_steps[best]) - px)) best = i;
+    }
+    return best;
+}
+
+/// The step `delta` steps from `px`'s step, clamped to the list.
+pub fn stepPadding(px: u16, delta: i32) u16 {
+    const i: i32 = @intCast(paddingIndex(px));
+    return padding_steps[@intCast(std.math.clamp(i + delta, 0, padding_steps.len - 1))];
+}
+
 pub const Settings = struct {
     canvas_bg: CanvasBg = .light,
+    /// Canvas padding in image px: one of `padding_steps`.
+    padding: u16 = padding_steps[0],
 };
 
 /// The config file never gets this big: a bigger file is not ours.
@@ -55,6 +76,8 @@ pub fn parse(src: []const u8) Settings {
         const val = std.mem.trim(u8, line[eq + 1 ..], " \t");
         if (std.mem.eql(u8, key, "canvas_bg")) {
             if (std.meta.stringToEnum(CanvasBg, val)) |v| s.canvas_bg = v;
+        } else if (std.mem.eql(u8, key, "padding")) {
+            if (std.fmt.parseInt(i64, val, 10)) |v| s.padding = padding_steps[paddingIndex(v)] else |_| {}
         }
     }
     return s;
@@ -66,8 +89,10 @@ pub fn write(s: Settings, w: *std.Io.Writer) !void {
         \\# felt settings (written by felt; `b` switches the canvas)
         \\# canvas_bg: light or dark, the canvas outside the image
         \\canvas_bg={s}
+        \\# padding: empty margin around the image, in px (0, 64, 96, 128 or 192)
+        \\padding={d}
         \\
-    , .{@tagName(s.canvas_bg)});
+    , .{ @tagName(s.canvas_bg), s.padding });
 }
 
 test "parse: good, defaults, bad lines" {
@@ -81,6 +106,25 @@ test "parse: good, defaults, bad lines" {
     try std.testing.expectEqual(CanvasBg.light, parse("canvas_bg=dark\ncanvas_bg=light").canvas_bg);
     const big = [_]u8{' '} ** (max_file + 1);
     try std.testing.expectEqual(CanvasBg.light, parse(&big).canvas_bg);
+}
+
+test "padding steps: nearest, stepping, clamping" {
+    try std.testing.expectEqual(@as(u16, 0), (Settings{}).padding);
+    try std.testing.expectEqual(@as(u16, 96), stepPadding(64, 1));
+    try std.testing.expectEqual(@as(u16, 64), stepPadding(96, -1));
+    try std.testing.expectEqual(@as(u16, 0), stepPadding(0, -1));
+    try std.testing.expectEqual(@as(u16, 192), stepPadding(192, 1));
+    try std.testing.expectEqual(@as(u16, 128), stepPadding(100, 1)); // 100 reads as 96
+    try std.testing.expectEqual(@as(u16, 128), parse("padding=130\n").padding);
+    try std.testing.expectEqual(@as(u16, 192), parse("padding=99999\n").padding);
+    try std.testing.expectEqual(@as(u16, 0), parse("padding=-5\n").padding);
+    try std.testing.expectEqual(@as(u16, 0), parse("padding=wide\n").padding);
+    var buf: [256]u8 = undefined;
+    for (padding_steps) |p| {
+        var w = std.Io.Writer.fixed(&buf);
+        try write(.{ .padding = p }, &w);
+        try std.testing.expectEqual(p, parse(w.buffered()).padding);
+    }
 }
 
 test "write then parse gives the same settings" {

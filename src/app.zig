@@ -68,7 +68,7 @@ pub const App = struct {
     }
 
     pub fn ctx(self: *App) core.draw.Ctx {
-        return .{ .gpa = self.gpa, .font = &self.font };
+        return .{ .gpa = self.gpa, .font = &self.font, .pad = self.editor.settings.padding };
     }
 
     pub fn handle(self: *App, ev: core.input.Event) !Result {

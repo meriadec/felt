@@ -27,3 +27,26 @@ pub fn render(ctx: draw.Ctx, image: *const Canvas, doc: *const Document, bg: Col
     }
     return out;
 }
+
+test "export size grows by the padding on every side and the margin is the background" {
+    const gpa = std.testing.allocator;
+    var font = try @import("font.zig").Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    var image = try Canvas.init(gpa, 50, 30);
+    defer image.deinit(gpa);
+    image.fillRect(image.bounds(), .{ .r = 255, .g = 0, .b = 0 });
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    const bg = Color{ .r = 1, .g = 2, .b = 3 };
+    for (@import("settings.zig").padding_steps) |p| {
+        var out = try render(.{ .gpa = gpa, .font = &font, .pad = p }, &image, &doc, bg);
+        defer out.deinit(gpa);
+        try std.testing.expectEqual(@as(u32, 50 + 2 * p), out.width);
+        try std.testing.expectEqual(@as(u32, 30 + 2 * p), out.height);
+        if (p > 0) {
+            try std.testing.expectEqual(bg.toPixel(), out.pixels[0]);
+            const red = (Color{ .r = 255, .g = 0, .b = 0 }).toPixel();
+            try std.testing.expectEqual(red, out.pixels[p * out.width + p]);
+        }
+    }
+}

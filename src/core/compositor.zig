@@ -165,6 +165,8 @@ pub const Compositor = struct {
     scene_canvas: Rect = Rect.empty,
     /// Canvas background the scene was painted with.
     scene_bg: color.Color = .{ .r = 0, .g = 0, .b = 0 },
+    /// Canvas padding the scene holds: it changes every clip, so a change repaints all.
+    scene_pad: i32 = 0,
     prev_preview: Rect = Rect.empty,
     /// Screen rectangle of the canvas with the shape in progress.
     prev_live: Rect = Rect.empty,
@@ -332,7 +334,7 @@ pub const Compositor = struct {
         // Scene: append new annotations; repaint in place where one moved or
         // the canvas grew or shrank; repaint all after a removal.
         var clock = Clock.start();
-        if (!self.scene_valid or doc.removals != self.scene_removals or items.len < self.scene_count) {
+        if (!self.scene_valid or ctx.pad != self.scene_pad or doc.removals != self.scene_removals or items.len < self.scene_count) {
             try self.paintScene(&s, full_rect, items.len);
             self.painted.clearRetainingCapacity();
             try self.painted.appendSlice(self.gpa, items);
@@ -377,6 +379,7 @@ pub const Compositor = struct {
         self.scene_canvas = ed.canvas;
         const bg_changed = !std.meta.eql(s.bg, self.scene_bg);
         self.scene_bg = s.bg;
+        self.scene_pad = ctx.pad;
 
         // Overlay damage: old and new preview, the canvas it adds,
         // chrome if it changed.
@@ -384,7 +387,7 @@ pub const Compositor = struct {
         var preview_clip = Rect.empty;
         var live = s.canvas_dst;
         if (preview) |p| {
-            preview_clip = v.rect(extent.grow(ctx, doc.kept(image.width, image.height), p)).intersect(full_rect);
+            preview_clip = v.rect(extent.grow(ctx, extent.keptPad(ctx, doc, image.width, image.height), p)).intersect(full_rect);
             live = live.unite(preview_clip);
         }
         const cur_preview = if (preview) |p| draw.bounds(ctx, p, v.xf, .{ .preview = true }).intersect(preview_clip) else Rect.empty;

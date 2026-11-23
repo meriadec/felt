@@ -126,6 +126,8 @@ pub const Editor = struct {
     saved_revision: u64 = 0,
     /// Canvas background of the last save (or of the start).
     saved_bg: settings.CanvasBg = .light,
+    /// Canvas padding of the last save (or of the start).
+    saved_padding: u16 = 0,
     toast_buf: [256]u8 = undefined,
     toast_len: usize = 0,
     hint_buf: [96]u8 = undefined,
@@ -149,7 +151,7 @@ pub const Editor = struct {
     }
 
     pub fn ctx(self: *const Editor) draw.Ctx {
-        return .{ .gpa = self.gpa, .font = self.font };
+        return .{ .gpa = self.gpa, .font = self.font, .pad = self.settings.padding };
     }
 
     pub fn deinit(self: *Editor) void {
@@ -356,11 +358,12 @@ pub const Editor = struct {
         return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p);
     }
 
-    /// Unsaved changes: the document changed, or the canvas background
-    /// changed while the canvas holds some outside the image (the export
-    /// would differ; the switch itself is no undo step).
+    /// Unsaved changes: the document changed, the padding changed, or the
+    /// canvas background changed while the canvas holds some outside the
+    /// image (the export would differ; neither is an undo step).
     pub fn dirty(self: *const Editor) bool {
         if (self.doc.revision != self.saved_revision) return true;
+        if (self.settings.padding != self.saved_padding) return true;
         if (self.settings.canvas_bg == self.saved_bg) return false;
         const pic = geom.Rect.fromSize(0, 0, @intCast(self.image_w), @intCast(self.image_h));
         return !pic.contains(self.canvas);
@@ -369,12 +372,16 @@ pub const Editor = struct {
     pub fn markSaved(self: *Editor) void {
         self.saved_revision = self.doc.revision;
         self.saved_bg = self.settings.canvas_bg;
+        self.saved_padding = self.settings.padding;
     }
 
     /// Start with `s` (config file, command line): nothing to save yet.
     pub fn startWith(self: *Editor, s: Settings) void {
         self.settings = s;
         self.saved_bg = s.canvas_bg;
+        self.saved_padding = s.padding;
+        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
+        self.fit();
     }
 
     pub fn setToast(self: *Editor, comptime fmt: []const u8, args: anytype) void {
@@ -597,7 +604,7 @@ pub const Editor = struct {
             if (self.grabAt(sp)) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
             return .{ .redraw = true };
         }
-        if (!extent.reachable(self.kept_key, ip)) {
+        if (!extent.reachable(extent.keptPad(self.ctx(), self.doc, self.image_w, self.image_h), ip)) {
             self.tooFar();
             return .{ .redraw = true };
         }
@@ -639,7 +646,7 @@ pub const Editor = struct {
         var fin = d;
         fin.cur = ip;
         if (self.shapeFromDrag(fin)) |a| {
-            if (extent.fits(self.ctx(), self.kept_key, a)) try self.addSettled(a) else self.tooFar();
+            if (extent.fits(self.ctx(), extent.keptPad(self.ctx(), self.doc, self.image_w, self.image_h), a)) try self.addSettled(a) else self.tooFar();
         }
         return .{ .redraw = true };
     }
@@ -747,6 +754,19 @@ pub const Editor = struct {
     fn setCanvasBg(self: *Editor, bg: settings.CanvasBg) void {
         self.settings.canvas_bg = bg;
         self.setToast("Canvas: {s}", .{@tagName(bg)});
+    }
+
+    /// Set the canvas padding (a step of settings.padding_steps) and say it.
+    /// A setting, not an undo step, like the canvas background: it changes
+    /// no annotation, only the margin of the canvas and the export. The
+    /// canvas changes, so the view refits.
+    fn setPadding(self: *Editor, px: u16) Effect {
+        if (px == self.settings.padding) return .{};
+        self.settings.padding = px;
+        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
+        self.fit();
+        self.setToast("Padding: {d} px", .{px});
+        return .{ .redraw = true, .command = .save_settings };
     }
 
     fn run(self: *Editor, action: keymap.Action, was_armed: bool) !Effect {

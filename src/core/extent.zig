@@ -13,6 +13,11 @@
 //! changes another's clip, so the compositor can append. A move changes only
 //! the moved annotation's clip (and the canvas), and its undo restores both.
 //! The canvas grows at most to `limit`; the editor refuses shapes beyond it.
+//! Canvas padding (`Ctx.pad`, a setting): the kept rectangle counts as
+//! `pad` px bigger on every side, for the canvas, the clips and the reach.
+//! The padding is the least canvas, so shapes in it show and never grow it;
+//! a crop keeps its rectangle and the padding goes around the new one.
+//! With pad 0 every function gives what it gave before padding existed.
 const std = @import("std");
 const geom = @import("geom.zig");
 const draw = @import("draw.zig");
@@ -62,13 +67,20 @@ pub fn grow(ctx: draw.Ctx, kept: Rect, a: Annotation) Rect {
     return r.intersect(limit(kept));
 }
 
-/// The kept rectangle when annotation `i` was made (image w x h).
-fn keptAt(doc: *const Document, w: u32, h: u32, i: usize) Rect {
+/// The kept rectangle of the document (the image, or the last crop) grown by
+/// the canvas padding `ctx.pad`: the least canvas. Shapes inside it never
+/// grow the canvas; the reach limit counts from it.
+pub fn keptPad(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32) Rect {
+    return doc.kept(w, h).expand(ctx.pad);
+}
+
+/// The kept rectangle (with padding) when annotation `i` was made.
+fn keptAt(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize) Rect {
     var r = Rect.fromSize(0, 0, @intCast(w), @intCast(h));
     for (doc.crops.items) |c| {
         if (c.first <= i) r = c.rect;
     }
-    return r;
+    return r.expand(ctx.pad);
 }
 
 /// Clip of annotation `i`: its own clip, cut by every later crop.
@@ -78,19 +90,19 @@ pub fn itemClip(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize) R
 
 /// Clip annotation `i` would have with the geometry of `a` (a move).
 pub fn clipAs(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize, a: Annotation) Rect {
-    const r = grow(ctx, keptAt(doc, w, h, i), a);
+    const r = grow(ctx, keptAt(ctx, doc, w, h, i), a);
     return if (doc.clipOf(i)) |c| r.intersect(c) else r;
 }
 
 /// Annotation `i` with the geometry of `a` still shows a part of its body:
 /// a move may not hide it past the reach or under a later crop.
 pub fn showsAs(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32, i: usize, a: Annotation) bool {
-    return fits(ctx, keptAt(doc, w, h, i), a) and draw.bodyBounds(ctx, a, .identity).intersects(clipAs(ctx, doc, w, h, i, a));
+    return fits(ctx, keptAt(ctx, doc, w, h, i), a) and draw.bodyBounds(ctx, a, .identity).intersects(clipAs(ctx, doc, w, h, i, a));
 }
 
 /// The canvas of the document over an image of size w x h.
 pub fn canvas(ctx: draw.Ctx, doc: *const Document, w: u32, h: u32) Rect {
-    const kept = doc.kept(w, h);
+    const kept = keptPad(ctx, doc, w, h);
     var r = kept;
     for (doc.growing()) |a| r = r.unite(grow(ctx, kept, a));
     return r;
@@ -146,4 +158,34 @@ test "a callout grows the canvas to its pointer head, stairs or straight" {
         try std.testing.expectEqual(img.x1, r.x1);
         try std.testing.expectEqual(img.y1, r.y1);
     }
+}
+
+test "padding is the least canvas: shapes in it show, never grow it; a crop pads its rectangle" {
+    const gpa = std.testing.allocator;
+    var font = try @import("font.zig").Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    const ctx = draw.Ctx{ .gpa = gpa, .font = &font, .pad = 64 };
+    const red = color.palette[0].color;
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    const img = Rect.fromSize(0, 0, 200, 100);
+    const padded = img.expand(64);
+    try std.testing.expectEqual(padded, canvas(ctx, &doc, 200, 100));
+    // An arrow into the padding: shown (its clip holds it), canvas unchanged.
+    try doc.add(gpa, .{ .arrow = .{ .tail = .{ .x = 100, .y = 50 }, .head = .{ .x = 230, .y = 50 }, .width = 6, .color = red } });
+    try std.testing.expectEqual(padded, canvas(ctx, &doc, 200, 100));
+    try std.testing.expect(itemClip(ctx, &doc, 200, 100, 0).contains(draw.bodyBounds(ctx, doc.items.items[0], .identity)));
+    // Past the padding: the canvas grows past the shape, as without padding.
+    try doc.add(gpa, .{ .arrow = .{ .tail = .{ .x = 100, .y = 50 }, .head = .{ .x = 400, .y = 50 }, .width = 6, .color = red } });
+    try std.testing.expect(canvas(ctx, &doc, 200, 100).x1 >= 400 + pad);
+    _ = try doc.undo(gpa);
+    // A crop keeps its rectangle (padding included); the padding goes around it.
+    const crop = Rect.fromSize(-30, -30, 100, 80);
+    try doc.setCrop(gpa, crop);
+    try std.testing.expectEqual(crop.expand(64), canvas(ctx, &doc, 200, 100));
+    // The earlier arrow stays under the crop.
+    try std.testing.expectEqual(crop, itemClip(ctx, &doc, 200, 100, 0).intersect(crop));
+    try std.testing.expect(itemClip(ctx, &doc, 200, 100, 0).x1 <= crop.x1);
+    // Padding 0 is the old canvas.
+    try std.testing.expectEqual(crop, canvas(.{ .gpa = gpa, .font = &font }, &doc, 200, 100));
 }
