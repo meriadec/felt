@@ -68,6 +68,17 @@ on the main thread while the image decodes; first frame on screen 29-34 ms
 (before: 34-41 ms, noise). All other cases within noise (+-5%; undo
 rebuild at 1080p 2.3-3.6 ms before, 2.9-3.2 after: one sample per run).
 
+## Canvas padding (2026-11)
+
+Padding 0 changes no path of the renderer: `ctx.pad` is added to the kept
+rectangle in `extent` (an expand by 0), and the compositor compares one more
+integer per frame. Bench at 1080p, 3 runs: all existing cases within noise
+(drag arrow avg 0.24-0.27 ms, canvas bg switch 0.16-0.19 ms). New case
+`frame: padding step` (`.` four times, `,` four times, x3): avg 5.5 to 8 ms,
+p95 8 to 10 ms. A step changes every clip, the canvas and the fit, so the
+scene repaints in full (like a crop refit, 2.8 ms, plus the larger canvas);
+it runs once per gesture step, never per drag frame of a shape.
+
 ## Auto-routing (2026-11)
 
 Min of 3 runs each, before (commit "test: a callout grows the canvas to

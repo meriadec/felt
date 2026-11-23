@@ -90,7 +90,10 @@ under the pointer. A callout box moves alone (the tip stays) or its tip
 alone; an arrow end moves alone. Draw past the image edge and the canvas grows
 to hold the shape (the saved PNG too); undo shrinks it back. The grown canvas is
 light grey or dark grey: `b` or the half-filled circle in the top bar switches
-it (a setting, not an undo step). Around a
+it (a setting, not an undo step). The slider next to it (or `,` and `.`, or the
+wheel over it) adds empty margin around the image, 0 (default), 64, 96, 128 or
+192 px: it is canvas background in the window and in the saved PNG, and you can
+draw in it. Around a
 full-screen image, zoom out with `-` or Ctrl+wheel to get room; `0` fits,
 middle drag or the arrow keys pan. The UI and the default sizes scale with the screen
 height (2x at 4K). Esc or q quits (q is a letter while you type); with unsaved changes, press it twice. Ctrl+C
@@ -101,15 +104,16 @@ Full key map: [docs/keymap.md](docs/keymap.md).
 
 ### Settings
 
-Felt keeps the canvas background for the next sessions in
+Felt keeps the canvas background and the padding for the next sessions in
 `$XDG_CONFIG_HOME/felt/config` (default `~/.config/felt/config`):
 
 ```
 canvas_bg=dark
+padding=64
 ```
 
-It writes the file when you switch (`b`), by atomic rename. A missing or
-broken file gives the default (`light`). `--canvas-bg light|dark` overrides
+It writes the file when you switch (`b`) or move the slider, by atomic rename. A missing or
+broken file gives the defaults (`light`, 0). A padding that is not a step snaps to the nearest one. `--canvas-bg light|dark` overrides
 the file for one run and does not change it. Headless runs (`--headless`,
 tests) never read or write the file.
 

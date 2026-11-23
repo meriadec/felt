@@ -565,6 +565,19 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         try zoom.add(gpa, t.read());
     }
     try zoom.report(w, "frame: Ctrl+wheel zoom");
+
+    // Canvas padding steps (`.` up the list, `,` back down): every clip and
+    // the view change, so the whole scene repaints and the view refits.
+    var padding = Stats{};
+    defer padding.deinit(gpa);
+    for (0..3) |_| for ([_]u8{ '.', '.', '.', '.', ',', ',', ',', ',' }) |k| {
+        _ = try app.handle(.{ .key = .{ .key = .{ .char = k } } });
+        t.reset();
+        _ = try app.render();
+        try padding.add(gpa, t.read());
+    };
+    if (app.editor.settings.padding != 0) return error.BenchPaddingNotZero;
+    try padding.report(w, "frame: padding step");
     try benchCapture(gpa, w, opts);
     try w.flush();
 }

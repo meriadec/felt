@@ -41,16 +41,16 @@ image files. Build: `coreModule` in build.zig.
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
 | `document.zig` | Annotation list, crop stack, undo/redo of both, number counter |
-| `extent.zig` | Canvas of the document: the kept rectangle grown by annotations; each annotation's clip |
+| `extent.zig` | Canvas of the document: the kept rectangle plus the canvas padding (`Ctx.pad`), grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
-| `settings.zig` | User settings, not document state: the canvas background (light, dark grey); the config file text (`parse`, `write`) |
+| `settings.zig` | User settings, not document state: the canvas background (light, dark grey), the canvas padding and its step list (`padding_steps`); the config file text (`parse`, `write`) |
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md; a tool key pressed again (`ToolInfo.again`) |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
 | `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the arrow style switch above it (arrow and callout tools) |
-| `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch (save and copy stay on keys) |
+| `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch, the canvas padding slider (notch geometry, nearest step); save and copy stay on keys |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
@@ -237,6 +237,26 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   panels (nord1), so the canvas edge and the dock stay visible; every
   palette color reads on both (the dark palette color on dark grey and
   white on light grey are the weakest, kept visible by their shadow).
+- Canvas padding (settings `padding`, one of `settings.padding_steps`: 0, 64,
+  96, 128, 192 image px, all four sides; the slider in the top bar, `,` `.`,
+  the wheel over the slider): an empty margin of canvas background around
+  the kept rectangle, on screen and in the export. It enters the core as
+  `draw.Ctx.pad` (the editor and the App fill it from the settings), and
+  `extent` counts the kept rectangle as `pad` px bigger on every side: for
+  the canvas, each annotation's clip and the reach limit. So a shape inside
+  the padding shows and never grows the canvas, and a shape past it grows
+  the canvas as before, to its bounds plus `extent.pad`. A crop keeps its
+  rectangle; the padding goes around it (an annotation made before the crop
+  stays cut by the crop rectangle, so the padding of the crop shows only
+  what came after). Like the canvas background it is not an undo step (no
+  annotation changes), it is persisted, and an unsaved change counts as
+  dirty (`Editor.saved_padding`) because the export differs. A step changes
+  every clip and the canvas, so the editor refits the view and the
+  compositor repaints the whole scene (`scene_pad`; 5 to 8 ms at 1080p,
+  docs/perf.md). Padding 0 is exactly the old behavior (goldens unchanged).
+  Slider: a press sets the nearest step, a drag follows x, the release asks
+  for `save_settings` (one file write per gesture); the wheel over it steps
+  (no size change). No `--padding` flag: the file and the slider are enough.
 - Text is UTF-8. Font sizes round to whole pixels (glyph cache key).
 
 ## Compositor layers
@@ -245,7 +265,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
 rebuilt on zoom or crop), `scene` (background + canvas background + image +
 committed annotations; appended in place; repainted in place where an
 annotation moved or the canvas grew or shrank, and in the bands around the
-image when the canvas background changes; repainted in full after the
+image when the canvas background changes, repainted in full when the padding changes; repainted in full after the
 undo of an add or a crop, resize or zoom), `frame` (scene +
 canvas the shape in progress adds + crop dimming + move outline +
 chrome + preview). Each chrome panel (dock, style switch, top bar, help,
