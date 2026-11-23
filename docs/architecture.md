@@ -53,22 +53,43 @@ image files. Build: `coreModule` in build.zig.
 | `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch (save and copy stay on keys) |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
+| `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
+| `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, size pill, delay pill; `Scene.render` repaints only the difference |
 | `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, the canvas background outside the image) |
 
 `src/` (the `felt` executable module):
 
 | File | Role |
 |---|---|
-| `main.zig` | Entry point, dispatch by mode |
-| `cli.zig` | Argument parsing, `--help` text |
+| `main.zig` | Entry point, dispatch by mode (capture: picker first, then the editor on the result) |
+| `cli.zig` | Argument parsing, `--help` text; no image means capture mode; the capture save path |
 | `app.zig` | One open image: font + document + editor + compositor; runs save/copy and writes the settings |
 | `config.zig` | Settings file `$XDG_CONFIG_HOME/felt/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
 | `clipboard.zig` | Pipe a PNG to xclip |
-| `backend/x11.zig` | Xlib window, event translation, MIT-SHM present |
+| `backend/xlib.zig` | The one Xlib C import, the MIT-SHM `Surface`, key translation: shared by both X11 backends |
+| `backend/x11.zig` | Editor window: Xlib window, event translation, MIT-SHM present |
+| `backend/x11_capture.zig` | Capture mode: root grab (XShmGetImage), full-screen override-redirect overlay, window list snapshot, picker events, live regrab after a delay |
 | `backend/headless.zig` | Replay a script, write frame/export PNGs |
 | `backend/script.zig` | Event script parser (format in docs/testing.md) |
 | `bench.zig` | `--bench` timings |
 | `golden.zig` | Golden replay tests and PNG diff |
+
+## Capture mode
+
+`felt` with no image (or `--capture`) runs `x11_capture.run`, then the
+editor on the canvas it returns (`x11.Options.image`, owned by the App).
+Order matters: (1) grab the root window into a shared-memory `Surface`
+(the frozen screen, no copy through the socket), (2) snapshot the viewable
+top-level windows (`XQueryTree`, frames included, topmost first) before any
+window of ours exists, (3) map the override-redirect overlay and grab the
+pointer and keyboard, (4) feed events to `core.picker.Picker` and present
+`picker_draw.Scene` damage, (5) on release, either crop the frozen screen
+(delay 0) or destroy the overlay, wait the delay (at least 100 ms, so the
+screen repaints) and `XGetImage` the region live. Cancelled: `null`, exit 1.
+The picker is pure; headless scripts with `capture` replay it on an image
+that stands for the screen (tests/scripts/capture_*.txt). The X11 part is
+checked by `zig build smoke-capture`. Frames cost: first frame 4 ms and a
+drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
 
 ## Invariants
 

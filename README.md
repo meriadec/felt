@@ -49,10 +49,33 @@ mise exec -- zig build -Doptimize=ReleaseFast --prefix ~/.local install
 ## Use
 
 ```sh
+felt                     # no image: capture a screen region first (see Capture)
 felt shot.png            # Ctrl+S overwrites shot.png
 felt -e shot.png         # same (ksnip-compatible flag)
 felt -o out.png shot.png # Ctrl+S writes out.png
 ```
+
+### Capture
+
+```sh
+felt                     # same as felt --capture: pick a region, then annotate it
+felt --capture --delay 2 # Tab in the picker toggles a 2 s delay (default: 1 s)
+```
+
+One command replaces `maim -s` plus opening the editor. Felt grabs all
+monitors first, so the picture is frozen. It shows the grab slightly dimmed in
+a borderless full-screen overlay. Drag a rectangle: it is bright, with a thin
+border and a size label (`812x430`), and the capture is taken **when you
+release the button** (no Enter). A plain click, without a drag, takes the
+window under the pointer (with its frame); the window lights up while you move
+the mouse. Tab toggles a delay (the pill at the top says `delay 1s: on`): after
+the selection the overlay goes away, felt waits, and grabs the region fresh from
+the live screen, so you can open a menu or place the pointer. With no delay it
+crops the frozen picture. Esc or a right click cancels: no editor, exit status 1.
+
+Then the editor opens on the capture, in its normal window. Ctrl+S writes
+`$HOME/<unix time>.png` (like the old `maim` script; `-o` picks another path),
+Ctrl+C copies.
 
 The image fits the screen (never upscaled). A small icon dock at the bottom
 center shows the tools (each with its key letter), the colors and the size;
@@ -106,6 +129,12 @@ tiling it for a moment. To shoot and annotate in one key:
 
 ```
 bindsym Print exec "maim -s /tmp/shot.png && felt -o $HOME/shot-$(date +%s).png /tmp/shot.png"
+```
+
+With the capture mode, one line does it all:
+
+```
+bindsym Print exec felt --capture
 ```
 
 ## Develop

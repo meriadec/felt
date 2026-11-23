@@ -25,6 +25,25 @@ normal run.
 | Frame while dragging or typing, 4K, p95 | < 4 ms (a 240 Hz frame) |
 | Export render + PNG encode, 4K | < 60 ms |
 
+## Capture mode (2026-11)
+
+`zig build bench` prints the picker cases (`benchCapture`): a frozen screen
+of the screen size, dimmed once per repaint rect, the selection copied back
+bright. Min of 2 runs, ReleaseFast:
+
+| Metric | 1080p | 4K |
+|---|---|---|
+| first picker frame | 1.1 ms | 3.7 ms |
+| drag frame (100 motion events, 20% to 80%) | avg 0.20 ms, p95 0.71 | avg 1.09 ms, p95 2.99 |
+| crop of a 60% rectangle | 1.1 ms | 2.6 ms |
+
+A frame repaints the old and the new highlight (and the pills): 13% of the
+screen on average in that drag. Real display (4K, `felt --capture --timing`,
+shared memory): root grab 13-16 ms; window up and first picker frame on
+screen 48 ms after the process starts. The dim is one multiply per channel
+per pixel, in a loop the compiler vectorizes. Not done: repainting only the
+bands that a drag adds (a 4K drag frame is already under the 4 ms budget).
+
 ## Canvas background switch (2026-11)
 
 Min of 3 to 6 runs each, before (commit "docs: the arrow tool help says a
