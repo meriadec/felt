@@ -95,7 +95,7 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
         const cx: i32 = @intFromFloat(@floor(p.pointer.x));
         const cy: i32 = @intFromFloat(@floor(p.pointer.y));
         it.cursor = Rect{ .x0 = cx - pad, .y0 = cy - pad, .x1 = cx + pad, .y1 = cy + pad };
-        it.marks = ruler.build(ctx, null, p.pointer, pad + @as(i32, @intFromFloat(@round(4 * s))), p.w, p.h, s);
+        it.marks = ruler.build(ctx, null, p.pointer, pad + @as(i32, @intFromFloat(@round(2 * s))), p.w, p.h, s);
     }
 }
 
@@ -134,20 +134,24 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
 }
 
-/// The padding square around the pointer: the same hatching, rounded corners.
+/// The padding square around the pointer: transparent, a dotted border with
+/// small rounded corners (2 px), the same dots as the guide lines.
 fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
-    const period: i32 = @intFromFloat(@round(7 * s));
+    const dot: i32 = @max(1, @as(i32, @intFromFloat(@round(2 * s))));
     const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
-    const rad: i32 = @intFromFloat(@round(8 * s));
-    // A light veil too, so the square reads on a dark picture.
+    const rad: i32 = @max(1, @as(i32, @intFromFloat(@round(2 * s))));
     const r = sq.intersect(clip);
     var y = r.y0;
     while (y < r.y1) : (y += 1) {
         var x = r.x0;
         while (x < r.x1) : (x += 1) {
             if (cornerOut(sq, x, y, rad)) continue;
-            const on = @mod(x + y, period) < th;
-            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, if (on) hatch_color else veil_color);
+            const edge_y = y < sq.y0 + th or y >= sq.y1 - th;
+            const edge_x = x < sq.x0 + th or x >= sq.x1 - th;
+            if (!edge_x and !edge_y) continue;
+            const phase = if (edge_y) x - sq.x0 else y - sq.y0;
+            if (@mod(phase, 2 * dot) >= dot) continue;
+            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, line_strong);
         }
     }
 }
