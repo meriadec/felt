@@ -1,4 +1,4 @@
-# Move tool: drag image B toward the slots, then Esc. The view (zoomed out during the drag) is restored at once: the final frame is the original view.
+# Move tool: drag image B toward the slots, then Esc. The view never changes: the final frame has the same zoom as before the drag.
 image tests/fixtures/tile_a.png
 size 900 500
 addimage tests/fixtures/tile_b.png right

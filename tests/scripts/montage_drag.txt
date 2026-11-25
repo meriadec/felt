@@ -1,5 +1,5 @@
 # Move tool: a rect on image B, then drag B below A (the nearest free slot). One undo step; the rect follows B.
-# The view zooms out on the first move so the slots are in reach, the drop refits the whole scene at once (the final frame).
+# The view never changes by itself during the drag or after the drop. The script drops in screen coordinates (the view is the initial fit).
 image tests/fixtures/tile_a.png
 size 900 500
 addimage tests/fixtures/tile_b.png right

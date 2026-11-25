@@ -1,0 +1,8 @@
+# Move tool, zoomed in by hand (Ctrl+wheel), then drag image A toward the slot right of B. Slots off screen are just not visible; the view (scale and offset) is the same before the press and after the drop.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key m
+wheel up 2 at 450 250 ctrl
+drag 400 220 700 300

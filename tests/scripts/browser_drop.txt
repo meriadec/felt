@@ -1,4 +1,4 @@
-# Release over the canvas: the image is added at the nearest slot (to the right of the first image) and the view jumps to the fit of the whole scene (the full screen: the open panel overlays it).
+# Release over the canvas: the image is added at the nearest slot (to the right of the first image) and the view stays as it was.
 image tests/fixtures/tile_a.png
 size 900 500
 touch tests/fixtures/browser/sunset.png 1700000000

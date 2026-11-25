@@ -48,6 +48,7 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
         .add_image => |a| {
             try app.addImageFile(a);
             _ = app.editor.syncView();
+            app.editor.fit(); // setup, like the extra paths of the command line
             _ = try app.render();
         },
         .dropzone => |d| {

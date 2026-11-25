@@ -187,12 +187,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   release the nearest free slot to the pointer wins (`magnet.nearest`) and
   `Document.moveImage` records ONE step that carries the annotations; no
   slot, or the image already there: nothing. Esc, `q` or a right click
-  cancel (no history). View: when the drag becomes active it remembers the
-  view (`ImageDrag.orig_*`); if a slot would fall off the screen, the view
-  zooms out to the fit of the scene and all slots plus 8% margin
-  (`makeRoomForSlots`). The drop refits at once to the whole scene (`fit`,
-  the same as key `0`); a cancel, or a release with no slot, restores the
-  remembered view at once (`restoreView`). No animation, no auto-pan.
+  cancel (no history). The view NEVER changes by itself during a drag, a drop, a cancel, an undo or a redo (no zoom, no pan, no refit): the user zooms and pans by hand; slots off screen just do not show. Only a crop (and its undo/redo), `0`, a padding change and a resize refit; the start with several images fits once (`Editor.fit`).
 - File browser (`browser*.zig`, `dirlist`, `thumbs`, `loader`): the folder
   button (top left, a small panel like the top bar; also `o`) toggles a
   panel on the left, an OVERLAY: the canvas keeps its size and the panel is
@@ -220,9 +215,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   jobs run at once, so goldens are deterministic.
   Drag and drop (`Editor.bdrag`): a press on an image row, a move of 4 px
   makes the drag active: the image size comes from the file header
-  (`image_io.info`, or the thumbnail when ready), the view zooms out if a
-  slot would be off screen (`makeRoomForSlots`, the same code as the image
-  drag), a ghost thumbnail follows the pointer (`Panel.ghost`), and over the
+  (`image_io.info`, or the thumbnail when ready), the view stays as it is (no zoom, no pan), a ghost thumbnail follows the pointer (`Panel.ghost`), and over the
   canvas (outside the panel) `montage_drop` shows the free slots around ALL
   placed images with the nearest lit. Release over the canvas: the editor
   fills `add_path` and `add_pos` (the nearest slot) and returns
@@ -235,8 +228,8 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   release over the panel cancel (the view is restored). The panel stays open.
 - View: no animation anywhere. `Editor.fit` fits the canvas (all images, the
   annotations and the canvas padding, see extent.zig) to the screen, never
-  above 1:1, centred; key `0`, a drop and a resize of a fitted view use it.
-  Undo and redo do not refit unless the kept rectangle changes (crop).
+  above 1:1, centred; key `0`, and a resize of a fitted view use it.
+  Undo and redo do not refit unless the kept rectangle changes (crop). Moving or adding an image never refits.
 - Move and crops: an annotation made before a crop stays under that crop.
   Its clip stays cut by the crop, it never grows the canvas, and the pointer
   grabs it only where it shows. A move position that would hide its body

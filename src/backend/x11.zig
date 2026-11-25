@@ -153,7 +153,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
         };
     }
     if (opts.extra_paths.len > 0) {
-        _ = app.editor.syncView(); // refit to the whole scene
+        _ = app.editor.syncView();
+        app.editor.fit(); // the initial fit of the whole scene
         app.editor.markSaved(); // the images are the start state, not an edit
     }
     app.comp.setFrameBuffer(surf.canvas());

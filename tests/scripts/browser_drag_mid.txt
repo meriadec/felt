@@ -1,4 +1,4 @@
-# Dragging sunset.png out of the list over the canvas (the script ends mid-drag): the ghost thumbnail follows the pointer, the view zoomed out to hold the free slots (dashed) around the placed image, the nearest one lit.
+# Dragging sunset.png out of the list over the canvas (the script ends mid-drag): the ghost thumbnail follows the pointer, the view unchanged, the free slots (dashed) around the placed image, the nearest one lit.
 image tests/fixtures/tile_a.png
 size 900 500
 touch tests/fixtures/browser/sunset.png 1700000000
