@@ -12,6 +12,7 @@ const ann = @import("annotation.zig");
 const extent = @import("extent.zig");
 const draw = @import("draw.zig");
 const dropzone = @import("dropzone.zig");
+const imgsel = @import("imgsel.zig");
 const magnet = @import("magnet.zig");
 const route = @import("route.zig");
 const Document = @import("document.zig").Document;
@@ -190,6 +191,10 @@ pub const Editor = struct {
     /// outlined while idle, deleted by Delete or Backspace. Cleared by a press
     /// on empty space, Esc, another tool, undo and redo.
     selected: ?usize = null,
+    /// Move/select tool, 2+ images: the id of the image kept selected (outlined,
+    /// deleted with its annotations by Delete or Backspace). Never together
+    /// with `selected`. Cleared like it.
+    selected_image: ?u32 = null,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
     /// The text caret and the other end of the selection in `draft` (byte
@@ -377,6 +382,15 @@ pub const Editor = struct {
         if (self.hover) |g| if (g.index < n) return g;
         if (self.selected) |i| if (i < n) return .{ .index = i, .part = .whole };
         return null;
+    }
+
+    /// Screen rectangle of the selection frame of the selected image (imgsel.zig).
+    pub fn imageFrame(self: *const Editor) ?geom.Rect {
+        const id = self.selected_image orelse return null;
+        if (self.tool != .move or self.help_visible or self.hand or self.doc.scene.count() < 2) return null;
+        const i = self.doc.scene.indexOf(id) orelse return null;
+        const im = self.doc.scene.images.items[i];
+        return imgsel.frame(self.view, .{ .x0 = im.x, .y0 = im.y, .x1 = im.x + im.w, .y1 = im.y + im.h });
     }
 
     /// The pointer shape the backend shows.
@@ -880,10 +894,12 @@ pub const Editor = struct {
             const grab = self.grabAt(sp);
             if (clicks >= 2 and button == .left) if (grab) |g| if (g.part == .whole and try self.startEdit(g)) return .{ .redraw = true };
             self.selected = if (grab) |g| g.index else null;
+            self.selected_image = null;
             if (grab) |g| {
                 self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
             } else if (self.doc.scene.count() >= 2) if (self.doc.scene.imageAt(ip)) |i| {
                 const im = self.doc.scene.images.items[i];
+                self.selected_image = im.id;
                 self.mode = .{ .image_drag = .{ .id = im.id, .start_screen = sp, .grab = ip.sub(Vec2.init(@floatFromInt(im.x), @floatFromInt(im.y))) } };
             };
             return .{ .redraw = true };
@@ -1242,6 +1258,7 @@ pub const Editor = struct {
         try self.commitTyping();
         self.cancel();
         self.selected = null;
+        self.selected_image = null;
         self.hand = false;
         if (t == .crop and self.tool != .crop) self.tool_before_crop = self.tool;
         self.tool = t;
@@ -1251,6 +1268,7 @@ pub const Editor = struct {
     fn undo(self: *Editor) !void {
         if (self.mode != .idle) self.cancel() else {
             self.selected = null; // its index may mean another annotation after the step
+            self.selected_image = null;
             _ = try self.doc.undo(self.gpa);
         }
     }
@@ -1258,6 +1276,7 @@ pub const Editor = struct {
     fn redo(self: *Editor) !void {
         self.cancel();
         self.selected = null;
+        self.selected_image = null;
         _ = try self.doc.redo(self.gpa);
     }
 
@@ -1265,8 +1284,9 @@ pub const Editor = struct {
     /// with the re-routes of the stairs paths that it left (they go in the
     /// same step). Nothing selected: nothing.
     fn deleteSelected(self: *Editor) !void {
-        const i = self.selected orelse return;
         if (self.tool != .move or self.mode != .idle) return;
+        if (self.selected_image) |id| return self.deleteImage(id);
+        const i = self.selected orelse return;
         self.selected = null;
         self.hover = null;
         if (i >= self.doc.items.items.len) return;
@@ -1275,6 +1295,20 @@ pub const Editor = struct {
         var changed: [route.max_settle]route.Rerouted = undefined;
         const n = route.settle(self.ctx(), self.doc.items.items, region, &changed);
         try self.commitRerouted(changed[0..n], null, true);
+    }
+
+    /// Delete the selected image with its annotations as one undo step. The
+    /// last image stays (toast). The view never changes.
+    fn deleteImage(self: *Editor, id: u32) !void {
+        if (self.doc.scene.count() < 2) {
+            self.setToast("The last image cannot be deleted.", .{});
+            return;
+        }
+        self.selected_image = null;
+        self.hover = null;
+        if (self.doc.scene.indexOf(id) == null) return;
+        try self.doc.removeImage(self.gpa, id);
+        _ = self.syncView();
     }
 
     /// Set the style of new arrows and callout pointers (a shape in
@@ -1368,8 +1402,9 @@ pub const Editor = struct {
                     self.browser.close();
                 } else if (self.hand) {
                     self.hand = false;
-                } else if (self.selected != null) {
+                } else if (self.selected != null or self.selected_image != null) {
                     self.selected = null;
+                    self.selected_image = null;
                 } else {
                     if (!self.dirty() or was_armed) return .{ .command = .quit };
                     self.quit_armed = true;
@@ -1383,6 +1418,7 @@ pub const Editor = struct {
                 self.cancel();
                 self.hand = true;
                 self.selected = null;
+                self.selected_image = null;
             },
             .zoom_in, .zoom_out => self.zoom(if (action == .zoom_in) 1 else -1, .{
                 .x = @floatFromInt(self.view.screen_w / 2),
@@ -2441,6 +2477,91 @@ test "image drag: Esc leaves the view unchanged" {
     _ = try t.key("esc");
     try std.testing.expect(std.meta.eql(v.xf, t.ed.view.xf));
     try std.testing.expect(t.ed.fitted);
+}
+
+test "image select and delete: click selects, Esc and empty space clear, Delete is one undo step with the owned annotations, the view stays" {
+    var t = T{};
+    try montageT(&t);
+    defer t.deinit();
+    const gpa = std.testing.allocator;
+    const b = t.doc.scene.images.items[1];
+    try t.doc.add(gpa, .{ .rect = .{ .a = Vec2.init(500, 20), .b = Vec2.init(600, 80), .color = t.ed.currentColor(), .width = 4 } });
+    try t.doc.add(gpa, .{ .rect = .{ .a = Vec2.init(20, 20), .b = Vec2.init(80, 80), .color = t.ed.currentColor(), .width = 4 } });
+    t.ed.view.xf = .{ .scale = 0.5, .offset = .{ .x = 10, .y = 20 } }; // by hand
+    t.ed.fitted = false;
+    const v = t.ed.view;
+    const on_b = v.toScreen(Vec2.init(700, 150));
+    // A click selects the image; no step.
+    const h = t.doc.history.items.len;
+    try mouse(&t, on_b.x, on_b.y, .down);
+    try mouse(&t, on_b.x, on_b.y, .up);
+    try std.testing.expectEqual(@as(?u32, b.id), t.ed.selected_image);
+    try std.testing.expect(t.ed.imageFrame() != null);
+    try std.testing.expectEqual(h, t.doc.history.items.len);
+    // Esc clears (and does not quit); a click on empty canvas too; so does an annotation.
+    _ = try t.key("esc");
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try std.testing.expect(t.ed.imageFrame() == null);
+    try mouse(&t, on_b.x, on_b.y, .down);
+    try mouse(&t, on_b.x, on_b.y, .up);
+    try mouse(&t, 2, 2, .down);
+    try mouse(&t, 2, 2, .up);
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try mouse(&t, on_b.x, on_b.y, .down);
+    try mouse(&t, on_b.x, on_b.y, .up);
+    const on_rect = v.toScreen(Vec2.init(500, 50));
+    try mouse(&t, on_rect.x, on_rect.y, .down);
+    try mouse(&t, on_rect.x, on_rect.y, .up);
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try std.testing.expectEqual(@as(?usize, 0), t.ed.selected);
+    // Delete: image b and its rect go in one step; image a and its rect stay.
+    try mouse(&t, on_b.x, on_b.y, .down);
+    try mouse(&t, on_b.x, on_b.y, .up);
+    try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
+    const h2 = t.doc.history.items.len;
+    _ = try t.key("delete");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.owners.items.len);
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try std.testing.expectEqual(h2 + 2, t.doc.history.items.len); // the rect and the image
+    try std.testing.expect(std.meta.eql(v.xf, t.ed.view.xf));
+    try std.testing.expect(!t.ed.fitted);
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(usize, 2), t.doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
+    try std.testing.expectEqual(@as(i32, 464), t.doc.scene.images.items[1].x);
+    try std.testing.expectEqual(@as(f32, 500), t.doc.items.items[0].rect.a.x);
+    try std.testing.expectEqual(b.id, t.doc.owners.items[0]);
+    try std.testing.expect(std.meta.eql(v.xf, t.ed.view.xf));
+    _ = try t.key("ctrl+shift+z");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    try std.testing.expect(std.meta.eql(v.xf, t.ed.view.xf));
+}
+
+test "image delete: a lone image has no selection and the last image stays; a drag selects" {
+    var t = T{};
+    try montageT(&t);
+    defer t.deinit();
+    const b = t.doc.scene.images.items[1];
+    const v = t.ed.view;
+    const press = v.toScreen(Vec2.init(700, 150));
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x - 40, press.y + 20, .move);
+    try std.testing.expectEqual(@as(?u32, b.id), t.ed.selected_image); // a drag selects too
+    _ = try t.key("esc"); // cancels the drag
+    _ = try t.key("esc"); // clears the selection
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x, press.y, .up);
+    _ = try t.key("backspace");
+    try std.testing.expectEqual(@as(usize, 1), t.doc.scene.count());
+    try mouse(&t, 100, 100, .down); // one image: no selection
+    try mouse(&t, 100, 100, .up);
+    try std.testing.expectEqual(@as(?u32, null), t.ed.selected_image);
+    try t.ed.deleteImage(t.doc.scene.images.items[0].id);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.scene.count()); // the last one stays
 }
 
 test "fit: the whole multi-image scene and the padding fit the screen" {

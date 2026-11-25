@@ -1,0 +1,8 @@
+# Move tool, 3 images: a click on image B (no annotation under it) selects it: an accent frame around it.
+# The selection is not in the export.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key m
+click 600 150

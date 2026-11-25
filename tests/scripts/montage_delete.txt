@@ -1,0 +1,11 @@
+# Select image B (with a rect on it) and delete it: image and rect go, one undo step; the view stays as it was.
+# Image C stays where it is. The scene is A and C now.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key r
+drag 520 160 560 220
+key m
+click 600 250
+key delete
