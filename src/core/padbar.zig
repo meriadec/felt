@@ -17,8 +17,8 @@ const pad = 2.0;
 const margin = 14.0;
 /// The slider's width, the inset of the track ends, and the track's
 /// distance from the top of the slot.
-const slider_w = 140.0;
-const track_inset = 10.0;
+const slider_w = 160.0;
+const track_inset = 20.0;
 const track_y = 20.0;
 
 pub const PadBar = struct {
