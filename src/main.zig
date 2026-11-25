@@ -71,11 +71,12 @@ pub fn main() !u8 {
         .window => x11.run(gpa, .{
             .image_path = opts.image.?,
             .output_path = opts.output orelse blk: {
-                default_out = try cli.defaultOutput(gpa, opts.image.?);
+                default_out = if (opts.n_extra > 0) try cli.montageOutput(gpa, opts.image.?) else try cli.defaultOutput(gpa, opts.image.?);
                 break :blk default_out.?;
             },
             .timing = opts.timing,
             .smoke = opts.smoke,
+            .extra_paths = opts.extra[0..opts.n_extra],
             .config_path = config_path,
             .canvas_bg = opts.canvas_bg,
         }, &start) catch |err| return fail(err, opts.image.?),

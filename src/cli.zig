@@ -3,11 +3,15 @@ const std = @import("std");
 const core = @import("core");
 
 pub const usage =
-    \\Usage: felt [options] <image>
+    \\Usage: felt [options] <image> [<image>...]
     \\       felt [--capture] [--delay <seconds>] [options]
     \\
     \\Opens <image> full screen for annotation (X11). Esc or q quits, Ctrl+S saves,
     \\Ctrl+C copies, ? shows the keys. Key map: docs/keymap.md.
+    \\
+    \\More images are placed on one canvas, each to the right of the one before
+    \\(drag them with the move tool; Ctrl+S then writes <first stem>.montage.png
+    \\unless -o says otherwise, never over the first image).
     \\
     \\With no <image> (or --capture) felt captures the screen first: it freezes all
     \\monitors, dims them, and you drag a rectangle (the capture is taken when you
@@ -52,11 +56,16 @@ pub const usage =
     \\
 ;
 
+pub const max_extra = 15;
+
 pub const Mode = enum { window, capture, headless, bench, help, keymap_md };
 
 pub const Options = struct {
     mode: Mode = .window,
     image: ?[]const u8 = null,
+    /// Images after the first (window mode only), up to `max_extra`.
+    extra: [max_extra][]const u8 = undefined,
+    n_extra: usize = 0,
     output: ?[]const u8 = null,
     script: ?[]const u8 = null,
     size: ?[2]u32 = null,
@@ -155,11 +164,14 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
             return error.BadArgs;
         } else {
             if (o.image != null) {
-                msg.* = "more than one image given";
-                diag.arg = a;
-                return error.BadArgs;
-            }
-            o.image = a;
+                if (o.n_extra == max_extra) {
+                    msg.* = "too many images";
+                    diag.arg = a;
+                    return error.BadArgs;
+                }
+                o.extra[o.n_extra] = a;
+                o.n_extra += 1;
+            } else o.image = a;
         }
     }
     if (capture and o.image != null) {
@@ -172,6 +184,11 @@ pub fn parse(args: []const []const u8, diag: *Diag) Error!Options {
         return error.BadArgs;
     }
     if (o.mode == .window and o.image == null) o.mode = .capture; // no image: capture the screen
+    if (o.n_extra > 0 and o.mode != .window) {
+        msg.* = "more than one image works only in the editor window";
+        diag.arg = o.extra[0];
+        return error.BadArgs;
+    }
     if (delay_given and o.mode != .capture) {
         msg.* = "--delay is for capture mode (no image given)";
         return error.BadArgs;
@@ -189,6 +206,13 @@ pub fn defaultOutput(gpa: std.mem.Allocator, image: []const u8) ![]u8 {
     const ext = std.fs.path.extension(image);
     if (std.ascii.eqlIgnoreCase(ext, ".png")) return gpa.dupe(u8, image);
     return std.fmt.allocPrint(gpa, "{s}.annotated.png", .{image[0 .. image.len - ext.len]});
+}
+
+/// Where Ctrl+S writes a montage of several images: `<stem>.montage.png`
+/// next to the first one. Caller frees with `gpa`.
+pub fn montageOutput(gpa: std.mem.Allocator, image: []const u8) ![]u8 {
+    const ext = std.fs.path.extension(image);
+    return std.fmt.allocPrint(gpa, "{s}.montage.png", .{image[0 .. image.len - ext.len]});
 }
 
 /// Where Ctrl+S writes in capture mode: `$HOME/<unix time>.png` (the old
@@ -233,6 +257,15 @@ test "parse" {
     try std.testing.expectError(error.BadArgs, parse(&.{ "--canvas-bg", "white", "a.png" }, &msg));
     try std.testing.expectEqualStrings("white", msg.arg.?);
     try std.testing.expectError(error.BadArgs, parse(&.{"--canvas-bg"}, &msg));
+}
+
+test "more images" {
+    var msg: Diag = .{};
+    const o = try parse(&.{ "a.png", "b.png", "c.jpg" }, &msg);
+    try std.testing.expectEqual(@as(usize, 2), o.n_extra);
+    try std.testing.expectEqualStrings("b.png", o.extra[0]);
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--headless", "a.png", "b.png" }, &msg));
+    try std.testing.expectError(error.BadArgs, parse(&.{ "--bench", "a.png", "b.png" }, &msg));
 }
 
 test "capture mode" {

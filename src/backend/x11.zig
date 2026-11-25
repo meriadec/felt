@@ -23,6 +23,9 @@ pub const Options = struct {
     timing: bool = false,
     /// Exit right after the first frame is on screen.
     smoke: bool = false,
+    /// More image files, placed one after the other to the right (magnet
+    /// slots, as for `addimage right`), after the first one is open.
+    extra_paths: []const []const u8 = &.{},
     /// Config file to read at startup and write on a settings change.
     config_path: ?[]const u8 = null,
     /// --canvas-bg: wins over the config file.
@@ -126,6 +129,16 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
 
     const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path });
     defer app.destroy();
+    for (opts.extra_paths) |p| {
+        app.addImageFile(.{ .path = p, .at = @as(@FieldType(@import("script.zig").AddImage, "at"), .{ .side = .right }) }) catch |err| {
+            std.debug.print("felt: cannot open {s}: {s}\n", .{ p, @errorName(err) });
+            return error.WriteReported;
+        };
+    }
+    if (opts.extra_paths.len > 0) {
+        _ = app.editor.syncView(); // refit to the whole scene
+        app.editor.markSaved(); // the images are the start state, not an edit
+    }
     app.comp.setFrameBuffer(surf.canvas());
 
     var ev: c.XEvent = undefined;

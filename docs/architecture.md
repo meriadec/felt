@@ -67,6 +67,7 @@ image files. Build: `coreModule` in build.zig.
 | File | Role |
 |---|---|
 | `main.zig` | Entry point, dispatch by mode (capture: picker first, then the editor on the result) |
+| (CLI images) | `felt IMG1 IMG2 ...` (window mode only): `cli.Options.extra`; `x11.run` places each extra image to the right of the previous one (`App.addImageFile`, magnet side right), refits the view, marks the state saved. Ctrl+S default: `<first stem>.montage.png` (`cli.montageOutput`), never over the first image |
 | `cli.zig` | Argument parsing, `--help` text; no image means capture mode; the capture save path |
 | `app.zig` | One open image: font + document + editor + compositor; runs save/copy and writes the settings |
 | `config.zig` | Settings file `$XDG_CONFIG_HOME/felt/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
