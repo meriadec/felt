@@ -1297,12 +1297,14 @@ pub const Editor = struct {
     /// Set the canvas padding (a step of settings.padding_steps) and say it.
     /// A setting, not an undo step, like the canvas background: it changes
     /// no annotation, only the margin of the canvas and the export. The
-    /// canvas changes, so the view refits.
+    /// canvas changes but the view never does: the view maps image pixels,
+    /// so the image stays where it is and the padding grows around it. The
+    /// view is no longer the fit (`0` fits again).
     fn setPadding(self: *Editor, px: u16) bool {
         if (px == self.settings.padding) return false;
         self.settings.padding = px;
         self.canvas = extent.canvas(self.ctx(), self.doc);
-        self.fit();
+        self.fitted = false;
         self.setToast("Padding: {d} px", .{px});
         return true;
     }
@@ -1993,15 +1995,20 @@ test "padding: keys step it, the canvas and the view follow, it is no undo step,
     t.init();
     defer t.deinit();
     try std.testing.expectEqual(@as(i32, 200), t.ed.canvas.width());
+    const scale0 = t.ed.view.xf.scale;
+    const origin0 = t.ed.view.toScreen(.{ .x = 0, .y = 0 });
     const eff = try t.key(".");
     try std.testing.expectEqual(Command.save_settings, eff.command.?);
     try std.testing.expectEqual(@as(u16, 64), t.ed.settings.padding);
     try std.testing.expectEqual(@as(i32, 200 + 128), t.ed.canvas.width());
     try std.testing.expectEqual(@as(i32, 100 + 128), t.ed.canvas.height());
-    try std.testing.expect(t.ed.view.xf.scale < 1); // refit
+    try std.testing.expectEqual(scale0, t.ed.view.xf.scale); // no refit
+    try std.testing.expectEqual(origin0, t.ed.view.toScreen(.{ .x = 0, .y = 0 }));
     try std.testing.expect(t.ed.dirty());
     try std.testing.expect(!t.ed.canUndo());
     _ = try t.key(",");
+    try std.testing.expectEqual(scale0, t.ed.view.xf.scale);
+    try std.testing.expectEqual(origin0, t.ed.view.toScreen(.{ .x = 0, .y = 0 }));
     try std.testing.expectEqual(@as(u16, 0), t.ed.settings.padding);
     try std.testing.expect(!t.ed.dirty());
     try std.testing.expectEqual(@as(?Command, null), (try t.key(",")).command); // at the first step
@@ -2035,11 +2042,15 @@ test "padding slider: click and drag snap to notches, wheel steps, release saves
     t.showChrome();
     const b = PadBar.of(1920, 1080);
     const y = b.trackY();
+    const scale0 = t.ed.view.xf.scale;
+    const origin0 = t.ed.view.toScreen(.{ .x = 0, .y = 0 });
     var eff = try t.ed.handle(.{ .mouse_down = .{ .x = b.notchX(2) + 3, .y = y } });
     try std.testing.expectEqual(@as(?Command, null), eff.command);
     try std.testing.expectEqual(@as(u16, 96), t.ed.settings.padding);
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = b.notchX(4), .y = y + 200 } }); // a drag follows x only
     try std.testing.expectEqual(@as(u16, 192), t.ed.settings.padding);
+    try std.testing.expectEqual(scale0, t.ed.view.xf.scale); // the drag never rescales
+    try std.testing.expectEqual(origin0, t.ed.view.toScreen(.{ .x = 0, .y = 0 }));
     eff = try t.ed.handle(.{ .mouse_up = .{ .x = b.notchX(1), .y = y } });
     try std.testing.expectEqual(Command.save_settings, eff.command.?);
     try std.testing.expectEqual(@as(u16, 64), t.ed.settings.padding);
