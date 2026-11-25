@@ -30,6 +30,11 @@ pub const Label = struct {
     /// The selection size, not a distance.
     strong: bool = false,
 
+    fn shift(l: *Label, dx: i32) void {
+        l.rect = l.rect.offset(dx, 0);
+        l.text_x += @floatFromInt(dx);
+    }
+
     pub fn str(l: *const Label) []const u8 {
         return l.buf[0..l.len];
     }
@@ -194,27 +199,28 @@ fn selection(ctx: Ctx, m: *Marks, r: Rect) void {
     m.vdist(ctx, 0, r.y0, cx);
     m.vdist(ctx, r.y1, m.h, cx);
 
-    // The size, inside the selection: width at the top, height at the left.
-    // A selection too small for two numbers gets one, "W×H", at its center.
+    // The size, outside the selection: the width above the top edge, the
+    // height left of the left edge. With no room there, the opposite side,
+    // then inside.
     var wb: [12]u8 = undefined;
     var hb: [12]u8 = undefined;
     const ws = std.fmt.bufPrint(&wb, "{d}", .{r.width()}) catch return;
     const hs = std.fmt.bufPrint(&hb, "{d}", .{r.height()}) catch return;
-    const need_w: i32 = @intFromFloat(@round(110 * s));
-    const need_h: i32 = @intFromFloat(@round(90 * s));
     const lh: i32 = @intFromFloat(@round(plateHeight(s)));
-    if (r.width() >= need_w and r.height() >= need_h) {
-        const fy: f32 = @floatFromInt(r.y0 + gap + @divTrunc(lh, 2));
-        _ = m.label(ctx, @floatFromInt(cx), fy, ws, true);
-        const hw: f32 = @floatFromInt(r.x0 + gap);
-        const cl = m.label(ctx, hw + 16 * s, @floatFromInt(cy), hs, true);
-        // Keep the left edge of the plate off the selection edge.
-        _ = cl;
-    } else {
-        var cb: [12]u8 = undefined;
-        const both = std.fmt.bufPrint(&cb, "{s}\u{d7}{s}", .{ ws, hs }) catch return;
-        _ = m.label(ctx, @floatFromInt(cx), @floatFromInt(cy), both, true);
+    var top = r.y0 - gap - lh;
+    if (top < 0) {
+        top = r.y1 + gap;
+        if (top + lh > m.h) top = r.y0 + gap;
     }
+    _ = m.label(ctx, @floatFromInt(cx), @as(f32, @floatFromInt(top)) + @as(f32, @floatFromInt(lh)) / 2, ws, true);
+    const hl = m.label(ctx, 0, @floatFromInt(cy), hs, true) orelse return;
+    const pw = hl.width();
+    var left = r.x0 - gap - pw;
+    if (left < 0) {
+        left = r.x1 + gap;
+        if (left + pw > m.w) left = r.x0 + gap;
+    }
+    m.labels[m.n_labels - 1].shift(left - hl.x0);
 }
 
 fn testMarks(gpa: std.mem.Allocator, font: *@import("font.zig").Font, hi: ?Rect, ptr: ?Vec2) Marks {
@@ -236,8 +242,8 @@ test "a selection gets its size inside and four distances to the screen edges" {
         try std.testing.expectEqual(l.rect, Rect.fromSize(0, 0, 1000, 600).intersect(l.rect));
     }
     try std.testing.expect(seen >= want.len);
-    // Size plates lie inside the selection.
-    for (m.labelSlice()) |l| if (l.strong) try std.testing.expectEqual(l.rect, Rect.fromSize(200, 150, 400, 300).intersect(l.rect));
+    // Size plates lie outside the selection.
+    for (m.labelSlice()) |l| if (l.strong) try std.testing.expect(!l.rect.intersects(Rect.fromSize(200, 150, 400, 300)));
 }
 
 test "a selection against the screen edges has no distance there" {
@@ -246,18 +252,6 @@ test "a selection against the screen edges has no distance there" {
     defer font.deinit();
     const m = testMarks(gpa, &font, Rect.fromSize(0, 0, 1000, 600), null);
     try std.testing.expectEqual(@as(usize, 2), m.n_labels);
-}
-
-test "a tiny selection gets one combined size" {
-    const gpa = std.testing.allocator;
-    var font = try @import("font.zig").Font.init(gpa, @import("root.zig").font_ttf);
-    defer font.deinit();
-    const m = testMarks(gpa, &font, Rect.fromSize(500, 300, 48, 32), null);
-    var found = false;
-    for (m.labelSlice()) |l| if (std.mem.eql(u8, l.str(), "48\u{d7}32")) {
-        found = true;
-    };
-    try std.testing.expect(found);
 }
 
 test "with no selection the pointer gets four distances" {

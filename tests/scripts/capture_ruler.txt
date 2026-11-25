@@ -1,4 +1,4 @@
-# Capture picker as a ruler: while the button is down the size shows inside
+# Capture picker as a ruler: while the button is down the size shows outside
 # the selection, its edges run dashed to the screen edges and the distances
 # sit on the margins.
 capture
