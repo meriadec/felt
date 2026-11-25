@@ -579,6 +579,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     if (app.editor.settings.padding != 0) return error.BenchPaddingNotZero;
     try padding.report(w, "frame: padding step");
     try benchMontage(gpa, w, opts);
+    try benchBrowser(gpa, w, opts);
     try benchCapture(gpa, w, opts);
     try w.flush();
 }
@@ -639,6 +640,73 @@ fn benchMontage(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
     }
     try gt.report(w, "frame: image drag (ghost)");
     _ = try app.handle(.{ .key = .{ .key = .{ .named = .escape } } });
+    _ = try app.render();
+}
+
+/// The file browser on a folder of 40 images (1280x720 PNGs, made in a temp
+/// folder), run without a thread (every job is done at once): the first
+/// thumbnail (decode + downscale), the panel's first frame, a full pass of
+/// scrolling with every thumbnail ready (frames that repaint the panel), and
+/// hover frames.
+fn benchBrowser(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void {
+    const W = opts.size[0];
+    const H = opts.size[1];
+    var dir_name: [64]u8 = undefined;
+    const rel = try std.fmt.bufPrint(&dir_name, "felt-bench-browser-{d}", .{std.time.milliTimestamp()});
+    var tmp = try std.fs.cwd().makeOpenPath("test-out", .{});
+    defer tmp.close();
+    try tmp.makePath(rel);
+    defer tmp.deleteTree(rel) catch {};
+    const dir = try tmp.realpathAlloc(gpa, rel);
+    defer gpa.free(dir);
+    var img = try synthetic(gpa, 1280, 720);
+    defer img.deinit(gpa);
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    for (0..40) |i| {
+        const p = try std.fmt.bufPrint(&path_buf, "{s}/img{d:0>2}.png", .{ dir, i });
+        try core.image_io.savePng(gpa, &img, p);
+    }
+    var t = try std.time.Timer.start();
+    var th = try core.thumbs.make(gpa, try std.fmt.bufPrint(&path_buf, "{s}/img00.png", .{dir}), 192, 112);
+    th.canvas.deinit(gpa);
+    try w.print("{s:<26} {d:.3} ms\n", .{ "thumbnail (decode, scale)", ms(t.read()) });
+
+    const app = try App.create(gpa, try synthetic(gpa, W / 2, H / 2), W, H, .{ .output_path = null });
+    defer app.destroy();
+    _ = try app.render();
+    try app.editor.browser.setHome(dir);
+    t.reset();
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'o' } } }); // lists, thumbnails of the rows that show
+    try w.print("{s:<26} {d:.3} ms\n", .{ "open (list + visible thumbs)", ms(t.read()) });
+    t.reset();
+    const d0 = try app.render();
+    try w.print("{s:<26} {d:.3} ms ({d} rects)\n", .{ "frame: panel first paint", ms(t.read()), d0.len });
+    // A pass over the list loads every thumbnail; then time the scrolling.
+    const b = &app.editor.browser;
+    const step = b.geo().row_h * 0.5;
+    while (b.scrollBy(step * 4)) {}
+    while (b.scrollBy(-step * 4)) {}
+    _ = try app.render();
+    var st = Stats{};
+    defer st.deinit(gpa);
+    while (b.scrollBy(step)) {
+        t.reset();
+        const d = try app.render();
+        if (d.len > 0) try st.add(gpa, t.read());
+    }
+    try st.report(w, "frame: panel scroll");
+    var hv = Stats{};
+    defer hv.deinit(gpa);
+    const g = b.geo();
+    for (0..30) |i| {
+        const y = g.list.min.y + (@as(f32, @floatFromInt(i)) + 0.5) * g.row_h * 0.5;
+        _ = try app.handle(.{ .mouse_move = .{ .x = g.list.min.x + 40, .y = y } });
+        t.reset();
+        const d = try app.render();
+        if (d.len > 0) try hv.add(gpa, t.read());
+    }
+    try hv.report(w, "frame: row hover");
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'o' } } });
     _ = try app.render();
 }
 

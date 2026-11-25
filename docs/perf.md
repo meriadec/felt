@@ -237,6 +237,31 @@ screen 41-42 ms (render 5.5-7 ms, present 6.5-10 ms). Whole process
 - Downscale: separable area filter, both passes split across threads.
 - X11 loop: drains all queued events (motion bursts) before one render.
 
+## File browser (2026-11)
+
+The panel is chrome: it repaints as one panel (`Panel.browser`, signature =
+`Browser.rev`), so a scroll, a hover change or a thumbnail that arrives
+repaints the panel rect only (340 x ~1000 px at 1080p, twice at 4K).
+`benchBrowser`: 40 PNGs of 1280x720, no thread (every job runs at once), min
+of 2 runs, ReleaseFast:
+
+| Metric | 1080p | 4K |
+|---|---|---|
+| one thumbnail (decode 1280x720 PNG + area downscale) | 2.7 ms | 3.3 ms |
+| open: list 40 names + thumbnails of the visible rows (sync) | 35 ms | 48 ms |
+| frame, panel first paint | 1.0 ms | 4.6 ms |
+| frame, scroll step (panel repaint, all thumbnails ready) | avg 0.79 ms, p95 0.83 | avg 2.5 ms, p95 2.8 |
+| frame, row hover | avg 0.81 ms | avg 2.6 ms |
+
+Under the 4 ms frame budget. The window never waits on files: one worker
+thread lists folders (one `stat` per folder or image name, hidden and other
+files skipped by name before the `stat`) and makes thumbnails of the rows that
+show; a scroll drops the queued requests of rows that left. In the real window
+(4K, 10 000 PNGs in one folder) the list and its first thumbnails are on screen
+within 0.3 s of the click and the wheel stays smooth; the loop is idle (0.0 %
+CPU) when no job runs. The X11 loop waits in `poll` on the display and a wake
+pipe only while the loader is busy.
+
 ## Tried and rejected
 
 - wuffs PNG decoder: same speed as stb in fresh processes here, 3.7 MB of C.

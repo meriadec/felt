@@ -93,12 +93,21 @@ One command per line, screen coordinates, `#` starts a comment.
 | `addimage PATH SIDE` | Place another image on a magnet side (`left`, `top`, `right`, `bottom`) of the image placed last: 64 px away, centered on the shared edge (src/core/magnet.zig). One undo step. See tests/scripts/montage.txt (small tiles: tests/fixtures/tile_{a,b,c}.png) |
 | `dropzone W H X Y` | Montage drop overlay for a dragged image of W x H px with the pointer at the screen point (X, Y): the free magnet slots around the placed images are dashed, the nearest to the pointer is highlighted (src/core/dropzone.zig). `dropzone off` clears it. Slots lie outside the images: with a canvas that fills the screen they are off-screen, so use small images (tests/scripts/montage_dropzone*.txt) |
 | `drag X0 Y0 X1 Y1` on an image | With the move tool and 2+ images, a drag that starts on an image (no annotation under it) drags the image to the nearest free slot (tests/scripts/montage_drag.txt); a script that ends mid-drag shows the ghost and the slots (montage_drag_mid.txt). The press must be inside an image on the first view: the view zooms out at the first move, and after the drop or the cancel (Esc) it animates back to the original zoom; a replay has no clock, so the animation ends at once and the final frame shows the end view (montage_drag_cancel.txt: the original view) |
+| `touch PATH SECONDS` | Set the modification time of a file or folder (repo-relative) to SECONDS since the epoch. The file browser sorts by it, and git does not keep times: a script sets them (tests/scripts/browser_open.txt). Touch the files in a folder before the folder itself |
+| `browser home DIR` | The folder the file browser starts in (repo-relative; replaces `$HOME`), before the first open. Dates show in UTC |
+| `ui browser` / `move ui browser` | Click or hover the folder button (top left): opens or closes the browser panel (same as `key o`) |
+| `browser cd NAME` | Move onto the row named NAME (`..` for the parent row) and click it: enters a folder. The row is scrolled into view first; an unknown name fails the replay |
+| `browser up` | Click the up button of the header |
+| `browser scroll N` | N wheel steps over the list (positive: down, negative: up) |
+| `browser drag NAME X Y [hold]` | Press on the row NAME, move to (X, Y) in 8 steps, release. With `hold` the button stays down (the frame shows the ghost and the slots; `key esc` cancels, `up X Y` releases). The headless browser has no thread: thumbnails are ready right after each event. Fixture folder: tests/fixtures/browser/ (images and folders, a hidden file and a text file that must not show) |
 | `delay SECONDS` | The picker's initial delay (`--delay`); `key tab` toggles it |
 
 The replay renders after each event that asks for a redraw, like the X11
 loop. A raw left press (`click`, `down`, `drag`) on the dock, its style
 switch or the top bar fails the replay: click chrome with `ui`, so a
 layout change never turns a drawing press into a button click. A script that ends mid-drag or mid-typing shows the preview in the frame.
+
+File browser scripts (tests/scripts/browser_*.txt): `browser_open` (the list: mixed by date, thumbnails, no hidden or text file), `browser_nav` and `browser_trips` (enter a folder, up, scroll), `browser_drag_mid` (ghost + slots), `browser_drop` and `browser_drop_undo` (one undo step), `browser_drag_cancel` (Esc, release over the panel). Unit tests: `dirlist.zig` (filter, sort, dates, paths; a real temp folder), `thumbs.zig` (fit, LRU cache), `loader.zig` (sync and threaded, wake pipe, dropped jobs), `browsergeo.zig` (geometry, hit test, scroll clamp), `browser.zig` (listing, enter, up, errors, worker thread), `editor.zig` (keys, wheel, the drag state machine, cancel) and `browser_draw.zig` (ellipsis).
 
 ## Add a golden script
 

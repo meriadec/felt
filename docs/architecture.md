@@ -7,7 +7,7 @@ backend (x11.zig | headless.zig + script.zig)
    | core.input.Event
    v
 app.zig  App.handle ──> editor.zig (state machine) ──> document.zig (annotations, undo)
-   |                        | Command: save / copy / quit / save_settings
+   |                        | Command: save / copy / quit / save_settings / add_image
    |                        v
    |                    App runs IO: exporter + image_io.savePng | clipboard.zig (xclip)
    |                                 | config.zig (settings file, window mode only)
@@ -45,6 +45,12 @@ image files. Build: `coreModule` in build.zig.
 | `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, centered on the shared edge; the nearest slot to a point |
 | `dashed.zig` | Dashed rectangle outline (inside the rectangle, alpha blend, clipped) |
 | `dropzone.zig` | Montage drop overlay: `Drop` (the dragged image size + the pointer, screen px; `Editor.montage_drop`, set by `setMontageDrop`/`clearMontageDrop`) and `Overlay` (free slots on screen from `magnet.slots`, the hot one = `magnet.nearest`, the ghost outline of a dragged image; `slotList`, `build`, `eql`, `sameSlots`, `paint`). `Drop.exclude` = the dragged image: its place is free and no slot hangs on it |
+| `dirlist.zig` | One folder for the browser: `list` keeps folders and images (png, jpg, jpeg, bmp: what `image_io` decodes), skips hidden names and other files, sorts newest first (`newerFirst`, folders and images mixed); `formatDate`, `tildePath`, `parent` |
+| `thumbs.zig` | `make` (decode + area downscale into a box), `Cache` (LRU, 200 thumbnails, key = hash of the path, a changed mtime is a miss) |
+| `loader.zig` | Background work of the browser: one worker thread, jobs `list` and `thumb`, results taken by the main thread, a wake byte on a pipe; `threaded = false` runs jobs at once (headless) |
+| `browsergeo.zig` | Folder button, browser panel, header, rows, scrollbar: layout from the screen size, hit test, scroll clamp |
+| `browser.zig` | Browser state: folder, listing, scroll, hover, thumbnails of the visible rows only (`refresh`), `pump` (take results) |
+| `browser_draw.zig` | Panel contents and the drag ghost (thumbnail, header, ellipsis, states) |
 | `document.zig` | The scene, the annotation list (each annotation knows its image: `owners`), crop stack, undo/redo of all, number counter. Images: `addImage`, `moveImage` (carries its annotations), `removeImage` (removes them too; one undo step), `base()` = scene bounding box. A scene change bumps `revision` and `removals`: the compositor repaints everything. A one-image document paints on the old fast path (`compositor.paintImage`, one cached downscale); 2+ images paint each image (`paintPlaced`, one cached downscale per image id) over the canvas background, and the export blits each image into one composite. The UI must not remove the last image |
 | `extent.zig` | Canvas of the document: the kept rectangle plus the canvas padding (`Ctx.pad`), grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
@@ -57,7 +63,7 @@ image files. Build: `coreModule` in build.zig.
 | `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the style switch above it (arrow and callout tools: arrow style; text tool: text style) |
 | `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch; save and copy stay on keys |
 | `padbar.zig` | Padding widget geometry and hit test, bottom right: the canvas padding slider (notch geometry, nearest step) |
-| `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
+| `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, folder button and file browser panel (contents in browser_draw.zig), help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
 | `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, size pill, delay pill; `Scene.render` repaints only the difference |
@@ -190,6 +196,46 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   image shows where it showed before the drag (cancel: exactly the original
   view). The drop does not refit, even when the scene bounds change. No
   auto-pan.
+- File browser (`browser*.zig`, `dirlist`, `thumbs`, `loader`): the folder
+  button (top left, a small panel like the top bar; also `o`) toggles a
+  panel on the left, an OVERLAY: the canvas keeps its size and the panel is
+  drawn over it (and over the dock). The editor owns the `Browser` and
+  routes the input; chrome draws it as two panels (`Panel.folder_btn`,
+  `Panel.browser`, signature `Browser.rev`) plus `Panel.ghost`. `h` hides it
+  with the other panels. Content: the folder (starts at `$HOME`, then the
+  last one of the session), `..` first when not at `/`, then folders and
+  images (png, jpg, jpeg, bmp) newest first, mixed; hidden names and other
+  files never show. A row: thumbnail (fit in 96 x 56, folders get an icon),
+  name cut with an ellipsis, date and (once known) image size. The header
+  has the up button and the path (`~`, cut on the left). Click a folder, `..`
+  or the up button to go in or up; the wheel scrolls (1.5 rows a step, a slim
+  scrollbar); an unreadable folder shows its error. A click on an image row
+  does nothing (the image is dragged onto the canvas, see below). Esc or `q`
+  closes it (after cancelling a drag, after closing the help; before the
+  other Esc actions).
+  Threads: the main thread never lists or decodes. A folder change submits a
+  `list` job (one `stat` per folder or image name) to the loader; `refresh`
+  submits `thumb` jobs for the visible rows without one (and drops the queued
+  ones of rows that left); results come back with a wake byte on a pipe, and
+  `App.pump` stores them and asks for a redraw. The X11 loop blocks in
+  `XNextEvent` when idle; while the loader is busy it polls the display and
+  the pipe (no timeout: zero CPU between results). Headless: no thread, the
+  jobs run at once, so goldens are deterministic.
+  Drag and drop (`Editor.bdrag`): a press on an image row, a move of 4 px
+  makes the drag active: the image size comes from the file header
+  (`image_io.info`, or the thumbnail when ready), the view zooms out if a
+  slot would be off screen (`makeRoomForSlots`, the same code as the image
+  drag), a ghost thumbnail follows the pointer (`Panel.ghost`), and over the
+  canvas (outside the panel) `montage_drop` shows the free slots around ALL
+  placed images with the nearest lit. Release over the canvas: the editor
+  fills `add_path` and `add_pos` (the nearest slot) and returns
+  `Command.add_image`; the App loads the file, `Document.addImage` (ONE undo
+  step; undo removes it), switches the Ctrl+S target to
+  `<first stem>.montage.png` (`Config.montage_output`, unless `-o` was given)
+  and calls `Editor.imageAdded`: the view eases to the fit of the whole scene
+  in the room right of the panel. A file that does not load: toast, the view
+  eases back. Esc, `q`, a right click or a release over the panel cancel (the
+  view eases back to the one before). The panel stays open.
 - View animation (`viewanim.zig`, `Editor.anim`): pure and time-injected. The
   backend calls `Editor.tick(now_ns)` while `Editor.animating()` and redraws
   when it returns true. The X11 loop then waits with `poll` (8 ms) instead of
