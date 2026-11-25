@@ -85,7 +85,7 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
     // The ruler shows only while the button is down.
     if (p.phase == .dragging) {
         it.marks = ruler.build(ctx, it.hi, p.pointer, p.w, p.h, s);
-        if (it.hi) |r| it.band = @min(@as(i32, @intFromFloat(@round(64 * s))), @divTrunc(@min(r.width(), r.height()), 2));
+        if (it.hi) |r| it.band = @min(@as(i32, @intFromFloat(@round(32 * s))), @divTrunc(@min(r.width(), r.height()), 2));
     }
 }
 
