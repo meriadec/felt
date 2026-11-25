@@ -18,6 +18,9 @@ pub const Line = struct {
     dashed: bool = false,
     /// A dimension line of the selection, brighter than a distance hairline.
     strong: bool = false,
+    /// Dimmer than a distance hairline: the edges of a selection, extended
+    /// to the screen edges.
+    faint: bool = false,
 };
 
 /// A number on a line, in a small flat plate: one small size for every label.
@@ -123,7 +126,9 @@ pub const Marks = struct {
         if (b - a < 1) return;
         const t = m.t;
         const r: Rect = if (vertical) .{ .x0 = pos, .y0 = a, .x1 = pos + t, .y1 = b } else .{ .x0 = a, .y0 = pos, .x1 = b, .y1 = pos + t };
+        const n = m.n_lines;
         m.line(r, true, false);
+        if (m.n_lines > n) m.lines[n].faint = true;
     }
 
     fn free(m: *const Marks, r: Rect) bool {

@@ -31,6 +31,7 @@ const hatch_color = nord.n10.withAlpha(80);
 const veil_color = nord.n6.withAlpha(40);
 const line_soft = nord.n6.withAlpha(120);
 const line_strong = nord.n6.withAlpha(210);
+const line_faint = nord.n6.withAlpha(56);
 
 const Pill = struct {
     rect: Rect = .empty,
@@ -149,7 +150,7 @@ fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
             if (!edge_x and !edge_y) continue;
             const phase = if (edge_y) x - sq.x0 else y - sq.y0;
             if (@mod(phase, 2 * dot) >= dot) continue;
-            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, line_strong);
+            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, line_soft);
         }
     }
 }
@@ -174,7 +175,7 @@ fn hatch(cv: *Canvas, clip: Rect, hi: Rect, band: i32, s: f32) void {
 }
 
 fn drawLine(cv: *Canvas, clip: Rect, l: ruler.Line, s: f32) void {
-    const c = if (l.strong) line_strong else line_soft;
+    const c = if (l.strong) line_strong else if (l.faint) line_faint else line_soft;
     if (!l.dashed) return cv.blendRect(l.r.intersect(clip), c);
     // Dashes along the longer side.
     const dash: i32 = @intFromFloat(@round(4 * s));
