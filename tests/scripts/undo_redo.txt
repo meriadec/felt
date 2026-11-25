@@ -5,7 +5,7 @@ ui arrow-style straight
 key r
 drag 100 100 200 200
 key a
-drag 300 300 400 200
+drag 400 200 300 300
 key t
 click 500 100
 type third

@@ -5,11 +5,11 @@ size 900 500
 ui tool arrow
 ui arrow-style straight
 key c
-drag 300 150 450 250
+drag 450 250 300 150
 type Tip
 key enter
 key a
-drag 150 300 300 380
+drag 300 380 150 300
 key m
 drag 300 150 200 100
 drag 470 250 470 330

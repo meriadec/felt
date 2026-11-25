@@ -7,7 +7,7 @@
 size 900 500
 ui tool arrow
 ui arrow-style straight
-drag 80 250 820 250
+drag 820 250 80 250
 ui arrow-style stairs
-drag 300 120 600 380
-drag 250 350 650 150
+drag 600 380 300 120
+drag 650 150 250 350

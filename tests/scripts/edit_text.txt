@@ -3,7 +3,7 @@
 size 900 500
 ui tool callout
 ui arrow-style straight
-drag 200 200 330 160
+drag 330 160 200 200
 type Old note
 key enter
 ui tool text

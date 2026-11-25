@@ -5,8 +5,8 @@
 size 900 500
 ui tool callout
 ui pointer-style stairs
-drag 250 190 600 360
+drag 600 360 250 190
 type Pointer
 key enter
 key a
-drag 580 240 260 100
+drag 260 100 580 240

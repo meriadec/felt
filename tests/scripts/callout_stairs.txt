@@ -9,29 +9,29 @@ size 900 500
 ui tool callout
 ui pointer-style straight
 key c
-drag 90 90 260 150
+drag 260 150 90 90
 type Left target
 key enter
-drag 850 110 650 170
+drag 650 170 850 110
 type Right
 key enter
 key 5
-drag 290 190 340 290
+drag 340 290 290 190
 type Above
 key enter
-drag 560 400 520 280
+drag 520 280 560 400
 type Below
 key enter
 key 4
-drag 700 300 745 320
+drag 745 320 700 300
 type Short
 key enter
-drag 700 360 712 365
+drag 712 365 700 360
 type Near
 key enter
 ui pointer-style
 key 1
-drag 90 300 200 360
+drag 200 360 90 300
 type Straight
 key enter
 key ctrl+z ctrl+y

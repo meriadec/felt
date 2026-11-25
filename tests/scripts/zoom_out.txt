@@ -6,7 +6,7 @@ size 900 500
 ui tool arrow
 ui arrow-style straight
 key -
-drag 60 60 300 200
+drag 300 200 60 60
 wheel down at 100 100 ctrl
 down 450 250 middle
 move 470 260

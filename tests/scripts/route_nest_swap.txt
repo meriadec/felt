@@ -4,5 +4,5 @@
 size 900 500
 ui tool arrow
 ui arrow-style stairs
-drag 557 100 435 400
-drag 495 100 260 400
+drag 435 400 557 100
+drag 260 400 495 100

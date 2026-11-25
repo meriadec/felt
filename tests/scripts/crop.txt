@@ -7,7 +7,7 @@ ui arrow-style straight
 key r
 drag 85 140 455 185
 key a
-drag 300 400 180 175
+drag 180 175 300 400
 key x
 drag 70 55 485 285
 key 5 n

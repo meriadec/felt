@@ -1,8 +1,8 @@
 # Startup state: no tool key, no click on the dock. The callout tool is
 # active with a stairs pointer: the dock shows the callout slot picked and
-# the switch above it shows stairs. A drag from the target draws a callout
+# the switch above it shows stairs. A drag from the box to the target draws a callout
 # whose pointer is an elbow; the text is typed, Enter commits.
 size 900 500
-drag 150 120 500 300
+drag 500 300 150 120
 type Default: callout, stairs
 key enter

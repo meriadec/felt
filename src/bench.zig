@@ -407,24 +407,25 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     if (app.editor.arrow_style != .straight or app.editor.tool != .move) return error.BenchStateNotRestored;
     _ = try app.render();
 
-    // A stairs callout: drag from the target to the box (the preview), then
+    // A stairs callout: drag from the box to the target (the preview), then
     // move its box among 32 annotations (the elbow re-routes each frame).
     var dcs = Stats{};
     defer dcs.deinit(gpa);
     damage_px = 0;
     for ("cc") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } }); // again: stairs
     if (app.editor.arrow_style != .stairs or app.editor.tool != .callout) return error.BenchNoStairsCallout;
+    const tip_at = core.geom.Vec2.init(W * 0.15, H * 0.25);
     const box_at = core.geom.Vec2.init(W * 0.6, H * 0.4);
-    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.15, .y = H * 0.25 } });
+    _ = try app.handle(.{ .mouse_down = .{ .x = box_at.x, .y = box_at.y } });
     for (0..n_moves) |i| {
         const f = @as(f32, @floatFromInt(i + 1)) / n_moves;
-        _ = try app.handle(.{ .mouse_move = .{ .x = W * 0.15 + (box_at.x - W * 0.15) * f, .y = H * 0.25 + (box_at.y - H * 0.25) * f } });
+        _ = try app.handle(.{ .mouse_move = .{ .x = box_at.x + (tip_at.x - box_at.x) * f, .y = box_at.y + (tip_at.y - box_at.y) * f } });
         t.reset();
         const d = try app.render();
         try dcs.add(gpa, t.read());
         damage_px += d.area();
     }
-    _ = try app.handle(.{ .mouse_up = .{ .x = box_at.x, .y = box_at.y } });
+    _ = try app.handle(.{ .mouse_up = .{ .x = tip_at.x, .y = tip_at.y } });
     for ("Stairs callout") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } });
     _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } });
     try dcs.report(w, "frame: drag stairs callout");

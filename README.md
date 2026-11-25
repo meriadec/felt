@@ -86,8 +86,8 @@ shows the tools (each with its key), the colors and the size. Click it or use
 the keys. `h` hides the panels, hold `Space` for the hand (drag with the left button to pan), `?` or F1 shows every shortcut. The full
 list is in [docs/keymap.md](docs/keymap.md).
 
-- **Callouts and arrows.** The callout tool is active at startup: drag from the
-  point of interest to the box, then type. Arrows and callout pointers share one
+- **Callouts and arrows.** The callout tool is active at startup: press where the
+  box goes, drag to the point of interest, then type. Arrows and callout pointers share one
   style (stairs or straight). Press `c` or `a` again, or use the switch above the
   dock, to change it.
 - **Tools.** Tab and Shift+Tab cycle them.

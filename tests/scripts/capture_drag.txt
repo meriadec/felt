@@ -1,4 +1,4 @@
 # Capture picker: a drag confirms on release. The frame shows the last
 # picker state (the bright rectangle, its size pill); the export is the crop.
 capture
-drag 300 200 700 520 8
+drag 700 520 300 200 8

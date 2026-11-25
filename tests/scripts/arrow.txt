@@ -2,8 +2,8 @@
 size 900 500
 ui tool arrow
 ui arrow-style straight
-drag 300 400 180 175
+drag 180 175 300 400
 key 5 ]
-drag 700 120 560 300
+drag 560 300 700 120
 key 1 [ [
-drag 500 420 540 380
+drag 540 380 500 420

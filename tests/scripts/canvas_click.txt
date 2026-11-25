@@ -8,7 +8,7 @@ size 900 500
 ui tool arrow
 ui arrow-style straight
 key 2
-drag 300 250 200 150
+drag 200 150 300 250
 key p
 drag 600 200 660 300
 ui canvas-bg dark

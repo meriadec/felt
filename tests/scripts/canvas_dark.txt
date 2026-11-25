@@ -10,21 +10,21 @@ size 900 500
 ui tool arrow
 ui arrow-style straight
 key 1
-drag 250 245 275 380
+drag 275 380 250 245
 key 2
-drag 305 245 330 380
+drag 330 380 305 245
 key 3
-drag 360 245 385 380
+drag 385 380 360 245
 key 4
-drag 415 245 440 380
+drag 440 380 415 245
 key 5
-drag 470 245 495 380
+drag 495 380 470 245
 key 6
-drag 525 245 550 380
+drag 550 380 525 245
 key 7
-drag 580 245 605 380
+drag 605 380 580 245
 key 8
-drag 635 245 660 380
+drag 660 380 635 245
 key n 7
 click 300 160
 key 8

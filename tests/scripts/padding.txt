@@ -6,7 +6,7 @@ ui canvas-bg dark
 ui tool arrow
 ui arrow-style straight
 key 1
-drag 300 200 100 150
+drag 100 150 300 200
 ui tool rect
 key 3
 drag 735 150 800 280

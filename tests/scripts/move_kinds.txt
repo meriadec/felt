@@ -4,7 +4,7 @@
 size 900 500
 ui tool arrow
 ui arrow-style straight
-drag 120 100 260 160
+drag 260 160 120 100
 key r
 drag 300 80 420 150
 key t
@@ -16,7 +16,7 @@ click 650 110
 key p
 drag 300 200 420 260
 key c
-drag 560 250 680 320
+drag 680 320 560 250
 type Box
 key enter
 key m

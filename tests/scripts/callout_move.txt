@@ -6,7 +6,7 @@
 size 900 500
 ui tool callout
 ui pointer-style stairs
-drag 150 100 500 250
+drag 500 250 150 100
 type Move me
 key enter
 key m

@@ -6,9 +6,9 @@
 size 900 500
 ui tool arrow
 ui arrow-style stairs
-drag 150 120 650 380
+drag 650 380 150 120
 ui arrow-style straight
-drag 340 250 460 250
+drag 460 250 340 250
 key m
 drag 400 250 160 300
 key ctrl+z

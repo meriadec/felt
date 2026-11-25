@@ -6,11 +6,11 @@
 size 900 500
 ui tool arrow
 ui arrow-style stairs
-drag 150 120 650 380
+drag 650 380 150 120
 key m
 drag 400 250 250 250
 key a
 ui arrow-style straight
-drag 200 200 300 200
+drag 300 200 200 200
 key m
 move 250 250

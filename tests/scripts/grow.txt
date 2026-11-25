@@ -6,11 +6,11 @@ image tests/fixtures/strip.png
 size 900 500
 ui tool arrow
 ui arrow-style straight
-drag 150 140 280 245
+drag 280 245 150 140
 key c
-drag 600 255 560 380
+drag 560 380 600 255
 type Click here
 key enter
 key 5 a
-drag 600 250 860 230
+drag 860 230 600 250
 key ctrl+z

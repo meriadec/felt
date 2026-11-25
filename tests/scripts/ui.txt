@@ -3,7 +3,7 @@
 size 900 500
 ui tool arrow
 ui arrow-style straight
-drag 300 300 400 200
+drag 400 200 300 300
 ui color 5
 key ] ]
 key esc

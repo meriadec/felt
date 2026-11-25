@@ -705,10 +705,10 @@ pub const Editor = struct {
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
         const c = self.currentColor();
         return switch (d.tool) {
-            .arrow => self.routed(.{ .arrow = .{ .tail = d.cur, .head = d.start, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
+            .arrow => self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
-            .callout => self.routed(.{ .callout = .{ .target = d.start, .anchor = d.cur, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
+            .callout => self.routed(.{ .callout = .{ .target = d.cur, .anchor = d.start, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             .text, .number, .move, .crop => null,
         };
     }
@@ -926,7 +926,7 @@ pub const Editor = struct {
         self.mode = .idle;
         const is_click = sp.dist(d.start_screen) < click_slop;
         if (d.tool == .callout) {
-            self.startTyping(.{ .kind = .callout, .pos = ip, .target = if (is_click) null else d.start });
+            self.startTyping(.{ .kind = .callout, .pos = d.start, .target = if (is_click) null else ip });
             return .{ .redraw = true };
         }
         if (is_click) return .{ .redraw = true };
@@ -1465,9 +1465,9 @@ const T = struct {
         _ = try self.ed.handle(.{ .mouse_move = .{ .x = x1, .y = y1 } });
         _ = try self.ed.handle(.{ .mouse_up = .{ .x = x1, .y = y1 } });
     }
-    /// An arrow drawn the way the user does: from its head to its tail.
+    /// An arrow drawn the way the user does: from its tail to its head.
     fn arrow(self: *T, tx: f32, ty: f32, hx: f32, hy: f32) !void {
-        try self.drag(hx, hy, tx, ty);
+        try self.drag(tx, ty, hx, hy);
     }
 };
 
@@ -1698,7 +1698,7 @@ test "callout drag then type" {
     t.init();
     defer t.deinit();
     _ = try t.key("c");
-    try t.drag(10, 10, 80, 60);
+    try t.drag(80, 60, 10, 10);
     for ("Hi") |c| _ = try t.key(&[_]u8{c});
     _ = try t.key("enter");
     const c = t.doc.items.items[0].callout;
@@ -1743,7 +1743,7 @@ test "move: a callout box moves alone, its tip alone; an arrow end alone" {
     t.init();
     defer t.deinit();
     _ = try t.key("c");
-    try t.drag(20, 20, 100, 60);
+    try t.drag(100, 60, 20, 20);
     _ = try t.key("H");
     _ = try t.key("enter");
     _ = try t.key("m");
@@ -1920,7 +1920,7 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     defer t.deinit();
     _ = try t.key("c");
     _ = try t.key("c"); // stairs
-    try t.drag(10, 10, 150, 70); // box right of x 150; pointer: left to x 80, up to y 10, left to x 10
+    try t.drag(150, 70, 10, 10); // box right of x 150; pointer: left to x 80, up to y 10, left to x 10
     _ = try t.key("H");
     _ = try t.key("enter");
     _ = try t.key("m");
