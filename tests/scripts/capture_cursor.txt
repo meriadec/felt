@@ -1,0 +1,5 @@
+# Capture picker before the button: the pointer carries a hatched padding
+# square (as wide as the selection band) and four hairlines with distances.
+capture
+move 300 200
+move 760 430

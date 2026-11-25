@@ -39,6 +39,8 @@ pub const Picker = struct {
     windows: []const Rect = &.{},
     phase: Phase = .idle,
     pointer: Vec2 = .zero,
+    /// A pointer event came in: `pointer` is real.
+    seen: bool = false,
     press: Vec2 = .zero,
     /// The press moved past the drag threshold.
     moved: bool = false,
@@ -96,6 +98,7 @@ pub const Picker = struct {
 
     fn setPointer(self: *Picker, p: Vec2) void {
         self.pointer = p;
+        self.seen = true;
         self.hover = self.windowAt(p);
         if (self.phase == .idle or self.phase == .hover) self.phase = if (self.hover != null) .hover else .idle;
         if (self.phase == .dragging and !self.moved) {

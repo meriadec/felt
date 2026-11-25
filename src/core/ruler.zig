@@ -133,16 +133,16 @@ pub const Marks = struct {
 
     /// Distance hairline along x at row y, from a to b; its number sits mid-way
     /// when it fits and hides no other number.
-    fn hdist(m: *Marks, ctx: Ctx, a: i32, b: i32, y: i32) void {
+    fn hdist(m: *Marks, ctx: Ctx, a: i32, b: i32, y: i32, n: i32) void {
         if (b - a < 2) return;
         m.hline(a, b, y, @intFromFloat(@round(3 * m.s)), true, false);
-        m.distLabel(ctx, @as(f32, @floatFromInt(a + b)) / 2, @floatFromInt(y), b - a, true);
+        m.distLabel(ctx, @as(f32, @floatFromInt(a + b)) / 2, @floatFromInt(y), n, true);
     }
 
-    fn vdist(m: *Marks, ctx: Ctx, a: i32, b: i32, x: i32) void {
+    fn vdist(m: *Marks, ctx: Ctx, a: i32, b: i32, x: i32, n: i32) void {
         if (b - a < 2) return;
         m.vline(a, b, x, @intFromFloat(@round(3 * m.s)), true, false);
-        m.distLabel(ctx, @floatFromInt(x), @as(f32, @floatFromInt(a + b)) / 2, b - a, false);
+        m.distLabel(ctx, @floatFromInt(x), @as(f32, @floatFromInt(a + b)) / 2, n, false);
     }
 
     fn distLabel(m: *Marks, ctx: Ctx, cx: f32, cy: f32, n: i32, horizontal: bool) void {
@@ -160,8 +160,10 @@ pub fn plateHeight(s: f32) f32 {
     return 16 * s;
 }
 
-/// Marks for a selection `hi` on a screen of w x h, or for the `pointer` alone.
-pub fn build(ctx: Ctx, hi: ?Rect, pointer: ?Vec2, w: u32, h: u32, scale: f32) Marks {
+/// Marks for a selection `hi` on a screen of w x h, or for the `pointer`
+/// alone: its four hairlines start `arm` px from it (room for the padding
+/// square) and carry the distance from the pointer itself.
+pub fn build(ctx: Ctx, hi: ?Rect, pointer: ?Vec2, arm: i32, w: u32, h: u32, scale: f32) Marks {
     var m = Marks{ .s = scale, .w = @intCast(w), .h = @intCast(h) };
     m.t = @max(1, @as(i32, @intFromFloat(@round(scale))));
     if (hi) |r| {
@@ -169,10 +171,10 @@ pub fn build(ctx: Ctx, hi: ?Rect, pointer: ?Vec2, w: u32, h: u32, scale: f32) Ma
     } else if (pointer) |p| {
         const px: i32 = std.math.clamp(@as(i32, @intFromFloat(@floor(p.x))), 0, m.w - 1);
         const py: i32 = std.math.clamp(@as(i32, @intFromFloat(@floor(p.y))), 0, m.h - 1);
-        m.hdist(ctx, 0, px, py);
-        m.hdist(ctx, px, m.w, py);
-        m.vdist(ctx, 0, py, px);
-        m.vdist(ctx, py, m.h, px);
+        m.hdist(ctx, 0, px - arm, py, px);
+        m.hdist(ctx, px + arm, m.w, py, m.w - px);
+        m.vdist(ctx, 0, py - arm, px, py);
+        m.vdist(ctx, py + arm, m.h, px, m.h - py);
     }
     return m;
 }
@@ -194,10 +196,10 @@ fn selection(ctx: Ctx, m: *Marks, r: Rect) void {
     m.ext(r.y1 - m.t, r.x1, m.w, false);
 
     // Distances to the screen edges, centered on the selection's sides.
-    m.hdist(ctx, 0, r.x0, cy);
-    m.hdist(ctx, r.x1, m.w, cy);
-    m.vdist(ctx, 0, r.y0, cx);
-    m.vdist(ctx, r.y1, m.h, cx);
+    m.hdist(ctx, 0, r.x0, cy, r.x0);
+    m.hdist(ctx, r.x1, m.w, cy, m.w - r.x1);
+    m.vdist(ctx, 0, r.y0, cx, r.y0);
+    m.vdist(ctx, r.y1, m.h, cx, m.h - r.y1);
 
     // The size, outside the selection: the width above the top edge, the
     // height left of the left edge. With no room there, the opposite side,
@@ -224,7 +226,7 @@ fn selection(ctx: Ctx, m: *Marks, r: Rect) void {
 }
 
 fn testMarks(gpa: std.mem.Allocator, font: *@import("font.zig").Font, hi: ?Rect, ptr: ?Vec2) Marks {
-    return build(.{ .gpa = gpa, .font = font }, hi, ptr, 1000, 600, 1);
+    return build(.{ .gpa = gpa, .font = font }, hi, ptr, 0, 1000, 600, 1);
 }
 
 test "a selection gets its size inside and four distances to the screen edges" {

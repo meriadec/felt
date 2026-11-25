@@ -28,6 +28,7 @@ pub const dim_level: u32 = 150;
 const border_color = nord.n10;
 /// Ruler lines: snow white, faint for the distance hairlines.
 const hatch_color = nord.n10.withAlpha(80);
+const veil_color = nord.n6.withAlpha(40);
 const line_soft = nord.n6.withAlpha(120);
 const line_strong = nord.n6.withAlpha(210);
 
@@ -48,6 +49,8 @@ const Items = struct {
     marks: ruler.Marks = .{},
     /// Width of the hatched band inside the selection (0: none).
     band: i32 = 0,
+    /// The padding square around the pointer before the button is down.
+    cursor: Rect = .empty,
     delay_buf: [24]u8 = undefined,
     delay: Pill = .{},
 };
@@ -82,10 +85,17 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
     d.dot_on = p.delayOn();
     it.delay = d;
 
-    // The ruler shows only while the button is down.
+    // The ruler shows while the button is down. Before, the pointer carries
+    // the padding square (as wide as the selection band) and four hairlines.
+    const pad: i32 = @intFromFloat(@round(32 * s));
     if (p.phase == .dragging) {
-        it.marks = ruler.build(ctx, it.hi, p.pointer, p.w, p.h, s);
-        if (it.hi) |r| it.band = @min(@as(i32, @intFromFloat(@round(32 * s))), @divTrunc(@min(r.width(), r.height()), 2));
+        it.marks = ruler.build(ctx, it.hi, p.pointer, 0, p.w, p.h, s);
+        if (it.hi) |r| it.band = @min(pad, @divTrunc(@min(r.width(), r.height()), 2));
+    } else if (p.seen) {
+        const cx: i32 = @intFromFloat(@floor(p.pointer.x));
+        const cy: i32 = @intFromFloat(@floor(p.pointer.y));
+        it.cursor = Rect{ .x0 = cx - pad, .y0 = cy - pad, .x1 = cx + pad, .y1 = cy + pad };
+        it.marks = ruler.build(ctx, null, p.pointer, pad + @as(i32, @intFromFloat(@round(4 * s))), p.w, p.h, s);
     }
 }
 
@@ -122,6 +132,31 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     const ph: f32 = @floatFromInt(l.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(l.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(l.px)) * 0.6));
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
+}
+
+/// The padding square around the pointer: the same hatching, rounded corners.
+fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
+    const period: i32 = @intFromFloat(@round(7 * s));
+    const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
+    const rad: i32 = @intFromFloat(@round(8 * s));
+    // A light veil too, so the square reads on a dark picture.
+    const r = sq.intersect(clip);
+    var y = r.y0;
+    while (y < r.y1) : (y += 1) {
+        var x = r.x0;
+        while (x < r.x1) : (x += 1) {
+            if (cornerOut(sq, x, y, rad)) continue;
+            const on = @mod(x + y, period) < th;
+            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, if (on) hatch_color else veil_color);
+        }
+    }
+}
+
+/// Pixel (x, y) of `sq` lies outside its rounded corner of radius `rad`.
+fn cornerOut(sq: Rect, x: i32, y: i32, rad: i32) bool {
+    const dx = @max(sq.x0 + rad - x, x - (sq.x1 - 1 - rad), 0);
+    const dy = @max(sq.y0 + rad - y, y - (sq.y1 - 1 - rad), 0);
+    return dx * dx + dy * dy > rad * rad;
 }
 
 /// A faint diagonal hatching on the `band` px just inside `hi`: the margin
@@ -173,6 +208,7 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
         frame.copyRect(frozen, hi.intersect(clip));
     }
     if (it.hi) |hi| if (it.band > 0) hatch(frame, clip, hi, it.band, it.scale);
+    if (!it.cursor.isEmpty()) hatchSquare(frame, clip, it.cursor, it.scale);
     for (it.marks.lineSlice()) |l| drawLine(frame, clip, l, it.scale);
     for (it.marks.labelSlice()) |l| try drawLabel(ctx, frame, clip, l, it.scale);
     // The delay pill shows only while a delay is on (--delay, or Tab).
@@ -183,6 +219,7 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
 pub const Scene = struct {
     painted: bool = false,
     prev_hi: Rect = .empty,
+    prev_cursor: Rect = .empty,
     prev: [ruler.Marks.max_rects]Rect = undefined,
     prev_n: usize = 0,
     prev_delay: u32 = 0,
@@ -204,6 +241,8 @@ pub const Scene = struct {
             // The highlight and every mark, old and new.
             dmg.add(self.prev_hi.expand(2));
             dmg.add(hi_now.expand(2));
+            dmg.add(self.prev_cursor.expand(2));
+            dmg.add(it.cursor.expand(2));
             for (self.prev[0..self.prev_n]) |r| dmg.add(r.expand(2));
             for (now[0..n]) |r| dmg.add(r.expand(2));
             if (self.prev_delay != p.delay_ms) dmg.add(it.delay.rect.expand(2));
@@ -211,6 +250,7 @@ pub const Scene = struct {
         for (dmg.slice()) |r| try paint(ctx, &it, frozen, frame, r);
         self.painted = true;
         self.prev_hi = hi_now;
+        self.prev_cursor = it.cursor;
         self.prev_n = n;
         @memcpy(self.prev[0..n], now[0..n]);
         self.prev_delay = p.delay_ms;
