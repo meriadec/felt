@@ -88,8 +88,8 @@ list is in [docs/keymap.md](docs/keymap.md).
 - **Callouts and arrows.** The callout tool is active at startup: press where the
   box goes, drag to the point of interest, then type. Commit with no text
   (Enter, Esc or a click elsewhere) and the callout becomes a plain arrow. The
-  pointer is straight at startup; press `c` (or `a`) again, or use the switch
-  above the dock, for stairs.
+  pointer is straight at startup; use the switch
+  above the dock (mouse only, no key) for stairs.
 - **Tools.** Tab and Shift+Tab cycle them.
 - **Move / select** (`m`) drags any annotation, which lights up under the
   pointer. A callout box moves alone (the tip stays), or its tip moves alone. An

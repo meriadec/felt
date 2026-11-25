@@ -309,12 +309,11 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     try drag.report(w, "frame: drag arrow");
     try w.print("{s:<26} avg {d} px/frame ({d:.1}% of screen)\n", .{ "  damage", damage_px / n_moves, @as(f64, @floatFromInt(damage_px / n_moves)) * 100 / (W * H) });
 
-    // Drag a stairs arrow the same way (`a` again: stairs), then cancel it
+    // Drag a stairs arrow the same way (stairs style), then cancel it
     // and switch back to straight.
     var drag_st = Stats{};
     defer drag_st.deinit(gpa);
     damage_px = 0;
-    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
     if (app.editor.arrow_style != .stairs) return error.BenchNoStairsStyle;
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
     for (0..n_moves) |i| {
@@ -408,7 +407,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     defer mvs.deinit(gpa);
     damage_px = 0;
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
-    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } }); // again: stairs
+    app.editor.arrow_style = .stairs;
     if (app.editor.arrow_style != .stairs) return error.BenchNoStairsStyle;
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.15, .y = H * 0.2 } });
     _ = try app.handle(.{ .mouse_move = .{ .x = W * 0.75, .y = H * 0.4 } });
@@ -446,7 +445,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var dcs = Stats{};
     defer dcs.deinit(gpa);
     damage_px = 0;
-    for ("cc") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } }); // again: stairs
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'c' } } });
+    app.editor.arrow_style = .stairs;
     if (app.editor.arrow_style != .stairs or app.editor.tool != .callout) return error.BenchNoStairsCallout;
     const tip_at = core.geom.Vec2.init(W * 0.15, H * 0.25);
     const box_at = core.geom.Vec2.init(W * 0.6, H * 0.4);

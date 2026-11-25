@@ -1,4 +1,4 @@
-# Stairs arrows: `a` again (the callout tool is active) switches to stairs.
+# Stairs arrows: `ui arrow-style stairs` switches to stairs.
 # Horizontal first down-right, vertical first, a big blue one to the up
 # left, then green: a short S (small rise), a near-flat one (a straight
 # line), a short vertical-first one. The dock switch picks straight for
@@ -8,6 +8,7 @@ size 900 500
 ui tool callout
 ui arrow-style straight
 key a
+ui arrow-style stairs
 drag 400 230 100 90
 key enter
 drag 540 330 470 85

@@ -6,7 +6,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 
 | Key | Tool | Mouse |
 |---|---|---|
-| `c` | callout | The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: straight (at startup) or stairs (an elbow with round corners that turns where it crosses and crowds no other path, if it can; the paths around it move aside too). `c` again or the switch above the dock changes the style for new pointers, for the rest of the session. Commit with no text (Enter, Esc, Tab, a click elsewhere) and the callout becomes a plain arrow with the same style, size and color; while the text is empty it shows as that arrow. A plain click with no text makes nothing. `a` is a second key for this tool (the old arrow tool). |
+| `c` | callout | The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: straight (at startup) or stairs (an elbow with round corners that turns where it crosses and crowds no other path, if it can; the paths around it move aside too). The switch above the dock (mouse only, no key) changes the style for new pointers, for the rest of the session. Commit with no text (Enter, Esc, Tab, a click elsewhere) and the callout becomes a plain arrow with the same style, size and color; while the text is empty it shows as that arrow. A plain click with no text makes nothing. `a` is a second key for this tool (the old arrow tool). |
 | `r` | rect | Drag from corner to corner. |
 | `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace and Delete erase, the arrows (Ctrl: by word), Home and End move the caret, Shift with them selects, Ctrl+A selects all, and typing over a selection replaces it. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
@@ -19,7 +19,6 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Key | Action |
 |---|---|
 | `a` | alias of `c`: the callout tool |
-| `c` again (callout tool active) | pointer style: straight / stairs |
 | `t` again (text tool active) | text style: plain / boxed |
 | `1` | color red |
 | `2` | color orange |

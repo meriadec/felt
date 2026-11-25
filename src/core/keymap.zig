@@ -23,7 +23,7 @@ pub const ToolInfo = struct {
 pub const Again = struct { action: Action, label: []const u8 };
 
 pub const tools = [_]ToolInfo{
-    .{ .tool = .callout, .key = 'c', .alias = 'a', .name = "callout", .mouse = "The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: straight (at startup) or stairs (an elbow with round corners that turns where it crosses and crowds no other path, if it can; the paths around it move aside too). `c` again or the switch above the dock changes the style for new pointers, for the rest of the session. Commit with no text (Enter, Esc, Tab, a click elsewhere) and the callout becomes a plain arrow with the same style, size and color; while the text is empty it shows as that arrow. A plain click with no text makes nothing. `a` is a second key for this tool (the old arrow tool).", .again = .{ .action = .arrow_style, .label = "pointer style: straight / stairs" } },
+    .{ .tool = .callout, .key = 'c', .alias = 'a', .name = "callout", .mouse = "The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: straight (at startup) or stairs (an elbow with round corners that turns where it crosses and crowds no other path, if it can; the paths around it move aside too). The switch above the dock (mouse only, no key) changes the style for new pointers, for the rest of the session. Commit with no text (Enter, Esc, Tab, a click elsewhere) and the callout becomes a plain arrow with the same style, size and color; while the text is empty it shows as that arrow. A plain click with no text makes nothing. `a` is a second key for this tool (the old arrow tool)." },
     .{ .tool = .rect, .key = 'r', .name = "rect", .mouse = "Drag from corner to corner." },
     .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace and Delete erase, the arrows (Ctrl: by word), Home and End move the caret, Shift with them selects, Ctrl+A selects all, and typing over a selection replaces it. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session.", .again = .{ .action = .text_style, .label = "text style: plain / boxed" } },
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },
@@ -53,8 +53,6 @@ pub fn toolKey(t: Tool) []const u8 {
 
 pub const Action = union(enum) {
     tool: Tool,
-    /// Switch the style of new arrows and callout pointers (straight, stairs).
-    arrow_style,
     /// Switch the style of new texts (plain, boxed).
     text_style,
     /// Delete the selected annotation (move/select tool).

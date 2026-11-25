@@ -152,9 +152,8 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   `Annotation.arrow`: export, selection, move, hit test are unchanged.
 - Pointer styles: each arrow and each callout stores its `style` (straight,
   stairs). The editor's `arrow_style` is the style of new pointers (the
-  callout tool, arrows included). `c` or `a` with the callout tool active,
-  or the switch above the dock (only with the callout tool, over its slot;
-  straight first) sets it, with a toast ("Pointer: stairs"); a shape in
+  callout tool, arrows included). Only the switch above the dock (mouse only,
+  no key; only with the callout tool, over its slot; straight first) sets it, with a toast ("Pointer: stairs"); a shape in
   progress follows. It stays for the session, across tool switches (it
   is not saved; the config file has no style). At startup: the callout tool
   with straight (`editor.default_tool`, `default_arrow_style`). Tests, golden scripts

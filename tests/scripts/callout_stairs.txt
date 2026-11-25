@@ -1,14 +1,14 @@
-# Callout pointers: `c` again (the callout tool is active) switches them to
+# Callout pointers: `ui pointer-style stairs` switches them to
 # stairs. Each box sits on the far side from its target and the pointer
 # leaves the side that faces it: target left, target right, target above
 # (blue: the top side), target below (the bottom side); green: a short
 # one, and a target nearer the box than a head (no pointer). The switch above
-# the dock picks straight for one callout; undo and redo it; `c` again:
+# the dock picks straight for one callout; undo and redo it; `ui pointer-style` again:
 # stairs, the toast says "Pointer: stairs".
 size 900 500
 ui tool callout
 ui pointer-style straight
-key c
+ui pointer-style stairs
 drag 260 150 90 90
 type Left target
 key enter
@@ -35,4 +35,4 @@ drag 200 360 90 300
 type Straight
 key enter
 key ctrl+z ctrl+y
-key c
+ui pointer-style stairs

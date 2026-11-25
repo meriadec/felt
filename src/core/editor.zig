@@ -1369,7 +1369,6 @@ pub const Editor = struct {
             } else if (keymap.toolInfo(t).again) |ag| {
                 return self.run(ag.action, was_armed);
             } else try self.setTool(t),
-            .arrow_style => self.setArrowStyle(if (self.arrow_style == .straight) .stairs else .straight),
             .delete_selected => try self.deleteSelected(),
             .text_style => self.setTextStyle(if (self.text_style == .plain) .boxed else .plain),
             .canvas_bg => {
@@ -1813,11 +1812,11 @@ test "move: an annotation made before a crop stays under it" {
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 20, .x1 = 120, .y1 = 80 }, t.ed.canvas);
 }
 
-test "a is a key of the callout tool: again switches the pointer style, for the session; an arrow in progress follows" {
+test "the pointer style set by the switch stays for the session; an arrow in progress follows" {
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("a"); // the callout tool is active: a second press
+    t.ed.setArrowStyle(.stairs); // the dock switch
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
     try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
     try std.testing.expectEqual(Tool.callout, t.ed.tool);
@@ -1830,7 +1829,7 @@ test "a is a key of the callout tool: again switches the pointer style, for the 
     // In the middle of a drag: the preview follows, the drag goes on.
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 60 } });
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 90, .y = 90 } });
-    _ = try t.key("a");
+    t.ed.setArrowStyle(.straight);
     try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.preview().?.arrow.style);
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = 90, .y = 90 } });
     _ = try t.key("enter");
@@ -1870,7 +1869,7 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("a"); // stairs
+    t.ed.setArrowStyle(.stairs);
     try t.arrow(10, 10, 190, 90); // right along y 10 to x 100, down to y 90, right to x 190
     _ = try t.key("m");
     try std.testing.expectEqual(Grab{ .index = 0, .part = .whole }, t.ed.grabAt(.{ .x = 50, .y = 10 }).?);
@@ -1896,29 +1895,26 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
 }
 
-test "c again switches the pointer style of new callouts; while typing c is a letter" {
+test "the callout key again does nothing special; typing c is a letter; undo keeps each style" {
     var t = T{};
     t.init();
     defer t.deinit();
     try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style); // the start style
-    _ = try t.key("c"); // the callout tool is active: a second press
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
-    try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
+    _ = try t.key("c"); // the callout tool is active: no shortcut for the style
+    _ = try t.key("a");
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style);
+    try std.testing.expectEqual(@as(?[]const u8, null), t.ed.toast());
     try std.testing.expectEqual(Tool.callout, t.ed.tool);
+    t.ed.setArrowStyle(.stairs); // what the dock switch does
     try t.drag(10, 10, 120, 60);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.arrow.style); // no text yet: an arrow
-    _ = try t.key("c"); // typing: a letter, not the switch
+    _ = try t.key("c"); // typing: a letter
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style); // a text: the callout
     _ = try t.key("enter");
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqualStrings("c", c.text);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, c.style);
     try std.testing.expectEqual(t.ed.strokeImg(), c.width);
-    _ = try t.key("a"); // the alias toggles too
-    try std.testing.expectEqualStrings("Pointer: straight", t.ed.toast().?);
-    _ = try t.key("c");
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
-    // Undo and redo keep each callout's own style.
     _ = try t.key("ctrl+z");
     _ = try t.key("ctrl+shift+z");
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].callout.style);
@@ -1945,7 +1941,7 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("c"); // stairs (the callout tool is active at start: it toggles)
+    t.ed.setArrowStyle(.stairs);
     try t.drag(150, 70, 10, 10); // box right of x 150; pointer: left to x 80, up to y 10, left to x 10
     _ = try t.key("H");
     _ = try t.key("enter");
@@ -1976,7 +1972,7 @@ test "stairs arrows drawn side by side nest, in both orders; undo takes the new 
         var t = T{};
         t.initSize(700, 450);
         defer t.deinit();
-        _ = try t.key("a"); // stairs
+        t.ed.setArrowStyle(.stairs);
         // Vertical first, tails at the top, heads lower left (the user's case).
         const left = [4]f32{ 495, 60, 260, 360 };
         const right = [4]f32{ 557, 60, 435, 360 };
@@ -1999,9 +1995,9 @@ test "a commit re-routes the stairs paths around it in the same undo step; undo 
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("a"); // stairs
+    t.ed.setArrowStyle(.stairs);
     try t.arrow(10, 10, 190, 90); // the middle segment at x 100
-    _ = try t.key("a"); // straight
+    t.ed.setArrowStyle(.straight);
     try t.arrow(90, 50, 120, 50); // across that middle segment
     const moved = t.doc.items.items[0].arrow;
     try std.testing.expect(moved.elbow.at < (90.0 - 10.0) / 180.0 or moved.elbow.at > (120.0 - 10.0) / 180.0);
@@ -2025,7 +2021,7 @@ test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back t
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("a"); // stairs
+    t.ed.setArrowStyle(.stairs);
     try t.arrow(10, 10, 190, 90); // the middle segment at x 100, its handle at (100, 50)
     _ = try t.key("m");
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 100, .y = 50 } });
@@ -2039,8 +2035,8 @@ test "move: a drag of the bend pins the elbow; a new neighbour leaves it; back t
     try std.testing.expect(std.mem.startsWith(u8, t.ed.toast().?, "Bend pinned"));
     try std.testing.expect(draw.hitDist(t.ed.ctx(), t.doc.items.items[0], t.ed.view.xf, .{ .x = 60, .y = 50 }) < 0);
     // A straight arrow across the pinned middle segment: it stays.
-    _ = try t.key("a");
-    _ = try t.key("a"); // straight
+    _ = try t.key("a"); // the callout tool
+    t.ed.setArrowStyle(.straight);
     try t.arrow(50, 30, 75, 30);
     try std.testing.expectEqual(a, t.doc.items.items[0].arrow);
     // Undo the pin: the elbow is auto again.
