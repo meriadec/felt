@@ -1,6 +1,7 @@
 //! Magnet: where a dragged image can land next to the placed ones. A slot is
 //! a rectangle at the left, top, right or bottom of a placed image, `gap`
-//! px away from it and centered on the shared edge. Pure functions on
+//! px away from it. Left and right slots align to the top edge of the
+//! neighbour, top and bottom slots to its left edge. Pure functions on
 //! rectangles (scene px): no images, no state. A slot that would overlap a
 //! placed image is not offered.
 const std = @import("std");
@@ -25,11 +26,11 @@ pub const Slot = struct {
     rect: Rect,
 };
 
-/// The rectangle for an image of `w` x `h` on `side` of `target`: `gap` away,
-/// centered on the shared edge.
+/// The rectangle for an image of `w` x `h` on `side` of `target`: `gap` away.
+/// Left and right: same top edge (y). Top and bottom: same left edge (x).
 pub fn slotRect(target: Rect, side: Side, w: i32, h: i32) Rect {
-    const cx = target.x0 + @divFloor(target.width() - w, 2);
-    const cy = target.y0 + @divFloor(target.height() - h, 2);
+    const cx = target.x0;
+    const cy = target.y0;
     return switch (side) {
         .left => Rect.fromSize(target.x0 - gap - w, cy, w, h),
         .right => Rect.fromSize(target.x1 + gap, cy, w, h),
@@ -90,14 +91,14 @@ pub fn nearest(list: []const Slot, p: Vec2) ?Slot {
     return best;
 }
 
-test "a slot is gap away and centered on the shared edge" {
+test "a slot is gap away and aligned to the top (left, right) or left (top, bottom) edge" {
     const t = Rect.fromSize(100, 100, 200, 100);
-    try std.testing.expectEqual(Rect.fromSize(100 - gap - 50, 100 + 25, 50, 50), slotRect(t, .left, 50, 50));
-    try std.testing.expectEqual(Rect.fromSize(300 + gap, 125, 50, 50), slotRect(t, .right, 50, 50));
-    try std.testing.expectEqual(Rect.fromSize(175, 100 - gap - 50, 50, 50), slotRect(t, .top, 50, 50));
-    try std.testing.expectEqual(Rect.fromSize(175, 200 + gap, 50, 50), slotRect(t, .bottom, 50, 50));
-    // Bigger than the target: centered, so it sticks out on both sides.
-    try std.testing.expectEqual(Rect.fromSize(50, 200 + gap, 300, 20), slotRect(t, .bottom, 300, 20));
+    try std.testing.expectEqual(Rect.fromSize(100 - gap - 50, 100, 50, 50), slotRect(t, .left, 50, 50));
+    try std.testing.expectEqual(Rect.fromSize(300 + gap, 100, 50, 50), slotRect(t, .right, 50, 50));
+    try std.testing.expectEqual(Rect.fromSize(100, 100 - gap - 50, 50, 50), slotRect(t, .top, 50, 50));
+    try std.testing.expectEqual(Rect.fromSize(100, 200 + gap, 50, 50), slotRect(t, .bottom, 50, 50));
+    // Bigger than the target: it sticks out on the right only.
+    try std.testing.expectEqual(Rect.fromSize(100, 200 + gap, 300, 20), slotRect(t, .bottom, 300, 20));
 }
 
 test "slots skip places that overlap a placed image" {

@@ -41,7 +41,7 @@ image files. Build: `coreModule` in build.zig.
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
 | `scene.zig` | Placed images (id, size, position in scene px, canvas) and queries: bounding box, hit test, nearest image |
-| `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, centered on the shared edge; the nearest slot to a point |
+| `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, left and right slots share the top edge of the neighbour, top and bottom slots its left edge; the nearest slot to a point |
 | `dashed.zig` | Dashed rectangle outline (inside the rectangle, alpha blend, clipped) |
 | `dropzone.zig` | Montage drop overlay: `Drop` (the dragged image size + the pointer, screen px; `Editor.montage_drop`, set by `setMontageDrop`/`clearMontageDrop`) and `Overlay` (free slots on screen from `magnet.slots`, the hot one = `magnet.nearest`, the ghost outline of a dragged image; `slotList`, `build`, `eql`, `sameSlots`, `paint`). `Drop.exclude` = the dragged image: its place is free and no slot hangs on it |
 | `dirlist.zig` | One folder for the browser: `list` keeps folders and images (png, jpg, jpeg, bmp: what `image_io` decodes), skips hidden names and other files, sorts newest first (`newerFirst`, folders and images mixed); `formatDate`, `tildePath`, `parent` |

@@ -130,7 +130,7 @@ pub const App = struct {
 
     /// Load the PNG of `a.path` and place it on the scene: at a scene point,
     /// or `magnet.gap` away from the image placed last, on a side of it
-    /// (centered on the shared edge). One undo step.
+    /// (left, right: same top edge; top, bottom: same left edge). One undo step.
     pub fn addImageFile(self: *App, a: anytype) !void {
         const cv = try self.gpa.create(Canvas);
         errdefer self.gpa.destroy(cv);
