@@ -1,5 +1,5 @@
 # Move tool: a rect on image B, then drag B below A (the nearest free slot). One undo step; the rect follows B.
-# The view zooms out on the first move so the slots are in reach, then animates back to the original zoom, following B to its new place (the final frame).
+# The view zooms out on the first move so the slots are in reach, the drop refits the whole scene at once (the final frame).
 image tests/fixtures/tile_a.png
 size 900 500
 addimage tests/fixtures/tile_b.png right

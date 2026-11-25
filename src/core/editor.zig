@@ -16,7 +16,6 @@ const magnet = @import("magnet.zig");
 const route = @import("route.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
-const viewanim = @import("viewanim.zig");
 const Font = @import("font.zig").Font;
 const dock = @import("dock.zig");
 const Dock = dock.Dock;
@@ -101,11 +100,9 @@ const ImageDrag = struct {
     /// The grab point in scene px, from the top-left corner of the image.
     grab: Vec2,
     active: bool = false,
-    /// The view and the image position (scene px) when the drag became
-    /// active: where the view goes back to after the drop or the cancel.
+    /// The view when the drag became active: a cancel restores it.
     orig_xf: geom.Xform = undefined,
     orig_fitted: bool = true,
-    orig_pos: Vec2 = undefined,
 };
 
 /// An image dragged out of the browser list. It starts once the pointer
@@ -119,7 +116,7 @@ const BrowserDrag = struct {
     /// Size of the image file (px), read when the drag becomes active.
     w: i32 = 0,
     h: i32 = 0,
-    /// The view when the drag became active: where a cancel goes back to.
+    /// The view when the drag became active: a cancel restores it.
     orig_xf: geom.Xform = undefined,
     orig_fitted: bool = true,
 };
@@ -150,9 +147,6 @@ pub const Editor = struct {
     kept_key: geom.Rect,
     /// The view fits the canvas (no zoom or pan since): a resize refits.
     fitted: bool = true,
-    /// The view moves back after an image drag (see `tick`); any key, press
-    /// or wheel ends it where it is.
-    anim: ?viewanim.ViewAnim = null,
     /// Middle-button pan in progress: last pointer position.
     panning: ?Vec2 = null,
     /// Hand mode (while Space is held): a left drag pans the canvas, like the middle button.
@@ -318,43 +312,24 @@ pub const Editor = struct {
         return self.browserVisible() and browsergeo.inside(self.browser.geo().panel, p);
     }
 
-    /// The app finished the drop (`Command.add_image`): ease the view from
-    /// the zoomed-out drag view to the fit of the whole new scene (in the room
-    /// right of the browser panel when it shows).
+    /// The app finished the drop (`Command.add_image`): the view jumps to the
+    /// fit of the whole new scene (the same as `0`).
     pub fn imageAdded(self: *Editor) void {
-        const zoomed = self.view;
         _ = self.syncView();
         self.fit();
-        var to = self.view.xf;
-        var fitted = true;
-        if (self.browserVisible()) { // fit in the room right of the panel
-            const g = self.browser.geo();
-            const left: f32 = @ceil(g.panel.max.x + 8 * g.s);
-            const room: u32 = @intFromFloat(@max(1, @as(f32, @floatFromInt(self.view.screen_w)) - left - 14 * g.s));
-            to = View.fit(self.canvas, room, self.view.screen_h).xf;
-            to.offset.x += left;
-            fitted = false;
-        }
-        self.view = zoomed;
-        self.fitted = false;
-        self.anim = if (std.meta.eql(to, zoomed.xf)) null else .{ .from = zoomed.xf, .to = to, .fitted_after = fitted };
-        if (self.anim == null) self.fitted = fitted;
     }
 
     /// The drop failed (the file did not load): the view goes back.
     pub fn imageAddFailed(self: *Editor) void {
-        self.animateTo(self.add_orig_xf, self.add_orig_fitted);
+        self.restoreView(self.add_orig_xf, self.add_orig_fitted);
         self.setToast("Cannot open this image.", .{});
     }
 
-    /// Ease the view to `xf` (no animation if it is there).
-    fn animateTo(self: *Editor, xf: geom.Xform, fitted: bool) void {
-        if (std.meta.eql(xf, self.view.xf)) {
-            self.fitted = fitted;
-            return;
-        }
-        self.fitted = false;
-        self.anim = .{ .from = self.view.xf, .to = xf, .fitted_after = fitted };
+    /// Put the view back to the transform `xf` it had before a drag.
+    fn restoreView(self: *Editor, xf: geom.Xform, fitted: bool) void {
+        self.view.xf = xf;
+        self.fitted = fitted;
+        _ = self.updateHover();
     }
 
     /// The path and place of the pending drop (see `Command.add_image`); valid
@@ -591,36 +566,6 @@ pub const Editor = struct {
         }
     }
 
-    /// A view animation is running: the backend ticks it (`tick`) and redraws.
-    pub fn animating(self: *const Editor) bool {
-        return self.anim != null;
-    }
-
-    /// Advance the view animation to the clock `now_ns` (monotonic, any
-    /// origin). True when the view changed: redraw.
-    pub fn tick(self: *Editor, now_ns: u64) bool {
-        var a = self.anim orelse return false;
-        const s = a.step(now_ns);
-        self.view.xf = s.xf;
-        if (s.done) {
-            self.fitted = a.fitted_after;
-            self.anim = null;
-        } else self.anim = a;
-        _ = self.updateHover();
-        return true;
-    }
-
-    /// Jump to the end of the view animation (headless replay: no clock).
-    /// True when the view changed.
-    pub fn finishAnimation(self: *Editor) bool {
-        const a = self.anim orelse return false;
-        self.view.xf = a.to;
-        self.fitted = a.fitted_after;
-        self.anim = null;
-        _ = self.updateHover();
-        return true;
-    }
-
     fn fit(self: *Editor) void {
         self.view = View.fit(self.canvas, self.view.screen_w, self.view.screen_h);
         self.fitted = true;
@@ -769,11 +714,6 @@ pub const Editor = struct {
     }
 
     pub fn handle(self: *Editor, ev: input.Event) !Effect {
-        switch (ev) {
-            // The user takes the view over: keep it as it is now.
-            .key, .mouse_down, .wheel, .resize => self.anim = null,
-            else => {},
-        }
         var eff = try self.handleEvent(ev);
         if (self.syncView()) eff.redraw = true;
         if (self.updateHover()) eff.redraw = true;
@@ -1018,11 +958,9 @@ pub const Editor = struct {
         if (!d.active) {
             if (p.dist(d.start_screen) < click_slop) return;
             d.active = true;
-            self.anim = null;
             d.orig_xf = self.view.xf;
             d.orig_fitted = self.fitted;
             const o = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
-            d.orig_pos = Vec2.init(@floatFromInt(o.x), @floatFromInt(o.y));
             try self.makeRoomForSlots(d.id, o.w, o.h);
         }
         const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
@@ -1031,7 +969,7 @@ pub const Editor = struct {
 
     /// Zoom out (one step, to the fit of the scene and all slots plus a
     /// margin) when a slot would fall outside the screen; else do nothing.
-    /// The drop or the cancel brings the view back (`backToView`).
+    /// The drop refits the whole scene, the cancel restores the view.
     fn makeRoomForSlots(self: *Editor, id: ?u32, w: i32, h: i32) !void {
         const list = try dropzone.slotList(self.gpa, self.doc, id, w, h);
         defer self.gpa.free(list);
@@ -1061,31 +999,11 @@ pub const Editor = struct {
         const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
         const list = try dropzone.slotList(self.gpa, self.doc, d.id, im.w, im.h);
         defer self.gpa.free(list);
-        const zoomed = self.view;
         if (magnet.nearest(list, self.view.toImage(p))) |best| {
             _ = try self.doc.moveImage(self.gpa, d.id, best.rect.x0, best.rect.y0);
-            // A drop that changes the scene bounds would refit: the view
-            // is only ever changed by the animation back.
             _ = self.syncView();
-            self.view = zoomed;
-        }
-        self.backToView(d);
-    }
-
-    /// Animate the view back to the one before the drag (`d.orig_xf`),
-    /// shifted so the dragged image shows where it showed before, at its
-    /// place now (the old place: exactly the original view).
-    fn backToView(self: *Editor, d: ImageDrag) void {
-        const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
-        const now = Vec2.init(@floatFromInt(im.x), @floatFromInt(im.y));
-        const to = viewanim.ViewAnim.follow(d.orig_xf, d.orig_pos, now);
-        const fitted = d.orig_fitted and std.meta.eql(now, d.orig_pos);
-        if (std.meta.eql(to, self.view.xf)) {
-            self.fitted = fitted;
-            return;
-        }
-        self.fitted = false;
-        self.anim = .{ .from = self.view.xf, .to = to, .fitted_after = fitted };
+            self.fit(); // the whole scene, like `0`
+        } else self.restoreView(d.orig_xf, d.orig_fitted);
     }
 
     // ---- file browser input ------------------------------------------------
@@ -1138,7 +1056,6 @@ pub const Editor = struct {
             d.active = true;
             d.w = @intCast(size[0]);
             d.h = @intCast(size[1]);
-            self.anim = null;
             d.orig_xf = self.view.xf;
             d.orig_fitted = self.fitted;
             _ = self.browser.setHover(null);
@@ -1155,13 +1072,13 @@ pub const Editor = struct {
         self.montage_drop = null;
         if (!d.active) return .{ .redraw = true };
         if (self.onBrowserPanel(p)) {
-            self.animateTo(d.orig_xf, d.orig_fitted);
+            self.restoreView(d.orig_xf, d.orig_fitted);
             return .{ .redraw = true };
         }
         const list = try dropzone.slotList(self.gpa, self.doc, null, d.w, d.h);
         defer self.gpa.free(list);
         const best = magnet.nearest(list, self.view.toImage(p)) orelse {
-            self.animateTo(d.orig_xf, d.orig_fitted);
+            self.restoreView(d.orig_xf, d.orig_fitted);
             return .{ .redraw = true };
         };
         var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -1177,12 +1094,12 @@ pub const Editor = struct {
     }
 
     /// Drop the browser drag (Esc, right click, a lost release): the slots
-    /// go and the view eases back to the one before.
+    /// go and the view is restored.
     fn cancelBrowserDrag(self: *Editor) void {
         const d = self.bdrag orelse return;
         self.bdrag = null;
         self.montage_drop = null;
-        if (d.active) self.animateTo(d.orig_xf, d.orig_fitted);
+        if (d.active) self.restoreView(d.orig_xf, d.orig_fitted);
     }
 
     fn tooFar(self: *Editor) void {
@@ -1267,7 +1184,8 @@ pub const Editor = struct {
         if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
         if (self.mode == .image_drag) {
             self.montage_drop = null;
-            if (self.mode.image_drag.active) self.backToView(self.mode.image_drag);
+            const d = self.mode.image_drag;
+            if (d.active) self.restoreView(d.orig_xf, d.orig_fitted);
         }
         if (self.mode == .typing) if (self.mode.typing.edit) |e| self.doc.setLive(e.index, e.before);
         self.clearDraft();
@@ -2489,7 +2407,7 @@ test "image drag: an annotation under the press keeps priority; one image has no
     try std.testing.expect(t.ed.mode == .idle);
 }
 
-test "image drag: the view animates back to the original scale, following the image" {
+test "image drag: the drop refits the whole scene at once" {
     var t = T{};
     try montageT(&t);
     defer t.deinit();
@@ -2498,30 +2416,14 @@ test "image drag: the view animates back to the original scale, following the im
     try mouse(&t, press.x, press.y, .down);
     const to = v.toScreen(Vec2.init(200, 330));
     try mouse(&t, to.x, to.y, .move);
-    try std.testing.expect(t.ed.view.xf.scale < v.xf.scale);
-    try std.testing.expect(!t.ed.animating());
+    try std.testing.expect(t.ed.view.xf.scale < v.xf.scale); // zoomed out for the slots
     try mouse(&t, to.x, to.y, .up);
     try std.testing.expectEqual(@as(i32, 264), t.doc.scene.images.items[1].y);
-    try std.testing.expect(t.ed.animating());
-    try std.testing.expect(!t.ed.fitted);
-    const small = t.ed.view.xf.scale;
-    // Image b was at (464,0) and is at (0,264) now: same screen position as before.
-    try std.testing.expect(t.ed.tick(5_000_000_000)); // t = 0: nothing moved yet
-    try std.testing.expectEqual(small, t.ed.view.xf.scale);
-    try std.testing.expect(t.ed.tick(5_000_000_000 + viewanim.duration_ns / 2));
-    try std.testing.expect(t.ed.view.xf.scale > small and t.ed.view.xf.scale < v.xf.scale);
-    try std.testing.expect(t.ed.tick(5_000_000_000 + viewanim.duration_ns));
-    try std.testing.expect(!t.ed.animating());
-    try std.testing.expectEqual(v.xf.scale, t.ed.view.xf.scale);
-    const b = t.doc.scene.images.items[1];
-    const at = t.ed.view.xf.apply(Vec2.init(@floatFromInt(b.x), @floatFromInt(b.y)));
-    const was = v.xf.apply(Vec2.init(464, 0));
-    try std.testing.expectApproxEqAbs(was.x, at.x, 0.5); // whole-pixel offset
-    try std.testing.expectApproxEqAbs(was.y, at.y, 0.5);
-    try std.testing.expect(!t.ed.tick(6_000_000_000)); // idle: nothing to do
+    try std.testing.expect(t.ed.fitted);
+    try std.testing.expect(std.meta.eql(View.fit(t.ed.canvas, v.screen_w, v.screen_h).xf, t.ed.view.xf));
 }
 
-test "image drag: Esc brings back exactly the original view; finishAnimation jumps there" {
+test "image drag: Esc restores exactly the original view at once" {
     var t = T{};
     try montageT(&t);
     defer t.deinit();
@@ -2531,49 +2433,29 @@ test "image drag: Esc brings back exactly the original view; finishAnimation jum
     try mouse(&t, press.x - 40, press.y + 20, .move);
     try std.testing.expect(t.ed.view.xf.scale < v.xf.scale);
     _ = try t.key("esc");
-    try std.testing.expect(t.ed.animating());
-    try std.testing.expect(t.ed.finishAnimation());
     try std.testing.expect(std.meta.eql(v.xf, t.ed.view.xf));
     try std.testing.expect(t.ed.fitted);
-    try std.testing.expect(!t.ed.finishAnimation());
 }
 
-test "image drag: a key, a press or a wheel step ends the animation and keeps the view" {
+test "fit: the whole multi-image scene and the padding fit the screen" {
     var t = T{};
     try montageT(&t);
     defer t.deinit();
-    const press = t.ed.view.toScreen(Vec2.init(700, 150));
-    for ([_]u8{ 0, 1, 2 }) |what| {
-        try mouse(&t, press.x, press.y, .down);
-        try mouse(&t, press.x - 40, press.y + 20, .move);
-        _ = try t.key("esc");
-        try std.testing.expect(t.ed.tick(1_000_000_000));
-        try std.testing.expect(t.ed.tick(1_000_000_000 + viewanim.duration_ns / 2));
-        const mid = t.ed.view.xf;
-        switch (what) {
-            0 => _ = try t.key("right"),
-            1 => _ = try t.ed.handle(.{ .mouse_down = .{ .x = 5, .y = 5, .button = .middle } }),
-            else => _ = try t.ed.handle(.{ .wheel = .{ .delta = 1, .x = 5, .y = 5 } }),
-        }
-        try std.testing.expect(!t.ed.animating());
-        try std.testing.expect(!t.ed.tick(9_000_000_000));
-        if (what == 0) try std.testing.expectEqual(mid.scale, t.ed.view.xf.scale);
-        if (what == 1) try std.testing.expect(std.meta.eql(mid, t.ed.view.xf));
-        t.ed.view = View.fit(t.ed.canvas, 400, 200);
-        _ = try t.ed.handle(.{ .mouse_up = .{ .x = 5, .y = 5, .button = .middle } });
+    t.ed.view.xf = .{ .scale = 3, .offset = .{ .x = -900, .y = 40 } };
+    t.ed.fitted = false;
+    _ = try t.key("0");
+    try std.testing.expect(t.ed.fitted);
+    const all = t.doc.scene.bounds();
+    try std.testing.expect(t.ed.canvas.width() >= all.width() and t.ed.canvas.height() >= all.height());
+    const r = t.ed.view.rect(t.ed.canvas);
+    const scr = t.ed.view.screen();
+    try std.testing.expect(std.meta.eql(r.intersect(scr), r)); // all of it shows
+    for (t.doc.scene.images.items) |im| {
+        const ir = t.ed.view.rect(.{ .x0 = im.x, .y0 = im.y, .x1 = im.x + im.w, .y1 = im.y + im.h });
+        try std.testing.expect(std.meta.eql(ir.intersect(scr), ir));
     }
-}
-
-test "image drag: a mouse move does not end the animation" {
-    var t = T{};
-    try montageT(&t);
-    defer t.deinit();
-    const press = t.ed.view.toScreen(Vec2.init(700, 150));
-    try mouse(&t, press.x, press.y, .down);
-    try mouse(&t, press.x - 40, press.y + 20, .move);
-    _ = try t.key("esc");
-    try mouse(&t, 50, 50, .move);
-    try std.testing.expect(t.ed.animating());
+    // Centred: the margins left and right differ by at most a pixel.
+    try std.testing.expect(@abs(r.x0 - (@as(i32, @intCast(scr.x1)) - r.x1)) <= 1);
 }
 
 // ---- file browser tests ---------------------------------------------------
@@ -2704,7 +2586,6 @@ test "browser drag: slop, slots over the canvas, cancel, drop over the panel, dr
     // Esc cancels: nothing pending, no history, the view goes back.
     _ = try t.key("esc");
     try std.testing.expect(t.ed.bdrag == null and t.ed.montage_drop == null);
-    _ = t.ed.finishAnimation();
     try std.testing.expectEqual(view0.xf, t.ed.view.xf);
     try std.testing.expect(t.ed.browser.open); // Esc cancelled the drag only
     try std.testing.expectEqual(@as(usize, 0), t.doc.history.items.len);
@@ -2732,5 +2613,5 @@ test "browser drag: slop, slots over the canvas, cancel, drop over the panel, dr
     try std.testing.expectEqual(@as(i32, 800 + magnet.gap), add.x); // right of the 800 px wide image
     try std.testing.expect(t.ed.takeAdd() == null);
     t.ed.imageAdded();
-    try std.testing.expect(t.ed.animating());
+    try std.testing.expect(t.ed.fitted);
 }

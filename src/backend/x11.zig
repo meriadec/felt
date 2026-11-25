@@ -166,23 +166,22 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     var last_press: struct { t: c_ulong = 0, x: f32 = -100, y: f32 = -100, clicks: u8 = 0 } = .{};
     while (true) {
         // Wait for X events, and for the browser's background work while it
-        // runs; with a view animation running wake every ~8 ms to step it.
+        // runs.
         // With none of these the loop blocks in XNextEvent: no idle CPU.
         var have_event = true;
         const working = app.editor.browser.busy();
-        if ((app.editor.animating() or working) and c.XPending(dpy) == 0) {
+        if (working and c.XPending(dpy) == 0) {
             var pfds = [2]std.posix.pollfd{
                 .{ .fd = c.ConnectionNumber(dpy), .events = std.posix.POLL.IN, .revents = 0 },
                 .{ .fd = wake[0], .events = std.posix.POLL.IN, .revents = 0 },
             };
-            _ = std.posix.poll(&pfds, if (app.editor.animating()) 8 else -1) catch 0;
+            _ = std.posix.poll(&pfds, -1) catch 0;
             if (pfds[1].revents != 0) {
                 var sink: [64]u8 = undefined;
                 while ((std.posix.read(wake[0], &sink) catch 0) == sink.len) {}
             }
             if (app.pump()) need_render = true;
             have_event = c.XPending(dpy) > 0;
-            if (!have_event and app.editor.tick(start.read())) need_render = true;
         }
         if (have_event) _ = c.XNextEvent(dpy, &ev);
         var quit = false;

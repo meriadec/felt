@@ -12,7 +12,6 @@ pub const image_io = @import("image_io.zig");
 pub const png = @import("png.zig");
 pub const resample = @import("resample.zig");
 pub const view = @import("view.zig");
-pub const viewanim = @import("viewanim.zig");
 pub const font = @import("font.zig");
 pub const text = @import("text.zig");
 pub const style = @import("style.zig");
