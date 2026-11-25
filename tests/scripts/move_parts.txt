@@ -2,14 +2,13 @@
 # stays), then the arrow head alone. Undo twice (head, box), redo once
 # (box). The pointer rests on the arrow: its outline and end handles show.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
-key c
 drag 450 250 300 150
 type Tip
 key enter
-key a
 drag 300 380 150 300
+key enter
 key m
 drag 300 150 200 100
 drag 470 250 470 330

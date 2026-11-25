@@ -2,12 +2,13 @@
 # number, undo the number and the crop, redo the crop, then start a second
 # crop: the frame shows the dimmed preview, the export the first crop.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 key r
 drag 85 140 455 185
 key a
 drag 180 175 300 400
+key enter
 key x
 drag 70 55 485 285
 key 5 n

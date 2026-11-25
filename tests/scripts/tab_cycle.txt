@@ -1,14 +1,15 @@
-# Tab cycles tools in toolbar order, Shift+Tab goes back. Tab while typing
-# finishes the text first. Starts on the arrow tool (Tab Tab: rect); ends
-# on the pixelate tool (3 Tabs after rect).
+# Tab cycles tools in toolbar order (callout, rect, text, number, pixelate,
+# move, crop), Shift+Tab goes back. Tab while typing finishes the text
+# first. Starts on the callout tool (Tab: rect); ends on the pixelate tool
+# (Tab Tab Shift+Tab after the number tool).
 size 900 500
-ui tool arrow
-key tab tab
+ui tool callout
+key tab
 drag 100 120 300 200
-key shift+tab
+key tab
 click 400 300
 type typed, then Tab
 key tab
 key 5
 drag 500 100 700 250
-key tab tab tab
+key tab tab shift+tab

@@ -1,5 +1,5 @@
 //! UI chrome drawn over the image, in the Nord theme: the icon dock (tools,
-//! colors, size, help button, the arrow style switch; geometry in dock.zig), the top bar (undo,
+//! colors, size, help button, the pointer style switch; geometry in dock.zig), the top bar (undo,
 //! redo, canvas background; geometry in topbar.zig), the padding widget at the
 //! bottom right (a slider; geometry in padbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
@@ -174,7 +174,7 @@ const Op = union(enum) {
 
 const max_ops = 256;
 
-/// Dock, arrow style switch, top bar, padding widget, folder button, browser, ghost, help overlay, toast.
+/// Dock, pointer style switch, top bar, padding widget, folder button, browser, ghost, help overlay, toast.
 pub const max_panels = 8;
 
 pub const Layout = struct {
@@ -390,7 +390,7 @@ fn toolRows(out: []Row) []Row {
 /// merged (redo, zoom in, the four pan arrows).
 fn keyRows(out: []Row) []Row {
     var n: usize = 0;
-    // The active tool's key again (e.g. `a a`: arrow style).
+    // The active tool's key again (e.g. `c c`: pointer style).
     for (keymap.tools) |t| if (t.again) |ag| {
         const k = keymap.toolKey(t.tool);
         out[n] = .{ .caps = .{ k, k, "", "" }, .n_caps = 2, .label = ag.label };

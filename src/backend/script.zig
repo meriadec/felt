@@ -300,6 +300,8 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     const eq = std.mem.eql;
     if (eq(u8, what, "tool")) {
         const name = it.next() orelse return fail(err, ui_help);
+        // The arrow tool is the callout tool now (a callout with no text is an arrow).
+        if (eq(u8, name, "arrow")) return .{ .tool = .callout };
         for (core.keymap.tools) |info| {
             // The name up to a slash: `move` for "move/select".
             const short = info.name[0 .. std.mem.indexOfScalar(u8, info.name, '/') orelse info.name.len];

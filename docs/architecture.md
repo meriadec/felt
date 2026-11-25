@@ -59,7 +59,7 @@ image files. Build: `coreModule` in build.zig.
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |
 | `draw.zig` | Draw one annotation through an `Xform`; its damage bounds; a callout pointer as an arrow (`calloutPointer`) |
 | `icons.zig` | Vector tool icons (SDF shapes, any scale) |
-| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the style switch above it (arrow and callout tools: arrow style; text tool: text style) |
+| `dock.zig` | Dock geometry and hit test, shared by chrome (draw) and editor (clicks); the style switch above it (callout tool: pointer style, straight first then stairs; text tool: text style) |
 | `topbar.zig` | Top bar geometry and hit test: Undo, Redo, a separator, the canvas background switch; save and copy stay on keys |
 | `padbar.zig` | Padding widget geometry and hit test, bottom right: the canvas padding slider (notch geometry, nearest step) |
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, folder button and file browser panel (contents in browser_draw.zig), help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
@@ -135,15 +135,27 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   repaints the old and new bounds of any annotation that differs, the bands
   the canvas gained or lost, and grows each repaint rect to hold any
   pixelate it touches (a pixelate averages the pixels under it).
-- Arrow styles: each arrow and each callout stores its `style` (straight,
-  stairs). The editor's `arrow_style` is the style of new arrows and new
-  callout pointers: one setting for both. `a` with the arrow tool active,
-  `c` with the callout tool active, or the switch above the dock (only
-  with these two tools, over the active tool's slot) sets it, with a toast
-  in the words of the tool ("Arrow: stairs", "Pointer: stairs"); a shape
-  in progress follows. It stays for the session, across tool switches (it
-  is not saved). At startup: the callout tool with stairs
-  (`editor.default_tool`, `default_arrow_style`). Tests, golden scripts
+- Tool order (`keymap.tools`: dock, Tab, help, docs): callout, rect, text,
+  number, pixelate, move/select, crop. There is no arrow tool: a callout
+  with no text is an arrow (below). `a` is `ToolInfo.alias` of the callout
+  tool (one more binding row, not a dock slot); the script words `ui tool
+  arrow` and the dock hit test map to the callout tool too.
+- Empty callout: a drag with the callout tool shows an arrow (the preview
+  is an `Annotation.arrow`) while the draft text is empty, and the callout
+  box once a character is typed. Enter, Esc, Tab, a click elsewhere or a
+  save (`commitTyping`) commit: with text a callout, with no text (and a
+  pointer, i.e. a drag, not a click) an `Annotation.arrow` of the same
+  style, width and color (`draw.calloutPointer`); a plain click with no
+  text makes nothing. Undo while typing drops it. Old arrows stay
+  `Annotation.arrow`: export, selection, move, hit test are unchanged.
+- Pointer styles: each arrow and each callout stores its `style` (straight,
+  stairs). The editor's `arrow_style` is the style of new pointers (the
+  callout tool, arrows included). `c` or `a` with the callout tool active,
+  or the switch above the dock (only with the callout tool, over its slot;
+  straight first) sets it, with a toast ("Pointer: stairs"); a shape in
+  progress follows. It stays for the session, across tool switches (it
+  is not saved; the config file has no style). At startup: the callout tool
+  with straight (`editor.default_tool`, `default_arrow_style`). Tests, golden scripts
   and the bench set their start tool and style, so they keep their meaning
   if the defaults change. A stairs arrow
   (stairs.zig) is an elbow connector: along the dominant axis to the

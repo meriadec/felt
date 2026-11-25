@@ -3,9 +3,10 @@
 # follow; undo the body move. The pointer rests on the middle segment
 # near the bend handle: the outline follows the elbow, the three handles show.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style stairs
 drag 600 300 150 100
+key enter
 key m
 drag 600 300 700 380
 drag 425 160 385 120

@@ -52,10 +52,6 @@ const Pen = struct {
 pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Color) void {
     const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) };
     switch (tool) {
-        .arrow => {
-            pen.line(-0.7, 0.7, 0.3, -0.3);
-            pen.fill(pen.tri(.{ 0.8, -0.8 }, .{ 0.62, 0.02 }, .{ -0.02, -0.62 }), 1);
-        },
         .text => {
             pen.line(-0.65, -0.7, 0.65, -0.7);
             pen.line(0, -0.7, 0, 0.75);
@@ -103,11 +99,16 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
     }
 }
 
-/// An arrow style: the arrow tool icon, or a stairs arrow (elbow with
+fn straightArrow(pen: Pen) void {
+    pen.line(-0.7, 0.7, 0.3, -0.3);
+    pen.fill(pen.tri(.{ 0.8, -0.8 }, .{ 0.62, 0.02 }, .{ -0.02, -0.62 }), 1);
+}
+
+/// An arrow style: a straight arrow, or a stairs arrow (elbow with
 /// round corners, the real stairs path).
 pub fn drawArrowStyle(cv: *Canvas, clip: Rect, st: ArrowStyle, c: Vec2, size: f32, color: Color) void {
     switch (st) {
-        .straight => draw(cv, clip, .arrow, c, size, color),
+        .straight => straightArrow(Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) }),
         .stairs => {
             const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) };
             const head = 0.62 * pen.k;

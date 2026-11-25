@@ -1,9 +1,12 @@
-# Arrows (the arrow tool, straight): default size, a bigger one in blue, a short one.
+# Arrows (the callout tool with no text: Enter commits an arrow, straight): default size, a bigger one in blue, a short one.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 drag 180 175 300 400
+key enter
 key 5 ]
 drag 560 300 700 120
+key enter
 key 1 [ [
 drag 540 380 500 420
+key enter

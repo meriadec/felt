@@ -23,10 +23,9 @@ fits on a screenshot key.
 
 | Key | Tool |
 | --- | --- |
-| `c` | Callout: a text box with a pointer (stairs or straight) |
-| `a` | Arrow |
-| `t` | Text: plain letters, or on a box (`t` again) |
+| `c` (or `a`) | Callout: a text box with a pointer (straight or stairs); with no text, an arrow |
 | `r` | Box |
+| `t` | Text: plain letters, or on a box (`t` again) |
 | `n` | Numbered bubble |
 | `p` | Pixelate (hide secrets) |
 | `m` | Move / select any annotation (Delete removes the selected one) |
@@ -87,9 +86,10 @@ the keys. `h` hides the panels, hold `Space` for the hand (drag with the left bu
 list is in [docs/keymap.md](docs/keymap.md).
 
 - **Callouts and arrows.** The callout tool is active at startup: press where the
-  box goes, drag to the point of interest, then type. Arrows and callout pointers share one
-  style (stairs or straight). Press `c` or `a` again, or use the switch above the
-  dock, to change it.
+  box goes, drag to the point of interest, then type. Commit with no text
+  (Enter, Esc or a click elsewhere) and the callout becomes a plain arrow. The
+  pointer is straight at startup; press `c` (or `a`) again, or use the switch
+  above the dock, for stairs.
 - **Tools.** Tab and Shift+Tab cycle them.
 - **Move / select** (`m`) drags any annotation, which lights up under the
   pointer. A callout box moves alone (the tip stays), or its tip moves alone. An

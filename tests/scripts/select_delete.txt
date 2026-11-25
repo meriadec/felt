@@ -2,9 +2,10 @@
 # the number, Delete deletes it too. Only the rect is left. Click on empty
 # space (nothing is selected) and Delete do nothing.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 drag 260 160 120 100
+key enter
 key r
 drag 300 80 420 150
 key n

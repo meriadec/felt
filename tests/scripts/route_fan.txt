@@ -2,9 +2,13 @@
 # to heads lower right, drawn top first. Each one turns before the one
 # above it, so the middle segments nest and nothing crosses.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style stairs
 drag 600 250 150 100
+key enter
 drag 650 300 150 140
+key enter
 drag 700 350 150 180
+key enter
 drag 750 400 150 220
+key enter

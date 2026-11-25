@@ -1,8 +1,8 @@
 //! Dock geometry: the floating tool bar at the bottom center. One slot per
 //! tool (in key map order), the color swatches, the size slot and the help
-//! button. With the arrow or the callout tool active, a small switch floats
-//! above the dock, over that tool's slot: one slot per arrow style (arrows
-//! and callout pointers share it). The text tool has one too: plain, boxed. Pure
+//! button. With the callout tool active, a small switch floats above the
+//! dock, over that tool's slot: one slot per pointer style (straight first,
+//! then stairs). The text tool has one too: plain, boxed. Pure
 //! layout from the screen size and the tool, no font: chrome.zig draws it
 //! and the editor hit-tests clicks with the same numbers.
 const std = @import("std");
@@ -140,10 +140,10 @@ pub const Dock = struct {
     }
 };
 
-/// The tool has a style: the switch shows above the dock (arrow styles, or
+/// The tool has a style: the switch shows above the dock (pointer styles, or
 /// the text styles with the text tool).
 pub fn hasStyleSwitch(tool: keymap.Tool) bool {
-    return tool == .arrow or tool == .callout or tool == .text;
+    return tool == .callout or tool == .text;
 }
 
 /// The slot of `tool` in `Dock.tools` (the order of `keymap.tools`): tests look slots up by tool, not by number.
@@ -172,7 +172,7 @@ test "dock is centered at the bottom and hit-tests its slots" {
     try std.testing.expect(narrow.panel.min.x >= 0 and narrow.panel.max.x <= 300);
 }
 
-test "the arrow style switch shows above the dock with the arrow and the callout tool only" {
+test "the pointer style switch shows above the dock with the callout tool only" {
     const other = Dock.of(1920, 1080, .rect);
     try std.testing.expectEqual(@as(?Bounds, null), other.switch_panel);
     const d = Dock.of(1920, 1080, .callout);
@@ -188,10 +188,10 @@ test "the arrow style switch shows above the dock with the arrow and the callout
     }
 }
 
-test "with the arrow tool the switch sits over the arrow slot" {
-    const d = Dock.of(1920, 1080, .arrow);
+test "with the callout tool the switch sits over the callout slot" {
+    const d = Dock.of(1920, 1080, .callout);
     const sp = d.switch_panel.?;
-    const slot_b = d.tools[toolIndex(.arrow)];
+    const slot_b = d.tools[toolIndex(.callout)];
     try std.testing.expect(sp.min.x <= slot_b.min.x + (slot_b.max.x - slot_b.min.x) / 2 and sp.max.x >= slot_b.min.x + (slot_b.max.x - slot_b.min.x) / 2);
     for (d.styles, arrow_styles) |b, st| {
         try std.testing.expectEqual(Hit{ .arrow_style = st }, d.hit(b.min.add(b.max).scale(0.5)).?);

@@ -4,13 +4,15 @@
 # pinned one does not move. The pointer rests on the bend handle: a thin
 # outline, the handle active.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style stairs
 drag 650 380 150 120
+key enter
 key m
 drag 400 250 250 250
 key a
 ui arrow-style straight
 drag 300 200 200 200
+key enter
 key m
 move 250 250

@@ -5,10 +5,11 @@
 # hover and the "Canvas: dark" toast; the export is dark grey around the image.
 image tests/fixtures/strip.png
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 key 2
 drag 200 150 300 250
+key enter
 key p
 drag 600 200 660 300
 ui canvas-bg dark

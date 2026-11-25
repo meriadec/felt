@@ -4,13 +4,14 @@
 # Undo takes the blue arrow back: the right side shrinks back to the image.
 image tests/fixtures/strip.png
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 drag 280 245 150 140
-key c
+key enter
 drag 560 380 600 255
 type Click here
 key enter
-key 5 a
+key 5
 drag 860 230 600 250
+key enter
 key ctrl+z

@@ -33,10 +33,10 @@ const Tool = keymap.Tool;
 const Annotation = ann.Annotation;
 const Part = ann.Part;
 
-/// The tool and the arrow style at startup: a callout with a stairs
-/// pointer. The style is shared, so new arrows start as stairs too.
+/// The tool and the pointer style at startup: a callout with a straight
+/// pointer (a callout with no text becomes an arrow of the same style).
 pub const default_tool: Tool = .callout;
-pub const default_arrow_style: ann.ArrowStyle = .stairs;
+pub const default_arrow_style: ann.ArrowStyle = .straight;
 
 pub const Command = enum {
     save,
@@ -623,7 +623,11 @@ pub const Editor = struct {
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| if (t.edit) |e| self.editedPreview(e) else switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .style = self.text_style } },
-                .callout => self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
+                // No text yet and a pointer: it is an arrow until a character comes.
+                .callout => if (t.target != null and self.draft.items.len == 0)
+                    self.routed(.{ .arrow = .{ .tail = t.pos, .head = t.target.?, .width = self.strokeImg(), .color = c, .style = self.arrow_style } })
+                else
+                    self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             },
         };
     }
@@ -693,10 +697,13 @@ pub const Editor = struct {
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
         const c = self.currentColor();
         return switch (d.tool) {
-            .arrow => self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } }),
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
-            .callout => self.routed(.{ .callout = .{ .target = d.cur, .anchor = d.start, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
+            // A drag is an arrow (a callout with no text); a click stays a box.
+            .callout => if (d.cur_screen.dist(d.start_screen) >= click_slop)
+                self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } })
+            else
+                self.routed(.{ .callout = .{ .target = d.cur, .anchor = d.start, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             .text, .number, .move, .crop => null,
         };
     }
@@ -1139,9 +1146,18 @@ pub const Editor = struct {
         if (self.mode != .typing) return;
         if (self.mode.typing.edit) |e| return self.commitEdit(e);
         defer self.cancel();
-        if (std.mem.trim(u8, self.draft.items, " \t\n").len == 0) return;
+        const blank = std.mem.trim(u8, self.draft.items, " \t\n").len == 0;
+        if (blank and self.mode.typing.target == null) return;
         var a = self.preview().?;
-        {
+        // A callout with a pointer and no text is an arrow (the preview is one).
+        if (blank) {
+            a = switch (a) {
+                .arrow => a,
+                .callout => |c| .{ .arrow = draw.calloutPointer(c) orelse return },
+                else => return,
+            };
+            try self.doc.add(self.gpa, a);
+        } else {
             const owned = try self.gpa.dupe(u8, self.draft.items);
             errdefer self.gpa.free(owned); // the document owns it once added
             switch (a) {
@@ -1261,7 +1277,7 @@ pub const Editor = struct {
     /// progress follows) and say it, in the words of the active tool.
     fn setArrowStyle(self: *Editor, s: ann.ArrowStyle) void {
         self.arrow_style = s;
-        self.setToast("{s}: {s}", .{ if (self.tool == .callout) "Pointer" else "Arrow", @tagName(s) });
+        self.setToast("Pointer: {s}", .{@tagName(s)});
     }
 
     /// Set the style of new texts (a text in progress follows) and say it.
@@ -1386,7 +1402,7 @@ const T = struct {
         self.ed.dock_visible = false;
         // Tests draw straight arrows unless they pick another tool or style
         // (set here, not the startup defaults).
-        self.ed.tool = .arrow;
+        self.ed.tool = .callout;
         self.ed.arrow_style = .straight;
     }
     /// Show the dock, the top bar and the padding widget, and allow presses on them.
@@ -1410,6 +1426,7 @@ const T = struct {
     /// An arrow drawn the way the user does: from its tail to its head.
     fn arrow(self: *T, tx: f32, ty: f32, hx: f32, hy: f32) !void {
         try self.drag(tx, ty, hx, hy);
+        _ = try self.key("enter"); // no text: the callout becomes an arrow
     }
 };
 
@@ -1452,7 +1469,7 @@ test "quit asks once when dirty" {
     t.init();
     defer t.deinit();
     try std.testing.expectEqual(Command.quit, (try t.key("esc")).command.?);
-    try t.drag(10, 10, 50, 40);
+    try t.arrow(10, 10, 50, 40);
     try std.testing.expectEqual(@as(?Command, null), (try t.key("esc")).command);
     try std.testing.expectEqual(Command.quit, (try t.key("esc")).command.?);
 }
@@ -1483,10 +1500,10 @@ test "tab cycles tools; tab while typing commits first" {
     t.init();
     defer t.deinit();
     _ = try t.key("tab");
-    try std.testing.expectEqual(keymap.cycleTool(.arrow, 1), t.ed.tool);
+    try std.testing.expectEqual(keymap.cycleTool(.callout, 1), t.ed.tool);
     _ = try t.key("shift+tab");
     _ = try t.key("shift+tab");
-    try std.testing.expectEqual(keymap.cycleTool(.arrow, -1), t.ed.tool);
+    try std.testing.expectEqual(keymap.cycleTool(.callout, -1), t.ed.tool);
     _ = try t.key("t");
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = 5, .y = 50 } });
     _ = try t.key("x");
@@ -1556,7 +1573,7 @@ test "top bar: undo and redo by click, never draws, hover follows the pointer" {
     const undo_c = b.slots[0].min.add(b.slots[0].max).scale(0.5);
     const redo_c = b.slots[1].min.add(b.slots[1].max).scale(0.5);
     try std.testing.expect(!t.ed.canUndo() and !t.ed.canRedo());
-    try t.drag(300, 300, 400, 400);
+    try t.arrow(300, 300, 400, 400);
     try std.testing.expect(t.ed.canUndo());
     // A click on a disabled button does nothing, and never draws.
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = redo_c.x, .y = redo_c.y } });
@@ -1590,7 +1607,7 @@ test "zoom out keeps sizes and the point under the pointer; 0 refits; middle dra
     try std.testing.expect(t.ed.toast() != null);
     // A drag far outside the image grows the canvas; the view stays.
     const xf = t.ed.view.xf;
-    try t.drag(100, 50, 199, 99);
+    try t.arrow(100, 50, 199, 99);
     try std.testing.expect(t.ed.canvas.x1 > 200);
     try std.testing.expectEqual(xf, t.ed.view.xf);
     // Middle drag pans by whole pixels and draws nothing.
@@ -1615,7 +1632,7 @@ test "a click too far from the image adds nothing and says why" {
     try std.testing.expect(std.mem.startsWith(u8, t.ed.toast().?, "Too far"));
 }
 
-test "startup: the callout tool with a stairs pointer; a drag with no key draws one" {
+test "startup: the callout tool with a straight pointer; a drag with no key draws one" {
     var t = T{};
     t.init();
     defer t.deinit();
@@ -1623,7 +1640,7 @@ test "startup: the callout tool with a stairs pointer; a drag with no key draws 
     var ed = Editor.init(std.testing.allocator, &t.font, &t.doc, 200, 100);
     defer ed.deinit();
     try std.testing.expectEqual(Tool.callout, ed.tool);
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, ed.arrow_style);
+    try std.testing.expectEqual(ann.ArrowStyle.straight, ed.arrow_style);
     ed.dock_visible = false; // the top bar would cover a 200 px wide screen
     _ = try ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10 } });
     _ = try ed.handle(.{ .mouse_move = .{ .x = 120, .y = 70 } });
@@ -1632,7 +1649,7 @@ test "startup: the callout tool with a stairs pointer; a drag with no key draws 
     _ = try ed.handle(.{ .key = try input.parseChord("enter") });
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqualStrings("x", c.text);
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, c.style);
+    try std.testing.expectEqual(ann.ArrowStyle.straight, c.style);
 }
 
 test "callout drag then type" {
@@ -1726,15 +1743,15 @@ test "move: an annotation made before a crop stays under it" {
     try std.testing.expectEqual(geom.Rect{ .x0 = 20, .y0 = 20, .x1 = 120, .y1 = 80 }, t.ed.canvas);
 }
 
-test "a again switches the arrow style of new arrows, for the session; an arrow in progress follows" {
+test "a is a key of the callout tool: again switches the pointer style, for the session; an arrow in progress follows" {
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("a"); // the arrow tool is active: a second press
+    _ = try t.key("a"); // the callout tool is active: a second press
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
-    try std.testing.expectEqualStrings("Arrow: stairs", t.ed.toast().?);
-    try std.testing.expectEqual(Tool.arrow, t.ed.tool);
-    try t.drag(10, 10, 50, 40);
+    try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
+    try std.testing.expectEqual(Tool.callout, t.ed.tool);
+    try t.arrow(10, 10, 50, 40);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
     // Another tool and back: the style stays.
     _ = try t.key("r");
@@ -1746,6 +1763,7 @@ test "a again switches the arrow style of new arrows, for the session; an arrow 
     _ = try t.key("a");
     try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.preview().?.arrow.style);
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = 90, .y = 90 } });
+    _ = try t.key("enter");
     try std.testing.expectEqual(@as(usize, 2), t.doc.items.items.len);
     try std.testing.expectEqual(ann.ArrowStyle.straight, t.doc.items.items[1].arrow.style);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
@@ -1756,20 +1774,20 @@ test "a again switches the arrow style of new arrows, for the session; an arrow 
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
 }
 
-test "the arrow style switch above the dock: a click picks a style; with another tool it is not there" {
+test "the pointer style switch above the dock: a click picks a style; with another tool it is not there" {
     var t = T{};
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
     t.showChrome();
-    const d = Dock.of(1920, 1080, .arrow);
+    const d = Dock.of(1920, 1080, .callout);
     const c = d.styles[1].min.add(d.styles[1].max).scale(0.5);
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = c.x, .y = c.y } });
     try std.testing.expectEqual(@import("dock.zig").Hit{ .arrow_style = .stairs }, t.ed.chromeHover().dock.?);
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = c.x, .y = c.y } });
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = c.x, .y = c.y } });
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
-    try std.testing.expectEqualStrings("Arrow: stairs", t.ed.toast().?);
+    try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
     // Another tool: no switch, a drag there draws.
     _ = try t.key("r");
@@ -1808,31 +1826,28 @@ test "move: a stairs arrow is grabbed on its path, not on the straight line; an 
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.doc.items.items[0].arrow.style);
 }
 
-test "c again switches the pointer style of new callouts: one setting with the arrows; while typing c is a letter" {
+test "c again switches the pointer style of new callouts; while typing c is a letter" {
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("c");
-    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style);
+    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style); // the start style
     _ = try t.key("c"); // the callout tool is active: a second press
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
     try std.testing.expectEqualStrings("Pointer: stairs", t.ed.toast().?);
     try std.testing.expectEqual(Tool.callout, t.ed.tool);
     try t.drag(10, 10, 120, 60);
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.arrow.style); // no text yet: an arrow
     _ = try t.key("c"); // typing: a letter, not the switch
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style); // a text: the callout
     _ = try t.key("enter");
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqualStrings("c", c.text);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, c.style);
     try std.testing.expectEqual(t.ed.strokeImg(), c.width);
-    // The arrow tool shares the setting.
-    _ = try t.key("a");
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
-    _ = try t.key("a");
-    try std.testing.expectEqualStrings("Arrow: straight", t.ed.toast().?);
+    _ = try t.key("a"); // the alias toggles too
+    try std.testing.expectEqualStrings("Pointer: straight", t.ed.toast().?);
     _ = try t.key("c");
-    try std.testing.expectEqual(ann.ArrowStyle.straight, t.ed.arrow_style);
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.arrow_style);
     // Undo and redo keep each callout's own style.
     _ = try t.key("ctrl+z");
     _ = try t.key("ctrl+shift+z");
@@ -1860,8 +1875,7 @@ test "move: a stairs callout is grabbed on its elbow; its box moves alone and th
     var t = T{};
     t.init();
     defer t.deinit();
-    _ = try t.key("c");
-    _ = try t.key("c"); // stairs
+    _ = try t.key("c"); // stairs (the callout tool is active at start: it toggles)
     try t.drag(150, 70, 10, 10); // box right of x 150; pointer: left to x 80, up to y 10, left to x 10
     _ = try t.key("H");
     _ = try t.key("enter");
@@ -2006,7 +2020,7 @@ test "padding: a shape in the padding is added, shows, and keeps the canvas; und
     const s = t.ed.view.xf.scale;
     const o = t.ed.view.xf.offset;
     // An arrow from the image into the left padding (image x -100).
-    try t.drag(o.x + 100 * s, o.y + 50 * s, o.x - 100 * s, o.y + 50 * s);
+    try t.arrow(o.x + 100 * s, o.y + 50 * s, o.x - 100 * s, o.y + 50 * s);
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
     try std.testing.expectEqual(@as(i32, 200 + 256), t.ed.canvas.width());
     _ = try t.key("ctrl+z");

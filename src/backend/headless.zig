@@ -232,7 +232,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
         },
         .arrow_style => |want| {
             if (d.switch_panel == null) {
-                std.log.err("script: ui arrow-style: the switch shows only with the arrow or the callout tool", .{});
+                std.log.err("script: ui arrow-style: the switch shows only with the callout tool", .{});
                 return error.UiItemHidden;
             }
             const cur = app.editor.arrow_style;
@@ -400,7 +400,7 @@ test "ui arrow-style NAME clicks only if the style is not NAME yet" {
     const gpa = std.testing.allocator;
     var perr: script_mod.ParseError = undefined;
     // Stairs by a click (a toast), a key hides the toast, stairs again: no click, no toast.
-    var s = try script_mod.parse(gpa, "size 900 500\nui tool arrow\nui arrow-style stairs\nkey 1\nui arrow-style stairs\n", &perr);
+    var s = try script_mod.parse(gpa, "size 900 500\nui tool callout\nui arrow-style stairs\nkey 1\nui arrow-style stairs\n", &perr);
     defer s.deinit(gpa);
     const app = try replay(gpa, try Canvas.init(gpa, 40, 30), &s, null, appConfig(.{ .image_path = "x" }));
     defer app.destroy();

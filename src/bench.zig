@@ -89,8 +89,9 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     const H: f32 = @floatFromInt(opts.size[1]);
     var t = try std.time.Timer.start();
     const doc = &app.doc;
-    for ("aa") |ch| _ = try app.handle(.{ .key = .{ .key = .{ .char = ch } } }); // the arrow tool, again: stairs
-    if (app.editor.arrow_style != .stairs or app.editor.tool != .arrow) return error.BenchNoStairsStyle;
+    app.editor.tool = .callout; // stairs pointers: a drag, then Enter (no text: an arrow)
+    app.editor.arrow_style = .stairs;
+    if (app.editor.arrow_style != .stairs or app.editor.tool != .callout) return error.BenchNoStairsStyle;
     const n_fan = 8;
     var fan = Stats{};
     defer fan.deinit(gpa);
@@ -102,6 +103,7 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
         _ = try app.render();
         t.reset();
         _ = try app.handle(.{ .mouse_up = .{ .x = W * (0.55 + 0.03 * kf), .y = H * (0.6 + 0.03 * kf) } });
+        _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } }); // no text: the callout becomes an arrow
         _ = try app.render();
         try fan.add(gpa, t.read());
     }
@@ -123,6 +125,7 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     const h1 = doc.history.items.len;
     t.reset();
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.7, .y = H * 0.8 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } }); // no text: the callout becomes an arrow
     const t_settle = t.lap();
     _ = try app.render();
     try w.print("{s:<26} {d:>7.3} ms (event {d:.3} ms: route, settle; {d} re-routed, {d} annotations)\n", .{ "  commit", ms(t_settle + t.read()), ms(t_settle), doc.history.items.len - h1 - 1, doc.items.items.len });
@@ -257,7 +260,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var damage_px: u64 = 0;
     // Straight arrows, set here (not the startup defaults): each case below
     // goes on from the tool and style the case before it left.
-    app.editor.tool = .arrow;
+    app.editor.tool = .callout;
     app.editor.arrow_style = .straight;
     _ = try app.render();
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.2, .y = H * 0.7 } });
@@ -270,6 +273,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         damage_px += d.area();
     }
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.8, .y = H * 0.2 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } }); // no text: the callout becomes an arrow
     t.reset();
     _ = try app.render();
     const t_commit = t.read();
@@ -380,6 +384,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.15, .y = H * 0.2 } });
     _ = try app.handle(.{ .mouse_move = .{ .x = W * 0.75, .y = H * 0.4 } });
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.75, .y = H * 0.4 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } }); // no text: the callout becomes an arrow
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
     _ = try app.render();
     _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.25, .y = H * 0.2 } });
@@ -498,7 +503,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     // Zoom out (room around the image), then drag an arrow from the image
     // out past its edge: the canvas grows white, live.
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'a' } } });
-    if (app.editor.arrow_style != .straight or app.editor.tool != .arrow) return error.BenchNotStraightArrow;
+    if (app.editor.arrow_style != .straight or app.editor.tool != .callout) return error.BenchNotStraightArrow;
     _ = try app.handle(.{ .key = .{ .key = .{ .char = '-' } } });
     t.reset();
     _ = try app.render();
@@ -516,6 +521,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
         damage_px += d.area();
     }
     _ = try app.handle(.{ .mouse_up = .{ .x = W * 0.98, .y = H * 0.8 } });
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .enter } } }); // no text: the callout becomes an arrow
     t.reset();
     _ = try app.render();
     const t_grow_commit = t.read();

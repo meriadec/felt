@@ -1,9 +1,10 @@
 # UI states: blue picked by a dock click, size up twice, then the
 # unsaved-changes toast after Esc.
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 drag 400 200 300 300
+key enter
 ui color 5
 key ] ]
 key esc

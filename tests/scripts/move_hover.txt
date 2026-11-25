@@ -1,9 +1,8 @@
 # Move tool hover: a callout and a number; the pointer rests on the
 # callout tip, which lights up (outline thin, tip handle big).
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
-key c
 drag 450 250 300 150
 type Hover
 key enter

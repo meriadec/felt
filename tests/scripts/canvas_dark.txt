@@ -7,24 +7,32 @@
 # pixelate across the top edge. Every color must read on dark grey too.
 image tests/fixtures/strip.png
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 key 1
 drag 275 380 250 245
+key enter
 key 2
 drag 330 380 305 245
+key enter
 key 3
 drag 385 380 360 245
+key enter
 key 4
 drag 440 380 415 245
+key enter
 key 5
 drag 495 380 470 245
+key enter
 key 6
 drag 550 380 525 245
+key enter
 key 7
 drag 605 380 580 245
+key enter
 key 8
 drag 660 380 635 245
+key enter
 key n 7
 click 300 160
 key 8

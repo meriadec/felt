@@ -1,0 +1,17 @@
+# A callout with no text is an arrow. Drag from the box to the target and
+# commit with Enter, then Esc (both keep the arrow); type a word and it is
+# a callout. The style switch changes the arrow in progress too (stairs); a
+# click on the canvas would commit it. The last drag is still in progress at
+# the end, shown as an arrow (no text yet, so no box). Straight is the
+# start style.
+size 900 500
+drag 200 300 400 150
+key enter
+drag 600 420 520 220
+key escape
+drag 300 430 250 330
+type Hi
+key enter
+drag 700 150 800 60
+ui arrow-style stairs
+drag 120 120 340 60

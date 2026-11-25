@@ -3,10 +3,11 @@
 size 900 500
 ui padding 128
 ui canvas-bg dark
-ui tool arrow
+ui tool callout
 ui arrow-style straight
 key 1
 drag 100 150 300 200
+key enter
 ui tool rect
 key 3
 drag 735 150 800 280

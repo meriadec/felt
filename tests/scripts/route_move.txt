@@ -4,11 +4,13 @@
 # arrow settles back to its midpoint turn in the same step. Undo: both
 # back in place (the scene repaints both in place, no rebuild).
 size 900 500
-ui tool arrow
+ui tool callout
 ui arrow-style stairs
 drag 650 380 150 120
+key enter
 ui arrow-style straight
 drag 460 250 340 250
+key enter
 key m
 drag 400 250 160 300
 key ctrl+z

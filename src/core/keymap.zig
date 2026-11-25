@@ -6,7 +6,7 @@ const std = @import("std");
 const input = @import("input.zig");
 const palette = @import("color.zig").palette;
 
-pub const Tool = enum { arrow, text, rect, number, callout, pixelate, move, crop };
+pub const Tool = enum { callout, rect, text, number, pixelate, move, crop };
 
 pub const ToolInfo = struct {
     tool: Tool,
@@ -15,16 +15,17 @@ pub const ToolInfo = struct {
     mouse: []const u8,
     /// What the tool key does when the tool is already active.
     again: ?Again = null,
+    /// A second key that selects the tool too (not a dock slot).
+    alias: ?u8 = null,
 };
 
 /// A second press of the active tool's key.
 pub const Again = struct { action: Action, label: []const u8 };
 
 pub const tools = [_]ToolInfo{
-    .{ .tool = .callout, .key = 'c', .name = "callout", .mouse = "The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer.", .again = .{ .action = .arrow_style, .label = "pointer style: straight / stairs" } },
-    .{ .tool = .arrow, .key = 'a', .name = "arrow", .mouse = "Press at the tail and release at the head (the point), like a callout. Style: stairs (an elbow with round corners, the start style) or straight; `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too).", .again = .{ .action = .arrow_style, .label = "arrow style: straight / stairs" } },
-    .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace and Delete erase, the arrows (Ctrl: by word), Home and End move the caret, Shift with them selects, Ctrl+A selects all, and typing over a selection replaces it. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session.", .again = .{ .action = .text_style, .label = "text style: plain / boxed" } },
+    .{ .tool = .callout, .key = 'c', .alias = 'a', .name = "callout", .mouse = "The tool at startup. Press where the box goes, drag to the point of interest and release there, then type, Enter. The pointer is an arrow from the box to the point: straight (at startup) or stairs (an elbow with round corners that turns where it crosses and crowds no other path, if it can; the paths around it move aside too). `c` again or the switch above the dock changes the style for new pointers, for the rest of the session. Commit with no text (Enter, Esc, Tab, a click elsewhere) and the callout becomes a plain arrow with the same style, size and color; while the text is empty it shows as that arrow. A plain click with no text makes nothing. `a` is a second key for this tool (the old arrow tool).", .again = .{ .action = .arrow_style, .label = "pointer style: straight / stairs" } },
     .{ .tool = .rect, .key = 'r', .name = "rect", .mouse = "Drag from corner to corner." },
+    .{ .tool = .text, .key = 't', .name = "text", .mouse = "Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace and Delete erase, the arrows (Ctrl: by word), Home and End move the caret, Shift with them selects, Ctrl+A selects all, and typing over a selection replaces it. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session.", .again = .{ .action = .text_style, .label = "text style: plain / boxed" } },
     .{ .tool = .number, .key = 'n', .name = "number", .mouse = "Click to drop the next number (1, 2, 3...). Undo takes the number back." },
     .{ .tool = .pixelate, .key = 'p', .name = "pixelate", .mouse = "Drag over a secret to pixelate it." },
     .{ .tool = .move, .key = 'm', .name = "move/select", .mouse = "Point at an annotation: it lights up. Drag it to move it; it stays selected (outlined) after you let go, and Delete or Backspace deletes it (undo brings it back). A click on empty space, Esc, another tool, undo or redo clears the selection. A callout: drag the box (the tip stays), or the tip alone. An arrow: drag an end to move only that end. A stairs path: drag the dot on its middle to pin where it turns; back to the middle, it routes itself again. Undo puts it back. With two or more images on the canvas, drag an image (where no annotation is under the pointer) to move it to another place: the free slots next to the other images show dashed, the nearest one lit, and a ghost outline follows the pointer; the view never changes by itself (zoom and pan by hand to reach slots off screen, 0 fits the scene); let go to drop (one undo step, its annotations go with it), Esc or right click cancels. Double click a text or a callout: edit its text again (Enter or Esc keeps the change; a blank or unchanged text keeps the old one); undo restores the old text." },
@@ -107,6 +108,9 @@ pub const bindings: []const Binding = blk: {
     var list: []const Binding = &.{};
     for (tools) |t| list = list ++ [_]Binding{.{ .chord = .{ .key = ch(t.key) }, .action = .{ .tool = t.tool }, .label = t.name }};
     for (palette, 0..) |p, i| list = list ++ [_]Binding{.{ .chord = .{ .key = ch('1' + i) }, .action = .{ .color = i }, .label = p.name }};
+    for (tools) |t| if (t.alias) |a| {
+        list = list ++ [_]Binding{.{ .chord = .{ .key = ch(a) }, .action = .{ .tool = t.tool }, .label = t.name }};
+    };
     list = list ++ [_]Binding{
         .{ .chord = .{ .key = .{ .named = .tab }, .shift = false }, .action = .next_tool, .label = "next tool" },
         .{ .chord = .{ .key = .{ .named = .tab }, .shift = true }, .action = .prev_tool, .label = "previous tool" },
@@ -156,7 +160,7 @@ pub const extra = [_]Extra{
     .{ .input = "Middle drag", .effect = "Pan the view", .short = "pan" },
     .{ .input = "Drawing past the image", .effect = "The canvas grows to hold the shape, in light or dark grey (`b`, kept for the next sessions); the export holds it all. Zoom out (`-`) for room around a full-screen image", .short = "grow canvas" },
     .{ .input = "Right click", .effect = "Cancel the shape or text in progress", .short = "cancel" },
-    .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers); with the text tool, the text style (plain or boxed)", .short = "pick" },
+    .{ .input = "Click on the dock", .effect = "Pick a tool or a color; the size slot steps the size, `?` opens this help. With the callout tool, the switch above the dock picks the pointer style (straight, stairs); with the text tool, the text style (plain or boxed)", .short = "pick" },
     .{ .input = "Click on the top bar", .effect = "Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions)", .short = "undo, redo, canvas, pad" },
     .{ .input = "Folder button (top left) or `o`", .effect = "Opens a file browser panel over the left of the canvas (it does not shrink the canvas): your home folder at first, then the last folder. It lists folders and images (PNG, JPEG, BMP) only, hidden names left out, newest first, folders and images mixed, with a thumbnail, the date and the image size. Click a folder or `..` (or the up arrow) to go in or up; the wheel scrolls", .short = "file browser" },
     .{ .input = "Drag an image from the browser", .effect = "Drag a row onto the canvas: the free magnet slots next to the placed images show dashed and the nearest one lights up; let go to place the image there (one undo step), Esc, right click or a release over the panel cancels. The view never changes by itself (zoom and pan by hand to reach slots off screen). The panel stays open", .short = "drop an image" },
@@ -243,6 +247,7 @@ pub fn writeMarkdown(w: *std.Io.Writer) !void {
     );
     for (tools) |t| try w.print("| `{c}` | {s} | {s} |\n", .{ t.key, t.name, t.mouse });
     try w.writeAll("\n## Keys\n\n| Key | Action |\n|---|---|\n");
+    for (tools) |t| if (t.alias) |a| try w.print("| `{c}` | alias of `{c}`: the {s} tool |\n", .{ a, t.key, t.name });
     for (tools) |t| if (t.again) |ag| try w.print("| `{c}` again ({s} tool active) | {s} |\n", .{ t.key, t.name, ag.label });
     for (bindings, caps) |b, cap| {
         if (b.action == .tool) continue;
@@ -253,7 +258,7 @@ pub fn writeMarkdown(w: *std.Io.Writer) !void {
 }
 
 test "lookup" {
-    try std.testing.expectEqual(Action{ .tool = .arrow }, lookup(.{ .key = .{ .char = 'a' } }).?);
+    try std.testing.expectEqual(Action{ .tool = .callout }, lookup(.{ .key = .{ .char = 'a' } }).?);
     try std.testing.expectEqual(Action.undo, lookup(.{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } }).?);
     try std.testing.expectEqual(Action.redo, lookup(.{ .key = .{ .char = 'Z' }, .mods = .{ .ctrl = true, .shift = true } }).?);
     try std.testing.expectEqual(Action.toggle_help, lookup(.{ .key = .{ .char = '?' }, .mods = .{ .shift = true } }).?);

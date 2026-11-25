@@ -8,5 +8,5 @@ ui pointer-style stairs
 drag 600 360 250 190
 type Pointer
 key enter
-key a
 drag 260 100 580 240
+key enter
