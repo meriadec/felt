@@ -13,3 +13,4 @@ manual step, a missing doc.
 
 ## Open
 
+2026-11-25: `DISPLAY=:0 zig build smoke-x11` fails also on a74a9c0 (before the browser): the saved PNG corner is #2E3440, expected #4C566A (canvas dark after b). Not looked into.
