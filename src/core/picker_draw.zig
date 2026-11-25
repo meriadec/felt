@@ -134,18 +134,16 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
 }
 
-/// The padding square around the pointer: transparent, a dotted border with
-/// small rounded corners (2 px), the same dots as the guide lines.
+/// The padding square around the pointer: transparent, square corners, a
+/// dashed border with the same dashes as the guide lines.
 fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
-    const dot: i32 = @max(1, @as(i32, @intFromFloat(@round(2 * s))));
+    const dot: i32 = @intFromFloat(@round(4 * s));
     const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
-    const rad: i32 = @max(1, @as(i32, @intFromFloat(@round(2 * s))));
     const r = sq.intersect(clip);
     var y = r.y0;
     while (y < r.y1) : (y += 1) {
         var x = r.x0;
         while (x < r.x1) : (x += 1) {
-            if (cornerOut(sq, x, y, rad)) continue;
             const edge_y = y < sq.y0 + th or y >= sq.y1 - th;
             const edge_x = x < sq.x0 + th or x >= sq.x1 - th;
             if (!edge_x and !edge_y) continue;
@@ -154,13 +152,6 @@ fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
             cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, line_strong);
         }
     }
-}
-
-/// Pixel (x, y) of `sq` lies outside its rounded corner of radius `rad`.
-fn cornerOut(sq: Rect, x: i32, y: i32, rad: i32) bool {
-    const dx = @max(sq.x0 + rad - x, x - (sq.x1 - 1 - rad), 0);
-    const dy = @max(sq.y0 + rad - y, y - (sq.y1 - 1 - rad), 0);
-    return dx * dx + dy * dy > rad * rad;
 }
 
 /// A faint diagonal hatching on the `band` px just inside `hi`: the margin
