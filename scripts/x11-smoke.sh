@@ -66,7 +66,7 @@ read -r ww wh <<<"$want"
 read -r gw gh <<<"$got"
 [ "$gw" -gt "$ww" ] && [ "$gh" -eq "$wh" ] || { echo "x11-smoke: saved ${gw}x${gh}, expected wider than ${ww}x${wh} (number past the right edge)" >&2; exit 1; }
 px=$(convert "$out/saved.png" -crop "1x1+$((gw - 2))+2" -format '%[hex:p{0,0}]' info:)
-[ "${px:0:6}" = "4C566A" ] || { echo "x11-smoke: canvas past the image is #$px, expected #4C566A (dark, after b)" >&2; exit 1; }
+[ "${px:0:6}" = "2E3440" ] || { echo "x11-smoke: canvas past the image is #$px, expected #2E3440 (dark, after b)" >&2; exit 1; }
 # The stairs arrow, image (350, 525) to (550, 375): its last segment runs
 # along y = 375 to the head (a straight arrow is far below there).
 px=$(convert "$out/saved.png" -crop "1x1+500+375" -format '%[hex:p{0,0}]' info:)
