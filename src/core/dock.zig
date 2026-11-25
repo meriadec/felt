@@ -149,7 +149,8 @@ pub fn hasStyleSwitch(tool: keymap.Tool) bool {
     return tool == .arrow or tool == .callout or tool == .text;
 }
 
-fn toolIndex(tool: keymap.Tool) usize {
+/// The slot of `tool` in `Dock.tools` (the order of `keymap.tools`): tests look slots up by tool, not by number.
+pub fn toolIndex(tool: keymap.Tool) usize {
     for (keymap.tools, 0..) |t, i| if (t.tool == tool) return i;
     unreachable;
 }

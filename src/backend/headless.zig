@@ -40,6 +40,8 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
         },
         .ui => |t| {
             const p = try uiPoint(app, t, .click) orelse continue;
+            app.editor.chrome_press_ok = true; // `ui` clicks chrome on purpose
+            defer app.editor.chrome_press_ok = false;
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },

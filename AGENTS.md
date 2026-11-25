@@ -10,7 +10,7 @@ Run zig as `mise exec -- zig build <step>` (fresh clone: `mise trust` first).
 `zig build --help` lists all steps.
 
 ```sh
-zig build check                       # fmt-check + unit tests + golden replays: before every commit
+zig build check                       # fmt-check + unit tests + golden replays: before every commit (`mise run check`: short compile errors)
 zig build shot -Dscript=arrow         # render tests/scripts/arrow.txt to test-out/shots/*.png, then read the PNGs
 zig build test -Dupdate-goldens=true  # accept new rendering (look at the shots first)
 zig build local                       # reinstall ~/.local/bin/felt from this tree

@@ -2,6 +2,7 @@
 //! tool/color/size state, an in-progress preview, and commands (save, copy,
 //! quit) for the app to run. It never draws and never does IO.
 const std = @import("std");
+const builtin = @import("builtin");
 const geom = @import("geom.zig");
 const input = @import("input.zig");
 const keymap = @import("keymap.zig");
@@ -14,7 +15,8 @@ const route = @import("route.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
 const Font = @import("font.zig").Font;
-const Dock = @import("dock.zig").Dock;
+const dock = @import("dock.zig");
+const Dock = dock.Dock;
 const TopBar = @import("topbar.zig").TopBar;
 const PadBar = @import("padbar.zig").PadBar;
 const Hover = @import("chrome.zig").Hover;
@@ -119,6 +121,10 @@ pub const Editor = struct {
     help_visible: bool = false,
     /// The icon dock and the top bar (Space hides both to see the image).
     dock_visible: bool = true,
+    /// Tests only: a press on the chrome (dock, top bar, padding widget) is
+    /// meant. Off, such a press panics in a test build: a chrome that grew
+    /// over a raw click would otherwise fail with a confusing assert.
+    chrome_press_ok: bool = false,
     /// Last pointer position on screen (hover), null before the first move.
     pointer: ?Vec2 = null,
     /// Move tool: the annotation part under the pointer.
@@ -599,6 +605,7 @@ pub const Editor = struct {
         const p = Vec2.init(x, y);
         self.pointer = p;
         if (self.mode != .drag and self.mode != .moving and self.onChrome(p)) {
+            if (builtin.is_test and !self.chrome_press_ok) std.debug.panic("a test pressed at {d} {d} on the chrome (dock, top bar or padding widget): hide it (dock_visible = false), press elsewhere, or T.showChrome()", .{ x, y });
             if (button == .left) {
                 if (Dock.of(self.view.screen_w, self.view.screen_h, self.tool).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
@@ -927,6 +934,11 @@ const T = struct {
         self.ed.tool = .arrow;
         self.ed.arrow_style = .straight;
     }
+    /// Show the dock, the top bar and the padding widget, and allow presses on them.
+    fn showChrome(self: *T) void {
+        self.ed.dock_visible = true;
+        self.ed.chrome_press_ok = true;
+    }
     fn deinit(self: *T) void {
         self.ed.deinit();
         self.doc.deinit(std.testing.allocator);
@@ -1056,12 +1068,12 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
-    t.ed.dock_visible = true;
+    t.showChrome();
     const d = Dock.of(1920, 1080, t.ed.tool);
-    const tb = d.tools[3];
+    const tb = d.tools[dock.toolIndex(.rect)];
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = (tb.min.x + tb.max.x) / 2, .y = (tb.min.y + tb.max.y) / 2 } });
-    try std.testing.expectEqual(keymap.tools[3].tool, t.ed.tool);
+    try std.testing.expectEqual(Tool.rect, t.ed.tool);
     _ = try t.ed.handle(.{ .mouse_down = .{ .x = d.swatches[4].x, .y = d.swatches[4].y } });
     try std.testing.expectEqual(@as(u8, 4), t.ed.color_idx);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
@@ -1084,7 +1096,7 @@ test "top bar: undo and redo by click, never draws, hover follows the pointer" {
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
-    t.ed.dock_visible = true;
+    t.showChrome();
     const b = TopBar.of(1920, 1080);
     const undo_c = b.slots[0].min.add(b.slots[0].max).scale(0.5);
     const redo_c = b.slots[1].min.add(b.slots[1].max).scale(0.5);
@@ -1294,7 +1306,7 @@ test "the arrow style switch above the dock: a click picks a style; with another
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
-    t.ed.dock_visible = true;
+    t.showChrome();
     const d = Dock.of(1920, 1080, .arrow);
     const c = d.styles[1].min.add(d.styles[1].max).scale(0.5);
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = c.x, .y = c.y } });
@@ -1377,7 +1389,7 @@ test "the style switch shows above the dock with the callout tool; a click picks
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
-    t.ed.dock_visible = true;
+    t.showChrome();
     _ = try t.key("c");
     const d = Dock.of(1920, 1080, .callout);
     const p = d.styles[1].min.add(d.styles[1].max).scale(0.5);
@@ -1551,7 +1563,7 @@ test "padding slider: click and drag snap to notches, wheel steps, release saves
     t.init();
     defer t.deinit();
     t.ed.resize(1920, 1080);
-    t.ed.dock_visible = true;
+    t.showChrome();
     const b = PadBar.of(1920, 1080);
     const y = b.trackY();
     var eff = try t.ed.handle(.{ .mouse_down = .{ .x = b.notchX(2) + 3, .y = y } });

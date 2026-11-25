@@ -1,2 +1,7 @@
 [tools]
 zig = "0.15.2"
+
+# `mise run check`: zig build check with each output line cut to 200 columns
+# (zig prints the whole compiler command line, several KB, after an error).
+[tasks.check]
+run = "bash -o pipefail -c 'zig build check 2>&1 | cut -c1-200'"

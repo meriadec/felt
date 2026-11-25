@@ -346,7 +346,7 @@ test "panning scrolls the scene to the same pixels as a full repaint" {
     for (kinds, 0..) |k, i| {
         _ = try app.handle(key(k));
         const x: f32 = 60 + 200 * @as(f32, @floatFromInt(i));
-        _ = try app.handle(.{ .mouse_down = .{ .x = x, .y = 40 } });
+        _ = try app.handle(.{ .mouse_down = .{ .x = x, .y = 120 } });
         _ = try app.handle(.{ .mouse_move = .{ .x = x + 150, .y = 300 } });
         _ = try app.handle(.{ .mouse_up = .{ .x = x + 150, .y = 300 } });
         if (k == 'c') for ("Note") |ch| {
