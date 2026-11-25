@@ -10,19 +10,30 @@ const Canvas = @import("canvas.zig").Canvas;
 const Color = @import("color.zig").Color;
 const Document = @import("document.zig").Document;
 
-pub fn render(ctx: draw.Ctx, image: *const Canvas, doc: *const Document, bg: Color) !Canvas {
-    const iw = image.width;
-    const ih = image.height;
-    const cr = extent.canvas(ctx, doc, iw, ih);
+pub fn render(ctx: draw.Ctx, doc: *const Document, bg: Color) !Canvas {
+    const cr = extent.canvas(ctx, doc);
     var out = try Canvas.init(ctx.gpa, @intCast(cr.width()), @intCast(cr.height()));
     errdefer out.deinit(ctx.gpa);
-    const pic = doc.kept(iw, ih).intersect(image.bounds());
-    const pic_out = pic.offset(-cr.x0, -cr.y0);
-    for (out.bounds().minus(pic_out)) |b| out.fillRect(b, bg);
-    if (!pic.isEmpty()) out.blitRect(image, pic, pic_out.x0, pic_out.y0);
+    // The canvas background everywhere, then each placed image (cut by the
+    // kept rectangle) over it. One image: only the bands outside it are
+    // filled.
+    const single = doc.scene.count() == 1;
+    const kept = doc.kept();
+    if (single) {
+        const pic_out = kept.intersect(doc.base()).offset(-cr.x0, -cr.y0);
+        for (out.bounds().minus(pic_out)) |b| out.fillRect(b, bg);
+    } else {
+        out.fill(bg);
+    }
+    for (doc.scene.images.items) |p| {
+        const image = p.canvas orelse continue;
+        const pic = kept.intersect(p.rect());
+        if (pic.isEmpty()) continue;
+        out.blitRect(image, pic.offset(-p.x, -p.y), pic.x0 - cr.x0, pic.y0 - cr.y0);
+    }
     const xf = geom.Xform{ .offset = .{ .x = -@as(f32, @floatFromInt(cr.x0)), .y = -@as(f32, @floatFromInt(cr.y0)) } };
     for (doc.items.items, 0..) |a, i| {
-        const clip = extent.itemClip(ctx, doc, iw, ih, i).offset(-cr.x0, -cr.y0).intersect(out.bounds());
+        const clip = extent.itemClip(ctx, doc, i).offset(-cr.x0, -cr.y0).intersect(out.bounds());
         try draw.annotation(ctx, &out, clip, a, xf, .{ .area = clip });
     }
     return out;
@@ -37,9 +48,10 @@ test "export size grows by the padding on every side and the margin is the backg
     image.fillRect(image.bounds(), .{ .r = 255, .g = 0, .b = 0 });
     var doc = Document{};
     defer doc.deinit(gpa);
+    try doc.seed(gpa, 50, 30, &image);
     const bg = Color{ .r = 1, .g = 2, .b = 3 };
     for (@import("settings.zig").padding_steps) |p| {
-        var out = try render(.{ .gpa = gpa, .font = &font, .pad = p }, &image, &doc, bg);
+        var out = try render(.{ .gpa = gpa, .font = &font, .pad = p }, &doc, bg);
         defer out.deinit(gpa);
         try std.testing.expectEqual(@as(u32, 50 + 2 * p), out.width);
         try std.testing.expectEqual(@as(u32, 30 + 2 * p), out.height);

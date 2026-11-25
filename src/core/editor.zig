@@ -99,8 +99,6 @@ pub const Editor = struct {
     /// Measures text for the canvas extent; the editor never draws.
     font: *Font,
     doc: *Document,
-    image_w: u32,
-    image_h: u32,
     view: View,
     /// Canvas of the document (image px, see extent.zig), for `canvas_rev`.
     canvas: geom.Rect,
@@ -160,20 +158,18 @@ pub const Editor = struct {
     toast_len: usize = 0,
     hint_buf: [96]u8 = undefined,
 
-    /// Fit the canvas of `doc` over an image_w x image_h image to the screen.
-    pub fn init(gpa: std.mem.Allocator, font: *Font, doc: *Document, image_w: u32, image_h: u32, screen_w: u32, screen_h: u32) Editor {
+    /// Fit the canvas of `doc` (its images placed already) to the screen.
+    pub fn init(gpa: std.mem.Allocator, font: *Font, doc: *Document, screen_w: u32, screen_h: u32) Editor {
         const dctx = draw.Ctx{ .gpa = gpa, .font = font };
-        const canvas = extent.canvas(dctx, doc, image_w, image_h);
+        const canvas = extent.canvas(dctx, doc);
         return .{
             .gpa = gpa,
             .font = font,
             .doc = doc,
-            .image_w = image_w,
-            .image_h = image_h,
             .view = View.fit(canvas, screen_w, screen_h),
             .canvas = canvas,
             .canvas_rev = doc.revision,
-            .kept_key = doc.kept(image_w, image_h),
+            .kept_key = doc.kept(),
             .saved_revision = doc.revision,
         };
     }
@@ -240,7 +236,7 @@ pub const Editor = struct {
         while (i > 0) {
             i -= 1;
             const a = items[i];
-            const clip = extent.itemClip(self.ctx(), self.doc, self.image_w, self.image_h, i).toBounds();
+            const clip = extent.itemClip(self.ctx(), self.doc, i).toBounds();
             if (ip.x < clip.min.x or ip.y < clip.min.y or ip.x >= clip.max.x or ip.y >= clip.max.y) continue;
             switch (a) {
                 .arrow => |ar| {
@@ -331,7 +327,7 @@ pub const Editor = struct {
             self.bentTo(m.before, ip)
         else
             route.best(self.ctx(), self.doc.items.items, m.grab.index, m.before.moved(m.grab.part, ip.sub(m.start)));
-        if (!extent.showsAs(self.ctx(), self.doc, self.image_w, self.image_h, m.grab.index, a)) return;
+        if (!extent.showsAs(self.ctx(), self.doc, m.grab.index, a)) return;
         if (std.meta.eql(a, self.doc.items.items[m.grab.index])) return;
         self.doc.setLive(m.grab.index, a);
     }
@@ -406,7 +402,7 @@ pub const Editor = struct {
         if (self.doc.revision != self.saved_revision) return true;
         if (self.settings.padding != self.saved_padding) return true;
         if (self.settings.canvas_bg == self.saved_bg) return false;
-        const pic = geom.Rect.fromSize(0, 0, @intCast(self.image_w), @intCast(self.image_h));
+        const pic = self.doc.base();
         return !pic.contains(self.canvas);
     }
 
@@ -421,7 +417,7 @@ pub const Editor = struct {
         self.settings = s;
         self.saved_bg = s.canvas_bg;
         self.saved_padding = s.padding;
-        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
+        self.canvas = extent.canvas(self.ctx(), self.doc);
         self.fit();
     }
 
@@ -476,8 +472,8 @@ pub const Editor = struct {
     fn syncView(self: *Editor) bool {
         if (self.doc.revision == self.canvas_rev) return false;
         self.canvas_rev = self.doc.revision;
-        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
-        const kept = self.doc.kept(self.image_w, self.image_h);
+        self.canvas = extent.canvas(self.ctx(), self.doc);
+        const kept = self.doc.kept();
         if (std.meta.eql(kept, self.kept_key)) return false;
         self.kept_key = kept;
         self.fit();
@@ -748,7 +744,7 @@ pub const Editor = struct {
             if (grab) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
             return .{ .redraw = true };
         }
-        if (!extent.reachable(extent.keptPad(self.ctx(), self.doc, self.image_w, self.image_h), ip)) {
+        if (!extent.reachable(extent.keptPad(self.ctx(), self.doc), ip)) {
             self.tooFar();
             return .{ .redraw = true };
         }
@@ -795,7 +791,7 @@ pub const Editor = struct {
         var fin = d;
         fin.cur = ip;
         if (self.shapeFromDrag(fin)) |a| {
-            if (extent.fits(self.ctx(), extent.keptPad(self.ctx(), self.doc, self.image_w, self.image_h), a)) try self.addSettled(a) else self.tooFar();
+            if (extent.fits(self.ctx(), extent.keptPad(self.ctx(), self.doc), a)) try self.addSettled(a) else self.tooFar();
         }
         return .{ .redraw = true };
     }
@@ -1035,7 +1031,7 @@ pub const Editor = struct {
     fn setPadding(self: *Editor, px: u16) bool {
         if (px == self.settings.padding) return false;
         self.settings.padding = px;
-        self.canvas = extent.canvas(self.ctx(), self.doc, self.image_w, self.image_h);
+        self.canvas = extent.canvas(self.ctx(), self.doc);
         self.fit();
         self.setToast("Padding: {d} px", .{px});
         return true;
@@ -1126,7 +1122,8 @@ const T = struct {
     /// A w x h image on a w x h screen (1:1).
     fn initSize(self: *T, w: u32, h: u32) void {
         self.font = Font.init(std.testing.allocator, @import("root.zig").font_ttf) catch unreachable;
-        self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, w, h, w, h);
+        self.doc.seed(std.testing.allocator, w, h, null) catch unreachable;
+        self.ed = Editor.init(std.testing.allocator, &self.font, &self.doc, w, h);
         // The panels would cover most of a 200x100 screen; tests that click
         // them show them.
         self.ed.dock_visible = false;
@@ -1366,7 +1363,7 @@ test "startup: the callout tool with a stairs pointer; a drag with no key draws 
     t.init();
     defer t.deinit();
     // A fresh editor: T.init sets the tool and style of the other tests.
-    var ed = Editor.init(std.testing.allocator, &t.font, &t.doc, 200, 100, 200, 100);
+    var ed = Editor.init(std.testing.allocator, &t.font, &t.doc, 200, 100);
     defer ed.deinit();
     try std.testing.expectEqual(Tool.callout, ed.tool);
     try std.testing.expectEqual(ann.ArrowStyle.stairs, ed.arrow_style);

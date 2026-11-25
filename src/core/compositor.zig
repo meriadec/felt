@@ -336,7 +336,8 @@ pub const Compositor = struct {
     }
 
     /// Bring `frame` up to date; returns the screen rectangles that changed.
-    pub fn render(self: *Compositor, ctx: draw.Ctx, image: *const Canvas, doc: *const Document, ed: *const Editor) !Damage {
+    pub fn render(self: *Compositor, ctx: draw.Ctx, doc: *const Document, ed: *const Editor) !Damage {
+        const image = doc.scene.images.items[0].canvas.?;
         var dmg = Damage{};
         const v = ed.view;
         const w = v.screen_w;
@@ -350,7 +351,7 @@ pub const Compositor = struct {
         } else if (self.frame.?.width != w or self.frame.?.height != h) {
             return error.FrameBufferSizeMismatch;
         }
-        const pic = doc.kept(image.width, image.height).intersect(image.bounds());
+        const pic = doc.kept().intersect(doc.base());
         const s = Scene{
             .ctx = ctx,
             .doc = doc,
@@ -441,7 +442,7 @@ pub const Compositor = struct {
         var preview_clip = Rect.empty;
         var live = s.canvas_dst;
         if (preview) |p| {
-            preview_clip = v.rect(extent.grow(ctx, extent.keptPad(ctx, doc, image.width, image.height), p)).intersect(full_rect);
+            preview_clip = v.rect(extent.grow(ctx, extent.keptPad(ctx, doc), p)).intersect(full_rect);
             live = live.unite(preview_clip);
         }
         const cur_preview = if (preview) |p| draw.bounds(ctx, p, v.xf, .{ .preview = true }).intersect(preview_clip) else Rect.empty;
@@ -545,7 +546,7 @@ const Scene = struct {
 
     /// Screen clip of annotation `i`.
     fn itemClip(s: *const Scene, i: usize) Rect {
-        const r = extent.itemClip(s.ctx, s.doc, s.image.width, s.image.height, i);
+        const r = extent.itemClip(s.ctx, s.doc, i);
         return s.view.rect(r).intersect(s.view.screen());
     }
 };

@@ -11,6 +11,8 @@
 const std = @import("std");
 const Annotation = @import("annotation.zig").Annotation;
 const Rect = @import("geom.zig").Rect;
+const Scene = @import("scene.zig").Scene;
+const Canvas = @import("canvas.zig").Canvas;
 
 /// A crop: the kept rectangle (image pixels, may reach past the image into
 /// the white canvas) and the number of annotations made before it. The
@@ -41,6 +43,8 @@ const Undone = union(enum) {
 };
 
 pub const Document = struct {
+    /// The placed images (scene.zig). Annotations live in its space.
+    scene: Scene = .{},
     items: std.ArrayList(Annotation) = .empty,
     /// Active crops, oldest first. Annotations keep their image
     /// coordinates: a crop only moves the window.
@@ -60,6 +64,7 @@ pub const Document = struct {
         for (self.undone.items) |u| if (u == .add) self.release(gpa, u.add);
         for (self.edit_texts.items) |t| gpa.free(t);
         self.edit_texts.deinit(gpa);
+        self.scene.deinit(gpa);
         self.items.deinit(gpa);
         self.crops.deinit(gpa);
         self.history.deinit(gpa);
@@ -72,10 +77,22 @@ pub const Document = struct {
         return if (n == 0) null else self.crops.items[n - 1];
     }
 
+    /// Place the first image at (0, 0), without an undo step. `canvas` null:
+    /// a size-only image (pure tests). The scene does not own the canvas.
+    pub fn seed(self: *Document, gpa: std.mem.Allocator, w: u32, h: u32, canvas: ?*const Canvas) !void {
+        try self.scene.images.append(gpa, .{ .id = self.scene.newId(), .w = @intCast(w), .h = @intCast(h), .x = 0, .y = 0, .canvas = canvas });
+    }
+
+    /// The bounding box of the placed images (scene px): the image of a
+    /// one-image document.
+    pub fn base(self: *const Document) Rect {
+        return self.scene.bounds();
+    }
+
     /// The kept rectangle before annotations grow it: the last crop, or all
-    /// of an image of size w x h.
-    pub fn kept(self: *const Document, w: u32, h: u32) Rect {
-        return if (self.crop()) |c| c.rect else Rect.fromSize(0, 0, @intCast(w), @intCast(h));
+    /// of the placed images.
+    pub fn kept(self: *const Document) Rect {
+        return if (self.crop()) |c| c.rect else self.base();
     }
 
     /// Annotations that can grow the canvas: those made after the last crop.
@@ -301,11 +318,17 @@ test "crop is undone and redone in order with annotations" {
     defer doc.deinit(gpa);
     const num = Annotation{ .number = .{ .center = .{ .x = 0, .y = 0 }, .value = 1, .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } };
     const r = Rect.fromSize(10, 10, 50, 40);
+    try doc.seed(gpa, 100, 80, null);
     try doc.add(gpa, num);
     try doc.setCrop(gpa, r);
     try doc.add(gpa, num);
-    try std.testing.expectEqual(Rect.fromSize(0, 0, 100, 80), (Document{}).kept(100, 80));
-    try std.testing.expectEqual(r, doc.kept(100, 80));
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 100, 80), blk: {
+        var d = Document{};
+        defer d.deinit(gpa);
+        try d.seed(gpa, 100, 80, null);
+        break :blk d.kept();
+    });
+    try std.testing.expectEqual(r, doc.kept());
     try std.testing.expectEqual(r, doc.clipOf(0).?);
     try std.testing.expectEqual(@as(?Rect, null), doc.clipOf(1));
     try std.testing.expectEqual(@as(usize, 1), doc.growing().len);

@@ -53,7 +53,9 @@ pub const App = struct {
             .comp = .{ .gpa = gpa },
             .cfg = cfg,
         };
-        self.editor = Editor.init(gpa, &self.font, &self.doc, image.width, image.height, w, h);
+        try self.doc.seed(gpa, image.width, image.height, &self.image);
+        errdefer self.doc.deinit(gpa);
+        self.editor = Editor.init(gpa, &self.font, &self.doc, w, h);
         self.editor.startWith(cfg.settings);
         return self;
     }
@@ -90,7 +92,7 @@ pub const App = struct {
     }
 
     pub fn render(self: *App) !core.compositor.Damage {
-        return self.comp.render(self.ctx(), &self.image, &self.doc, &self.editor);
+        return self.comp.render(self.ctx(), &self.doc, &self.editor);
     }
 
     pub fn frame(self: *const App) *const Canvas {
@@ -99,7 +101,7 @@ pub const App = struct {
 
     /// Full-resolution image with annotations. Caller owns it.
     pub fn exportImage(self: *App) !Canvas {
-        return core.exporter.render(self.ctx(), &self.image, &self.doc, self.editor.settings.canvas_bg.color());
+        return core.exporter.render(self.ctx(), &self.doc, self.editor.settings.canvas_bg.color());
     }
 
     /// Persist the settings (window mode only). A failure keeps the

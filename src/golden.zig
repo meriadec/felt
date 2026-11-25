@@ -189,7 +189,7 @@ test "golden replays" {
         // Damage tracking must give the same pixels as a full repaint.
         var fresh = core.compositor.Compositor{ .gpa = gpa };
         defer fresh.deinit();
-        _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+        _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
         const d = compare(app.frame(), &fresh.frame.?, null);
         if (d.bad > 0) {
             std.debug.print("golden {s}: incremental frame differs from a full repaint in {d} pixels (damage tracking bug). See {s}/{s}.damage.*.png\n", .{ name, d.bad, out_dir, name });
@@ -370,7 +370,7 @@ test "panning scrolls the scene to the same pixels as a full repaint" {
         _ = try app.render();
         var fresh = core.compositor.Compositor{ .gpa = gpa };
         defer fresh.deinit();
-        _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+        _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
         const d = compare(app.frame(), &fresh.frame.?, null);
         if (d.bad > 0) {
             writeOut(gpa, app.frame(), "pan", "damage.incremental");
@@ -436,7 +436,7 @@ test "an annotation changed in place repaints only its old and new area, like a 
         try std.testing.expect(d.area() < 600 * 400);
         var fresh = core.compositor.Compositor{ .gpa = gpa };
         defer fresh.deinit();
-        _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+        _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
         try std.testing.expectEqual(@as(usize, 0), compare(app.frame(), &fresh.frame.?, null).bad);
     }
 }
@@ -461,6 +461,6 @@ test "a toast that changes each frame repaints the toast, not the dock or the to
     }
     var fresh = core.compositor.Compositor{ .gpa = gpa };
     defer fresh.deinit();
-    _ = try fresh.render(app.ctx(), &app.image, &app.doc, &app.editor);
+    _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
     try std.testing.expectEqual(@as(usize, 0), compare(app.frame(), &fresh.frame.?, null).bad);
 }
