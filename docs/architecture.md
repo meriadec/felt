@@ -66,6 +66,7 @@ image files. Build: `coreModule` in build.zig.
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, folder button and file browser panel (contents in browser_draw.zig), help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
+| `ruler.zig` | Picker ruler layout: dimension lines with the selection size, dashed hairlines to the screen edges with their distances, pointer hairlines when nothing is selected |
 | `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, size pill, delay pill; `Scene.render` repaints only the difference |
 | `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, the canvas background outside the image) |
 

@@ -1,0 +1,5 @@
+# Capture picker as a ruler: no window under the pointer, so dashed hairlines
+# run from the pointer to the four screen edges, each with its distance.
+capture
+move 300 200
+move 760 430

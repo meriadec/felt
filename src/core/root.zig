@@ -44,6 +44,7 @@ pub const compositor = @import("compositor.zig");
 pub const exporter = @import("exporter.zig");
 pub const picker = @import("picker.zig");
 pub const picker_draw = @import("picker_draw.zig");
+pub const ruler = @import("ruler.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

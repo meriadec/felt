@@ -1,8 +1,10 @@
 //! Drawing of the capture picker (picker.zig) in the Nord chrome style: the
 //! frozen screen dimmed, the highlighted rectangle bright with a thin frost
-//! border, a small size label (`812x430`) outside its bottom-right corner, and a
-//! delay pill at the top center, shown only while a delay is on. `Scene.render` repaints only what changed (the old and new
-//! highlight and pills) and returns that damage for the backend to present.
+//! border, the ruler marks (ruler.zig: dimension lines with the size, dashed
+//! hairlines to the screen edges with their distances), and a delay pill at
+//! the top center, shown only while a delay is on. `Scene.render` repaints
+//! only what changed (the old and new highlight and marks) and returns that
+//! damage for the backend to present.
 const std = @import("std");
 const geom = @import("geom.zig");
 const color = @import("color.zig");
@@ -11,6 +13,7 @@ const raster = @import("raster.zig");
 const text = @import("text.zig");
 const style = @import("style.zig");
 const picker = @import("picker.zig");
+const ruler = @import("ruler.zig");
 const compositor = @import("compositor.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Ctx = @import("draw.zig").Ctx;
@@ -23,54 +26,45 @@ const nord = color.nord;
 /// Brightness of the frozen screen outside the selection, out of 256.
 pub const dim_level: u32 = 150;
 const border_color = nord.n10;
+/// Ruler lines: snow white, faint for the distance hairlines.
+const line_soft = nord.n6.withAlpha(120);
+const line_strong = nord.n6.withAlpha(210);
 
 const Pill = struct {
     rect: Rect = .empty,
     s: []const u8 = "",
     px: u16 = 0,
-    /// Left of the text, and a status dot before it (the delay pill).
+    /// Left of the text, and a status dot before it.
     text_x: f32 = 0,
     dot: ?Vec2 = null,
     dot_on: bool = false,
-    /// Flat look: no border, small corner radius (the size label).
-    flat: bool = false,
 };
 
 const Items = struct {
     scale: f32,
     border: i32,
     hi: ?Rect,
-    label_buf: [24]u8 = undefined,
-    label: Pill = .{},
+    marks: ruler.Marks = .{},
     delay_buf: [24]u8 = undefined,
     delay: Pill = .{},
-
-    /// What the highlight and its label cover (the delay pill is static).
-    fn overlay(it: *const Items) Rect {
-        const h = if (it.hi) |r| r.expand(it.border) else Rect.empty;
-        return h.unite(it.label.rect);
-    }
 };
 
-fn pill(ctx: Ctx, s: []const u8, px: u16, x: f32, y: f32, s_ui: f32, dot: bool) Pill {
-    return pillSized(ctx, s, px, x, y, s_ui, dot, 26 * s_ui, 10 * s_ui);
-}
-
-/// A pill of height `ph` with `pad` on each side of the text.
-fn pillSized(ctx: Ctx, s: []const u8, px: u16, x: f32, y: f32, s_ui: f32, dot: bool, ph: f32, pad: f32) Pill {
+/// The delay pill: height 26, with a status dot before the text.
+fn pill(ctx: Ctx, s: []const u8, px: u16, x: f32, y: f32, s_ui: f32) Pill {
+    const ph = 26 * s_ui;
+    const pad = 10 * s_ui;
     const tw = text.measure(ctx.font, s, px).width;
-    const dot_w: f32 = if (dot) 14 * s_ui else 0;
+    const dot_w = 14 * s_ui;
     const pw = tw + 2 * pad + dot_w;
     const x0 = @round(x);
     const y0 = @round(y);
-    var p = Pill{
+    return .{
         .rect = .{ .x0 = @intFromFloat(x0), .y0 = @intFromFloat(y0), .x1 = @intFromFloat(@round(x0 + pw)), .y1 = @intFromFloat(@round(y0 + ph)) },
         .s = s,
         .px = px,
         .text_x = x0 + pad + dot_w,
+        .dot = .{ .x = x0 + 13 * s_ui, .y = y0 + ph / 2 },
     };
-    if (dot) p.dot = .{ .x = x0 + 13 * s_ui, .y = y0 + ph / 2 };
-    return p;
 }
 
 fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
@@ -80,31 +74,13 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
 
     // The delay pill, centered at the top.
     const dl = picker.delayLabel(&it.delay_buf, p.delay_ms);
-    var d = pill(ctx, dl, px, 0, 12 * s, s, true);
-    d = pill(ctx, dl, px, (w - @as(f32, @floatFromInt(d.rect.width()))) / 2, 12 * s, s, true);
+    var d = pill(ctx, dl, px, 0, 12 * s, s);
+    d = pill(ctx, dl, px, (w - @as(f32, @floatFromInt(d.rect.width()))) / 2, 12 * s, s);
     d.dot_on = p.delayOn();
     it.delay = d;
 
-    // The size label is small and flat, outside the bottom-right corner of the
-    // highlight. With no room below it goes above, then inside the corner.
-    const hi = it.hi orelse return;
-    const sl = picker.sizeLabel(&it.label_buf, hi);
-    const spx = text.pxOf(11 * s);
-    const lh_f = 16 * s;
-    var l = pillSized(ctx, sl, spx, 0, 0, s, false, lh_f, 4 * s);
-    const lw: f32 = @floatFromInt(l.rect.width());
-    const lh: f32 = @floatFromInt(l.rect.height());
-    const gap = 3 * s;
-    const hf: f32 = @floatFromInt(p.h);
-    const bd: f32 = @floatFromInt(it.border);
-    const right: f32 = @floatFromInt(hi.x1);
-    const x = std.math.clamp(right + bd - lw, 0, @max(0, w - lw));
-    var y: f32 = @as(f32, @floatFromInt(hi.y1)) + bd + gap;
-    if (y + lh > hf) y = @as(f32, @floatFromInt(hi.y0)) - bd - gap - lh;
-    if (y < 0) y = @as(f32, @floatFromInt(hi.y1)) - gap - lh;
-    l = pillSized(ctx, sl, spx, x, y, s, false, lh_f, 4 * s);
-    l.flat = true;
-    it.label = l;
+    const pointer: ?Vec2 = if (p.seen) p.pointer else null;
+    it.marks = ruler.build(ctx, it.hi, pointer, p.w, p.h, s);
 }
 
 inline fn dim(p: u32) u32 {
@@ -121,15 +97,41 @@ fn rrect(b: Bounds, radius: f32) sdf.RoundRect {
 fn drawPill(ctx: Ctx, cv: *Canvas, clip: Rect, p: Pill, s: f32) !void {
     if (p.rect.isEmpty() or !p.rect.intersects(clip)) return;
     const b = p.rect.toBounds();
-    const radius: f32 = if (p.flat) 3 * s else 6 * s;
-    raster.fill(cv, clip, rrect(b, radius), .{ .solid = if (p.flat) nord.n1 else nord.n1 }, .{});
-    if (!p.flat) raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), radius - 0.5), 1), .{ .solid = nord.n2 }, .{});
+    raster.fill(cv, clip, rrect(b, 6 * s), .{ .solid = nord.n1 }, .{});
+    raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), 6 * s - 0.5), 1), .{ .solid = nord.n2 }, .{});
     if (p.dot) |c| raster.fill(cv, clip, sdf.Disc{ .c = c, .r = 4 * s }, .{ .solid = if (p.dot_on) nord.n14 else nord.n3 }, .{});
     var mask = try text.render(ctx.gpa, ctx.font, p.s, p.px, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     const ph: f32 = @floatFromInt(p.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(p.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(p.px)) * 0.6));
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(p.text_x), y, nord.n6, clip);
+}
+
+fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
+    if (!l.rect.intersects(clip)) return;
+    const b = l.rect.toBounds();
+    raster.fill(cv, clip, rrect(b, 3 * s), .{ .solid = if (l.strong) nord.n1 else nord.n0.withAlpha(230) }, .{});
+    var mask = try text.render(ctx.gpa, ctx.font, l.str(), l.px, 0, 0, null);
+    defer mask.deinit(ctx.gpa);
+    const ph: f32 = @floatFromInt(l.rect.height());
+    const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(l.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(l.px)) * 0.6));
+    cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
+}
+
+fn drawLine(cv: *Canvas, clip: Rect, l: ruler.Line, s: f32) void {
+    const c = if (l.strong) line_strong else line_soft;
+    if (!l.dashed) return cv.blendRect(l.r.intersect(clip), c);
+    // Dashes along the longer side.
+    const dash: i32 = @intFromFloat(@round(4 * s));
+    const gap: i32 = @intFromFloat(@round(4 * s));
+    const horiz = l.r.width() >= l.r.height();
+    var p = if (horiz) l.r.x0 else l.r.y0;
+    const end = if (horiz) l.r.x1 else l.r.y1;
+    while (p < end) : (p += dash + gap) {
+        const q = @min(p + dash, end);
+        const seg: Rect = if (horiz) .{ .x0 = p, .y0 = l.r.y0, .x1 = q, .y1 = l.r.y1 } else .{ .x0 = l.r.x0, .y0 = p, .x1 = l.r.x1, .y1 = q };
+        cv.blendRect(seg.intersect(clip), c);
+    }
 }
 
 fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip_in: Rect) !void {
@@ -145,7 +147,8 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
         for (out.minus(hi)) |band| frame.fillRect(band.intersect(clip), border_color);
         frame.copyRect(frozen, hi.intersect(clip));
     }
-    try drawPill(ctx, frame, clip, it.label, it.scale);
+    for (it.marks.lineSlice()) |l| drawLine(frame, clip, l, it.scale);
+    for (it.marks.labelSlice()) |l| try drawLabel(ctx, frame, clip, l, it.scale);
     // The delay pill shows only while a delay is on (--delay, or Tab).
     if (it.delay.dot_on) try drawPill(ctx, frame, clip, it.delay, it.scale);
 }
@@ -153,7 +156,9 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
 /// What the last frame showed, so the next one repaints only the difference.
 pub const Scene = struct {
     painted: bool = false,
-    prev_overlay: Rect = .empty,
+    prev_hi: Rect = .empty,
+    prev: [ruler.Marks.max_rects]Rect = undefined,
+    prev_n: usize = 0,
     prev_delay: u32 = 0,
 
     /// Paint the picker over `frozen` into `frame` (same size). Returns the
@@ -163,18 +168,25 @@ pub const Scene = struct {
         var it = Items{ .scale = style.uiScale(frame.height), .border = 0, .hi = p.highlight() };
         it.border = @max(1, @as(i32, @intFromFloat(@round(it.scale))));
         layout(ctx, &it, p);
-        const ov = it.overlay();
+        var now: [ruler.Marks.max_rects]Rect = undefined;
+        const n = it.marks.rects(&now);
+        const hi_now = if (it.hi) |r| r.expand(it.border) else Rect.empty;
         var dmg = compositor.Damage{};
         if (!self.painted) {
             dmg.add(frame.bounds());
         } else {
-            dmg.add(self.prev_overlay.expand(2));
-            dmg.add(ov.expand(2));
+            // The highlight and every mark, old and new.
+            dmg.add(self.prev_hi.expand(2));
+            dmg.add(hi_now.expand(2));
+            for (self.prev[0..self.prev_n]) |r| dmg.add(r.expand(2));
+            for (now[0..n]) |r| dmg.add(r.expand(2));
             if (self.prev_delay != p.delay_ms) dmg.add(it.delay.rect.expand(2));
         }
         for (dmg.slice()) |r| try paint(ctx, &it, frozen, frame, r);
         self.painted = true;
-        self.prev_overlay = ov;
+        self.prev_hi = hi_now;
+        self.prev_n = n;
+        @memcpy(self.prev[0..n], now[0..n]);
         self.prev_delay = p.delay_ms;
         return dmg;
     }
