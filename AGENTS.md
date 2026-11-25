@@ -13,12 +13,17 @@ Run zig as `mise exec -- zig build <step>` (fresh clone: `mise trust` first).
 zig build check                       # fmt-check + unit tests + golden replays: before every commit
 zig build shot -Dscript=arrow         # render tests/scripts/arrow.txt to test-out/shots/*.png, then read the PNGs
 zig build test -Dupdate-goldens=true  # accept new rendering (look at the shots first)
+zig build local                       # reinstall ~/.local/bin/felt from this tree
 zig build bench                       # ReleaseFast timings; compare with docs/perf.md
 DISPLAY=:0 zig build smoke-x11        # real window, driven by xdotool
 ```
 
 ## Rules
 
+- The user tests the installed `felt`. After every change to the code, run
+  `zig build local` (the post-commit hook in .githooks does it for commits;
+  a fresh clone: `git config core.hooksPath .githooks`). Tell the user when
+  the binary is stale.
 - Self-improvement: every hiccup (confusing error, slow or missing command,
   repeated manual step, missing doc) is a harness bug. Fix it in the repo
   (tool, flag, build step, script, doc) in its own small commit, and add one

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Keep ~/.local/bin/felt in step with every commit. Never fails a commit.
+exec "$(git rev-parse --show-toplevel)/scripts/install-local.sh" || true

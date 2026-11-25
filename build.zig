@@ -24,6 +24,12 @@ pub fn build(b: *std.Build) void {
         );
     }
 
+    // local: install this tree as the user's felt (ReleaseFast, ~/.local).
+    const local = b.addSystemCommand(&.{"scripts/install-local.sh"});
+    local.setCwd(b.path("."));
+    local.has_side_effects = true;
+    b.step("local", "Install this tree to ~/.local (ReleaseFast): the felt on PATH matches the code").dependOn(&local.step);
+
     // run: zig build run -- <args>
     const run = b.addRunArtifact(exe);
     if (b.args) |args| run.addArgs(args);
