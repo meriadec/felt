@@ -20,11 +20,11 @@ const n_buttons: comptime_int = buttons.len;
 
 // Metrics in px at UI scale 1 (same slot and padding as the dock).
 const slot = 40.0;
-const slot_gap = 4.0;
-const pad = 8.0;
+const slot_gap = 2.0;
+const pad = 2.0;
 const margin = 14.0;
 /// Room for the separator line before the canvas switch.
-const sep_w = 17.0;
+const sep_w = 26.0;
 
 pub const TopBar = struct {
     /// Px per 1080p px.
@@ -86,7 +86,7 @@ test "top bar is centered at the top and hit-tests its buttons" {
     try std.testing.expectEqual(Button.canvas_bg, b.hit(center(b.slots[2])).?);
     try std.testing.expect(b.slots[1].max.x < b.sep and b.sep < b.slots[2].min.x);
     try std.testing.expectEqual(@as(?Button, null), b.hit(.{ .x = b.sep, .y = center(b.slots[2]).y }));
-    try std.testing.expectApproxEqAbs(b.panel.max.x - 8, b.slots[2].max.x, 0.01);
+    try std.testing.expectApproxEqAbs(b.panel.max.x - 2, b.slots[2].max.x, 0.01);
     try std.testing.expectEqual(@as(?Button, null), b.hit(.{ .x = 10, .y = 10 }));
     try std.testing.expectEqual(@as(f32, 2), TopBar.of(3840, 2160).s);
 }

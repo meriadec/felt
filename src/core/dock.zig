@@ -35,15 +35,16 @@ const n_colors: comptime_int = color.palette.len;
 
 // Metrics in px at UI scale 1.
 const slot = 40.0;
-const slot_gap = 4.0;
-const pad = 8.0;
-const sep_w = 17.0;
+const slot_gap = 2.0;
+const pad = 2.0;
+/// The space between the tools, the colors and the size (no divider lines).
+const sep_w = 26.0;
 const swatch_pitch = 22.0;
 const help_w = 34.0;
 const margin = 14.0;
 // Arrow style switch.
 const sw_slot = 32.0;
-const sw_pad = 4.0;
+const sw_pad = 2.0;
 const sw_gap = 6.0;
 
 pub const Dock = struct {
@@ -55,8 +56,6 @@ pub const Dock = struct {
     swatch_r: f32,
     size: Bounds,
     help: Bounds,
-    /// x of the two separator lines.
-    seps: [2]f32,
     /// The tool the dock was laid out for (picks what the switch means).
     tool: keymap.Tool,
     /// The arrow style switch panel (null: no tool with a style is active).
@@ -91,14 +90,12 @@ pub const Dock = struct {
             x += (slot + slot_gap) * s;
         }
         x -= slot_gap * s;
-        d.seps[0] = x + sep_w * s / 2;
         x += sep_w * s;
         d.swatch_r = 7 * s;
         for (&d.swatches) |*c| {
             c.* = .{ .x = x + swatch_pitch * s / 2, .y = cy };
             x += swatch_pitch * s;
         }
-        d.seps[1] = x + sep_w * s / 2;
         x += sep_w * s;
         d.size = .{ .min = .{ .x = x, .y = top }, .max = .{ .x = x + slot * s, .y = top + slot * s } };
         x += (slot + slot_gap) * s;

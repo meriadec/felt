@@ -13,7 +13,7 @@ const Bounds = geom.Bounds;
 
 // Metrics in px at UI scale 1 (same slot and padding as the dock).
 const slot_h = 40.0;
-const pad = 8.0;
+const pad = 2.0;
 const margin = 14.0;
 /// The slider's width, the inset of the track ends, and the track's
 /// distance from the top of the slot.

@@ -204,18 +204,13 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
         const c = center(b);
         const hovered = if (st.hover.dock) |hd| hd == .tool and hd.tool == info.tool else false;
         if (active or hovered) {
-            const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
+            const hb = b;
             l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
         }
         l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) nord.n0 else nord.n4 } });
-        const bc = b.max.sub(.{ .x = 8.5 * s, .y = 8.5 * s });
-        l.push(.{ .disc = .{ .c = bc, .r = 7 * s, .color = if (active) nord.n0 else nord.n3 } });
-        l.push(.{ .glyph = .{ .c = bc, .s = keymap.toolKey(info.tool), .px = px(10 * s), .color = if (active) accent else nord.n6 } });
-    }
-
-    for (d.seps) |x| {
-        const cy = center(d.panel).y;
-        l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = x - 0.5 * s, .y = cy - 12 * s }, .max = .{ .x = x + 0.5 * s, .y = cy + 12 * s } }, .radius = 0, .color = nord.n3 } });
+        // The hotkey: a faint letter in the corner, no badge.
+        const kc = b.max.sub(.{ .x = 7 * s, .y = 7 * s });
+        l.push(.{ .glyph = .{ .c = kc, .s = keymap.toolKey(info.tool), .px = px(10 * s), .color = (if (active) nord.n0 else nord.n4).withAlpha(if (active) 170 else 120) } });
     }
 
     for (d.swatches, color.palette, 0..) |c, p, i| {
@@ -254,7 +249,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
                 else => false,
             } else false;
             if (active or hovered) {
-                const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
+                const hb = b;
                 l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
             }
             const col = if (active) nord.n0 else nord.n4;
@@ -289,8 +284,6 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
             .canvas_bg => l.push(.{ .canvas_bg = .{ .c = center(r), .size = 20 * s, .color = ink } }),
         }
     }
-    const cy = center(b.panel).y;
-    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.sep - 0.5 * s, .y = cy - 12 * s }, .max = .{ .x = b.sep + 0.5 * s, .y = cy + 12 * s } }, .radius = 0, .color = nord.n3 } });
 }
 
 /// The padding slider: a flat track filled up to the
