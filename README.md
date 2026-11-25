@@ -109,6 +109,7 @@ list is in [docs/keymap.md](docs/keymap.md).
   as saved, because xclip keeps the image in the clipboard after felt exits.
 
 The canvas background and the padding are settings, not undo steps.
+When a second image starts montage mode, a padding you did not choose becomes 64 px.
 
 ## Settings
 

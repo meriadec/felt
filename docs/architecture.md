@@ -363,6 +363,14 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   Slider: a press sets the nearest step, a drag follows x, the release asks
   for `save_settings` (one file write per gesture); the wheel over it steps
   (no size change). No `--padding` flag: the file and the slider are enough.
+  Montage start: when the scene goes from 1 to 2 images (`App.addImageFile`
+  calls `Editor.montageStarted`: command line, browser drop, `addimage`,
+  `place`), a padding the user never chose (`Editor.padding_touched`: set by
+  every key, slider or wheel change, even to 0) and still 0 becomes
+  `padding_steps[1]` (64) through the normal path (toast, canvas), with no
+  view change; the start fit then uses it. A choice (0, 128) stays. Undo of
+  the image keeps the padding (a setting, not a step). Scripts: the first
+  `addimage`/`place` triggers it, so montage goldens include 64 px.
 - Text is UTF-8. Font sizes round to whole pixels (glyph cache key).
 
 ## Compositor layers

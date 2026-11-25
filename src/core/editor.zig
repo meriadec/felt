@@ -205,6 +205,9 @@ pub const Editor = struct {
     slider_drag: bool = false,
     /// Canvas padding of the last save (or of the start).
     saved_padding: u16 = 0,
+    /// The user chose a padding in this session (key, slider): montage mode
+    /// then leaves it alone, even at 0.
+    padding_touched: bool = false,
     toast_buf: [256]u8 = undefined,
     toast_len: usize = 0,
     hint_buf: [96]u8 = undefined,
@@ -1302,6 +1305,20 @@ pub const Editor = struct {
     /// so the image stays where it is and the padding grows around it. The
     /// view is no longer the fit (`0` fits again).
     fn setPadding(self: *Editor, px: u16) bool {
+        self.padding_touched = true;
+        return self.applyPadding(px);
+    }
+
+    /// Montage mode starts (the scene goes from 1 to 2 images): a padding the
+    /// user never chose becomes the 2nd step of `padding_steps`. Same path as
+    /// `setPadding` (canvas, toast), so the view does not move. Undo of the
+    /// image keeps the padding: it is a setting, not a document step.
+    pub fn montageStarted(self: *Editor) void {
+        if (self.padding_touched or self.settings.padding != settings.padding_steps[0]) return;
+        _ = self.applyPadding(settings.padding_steps[1]);
+    }
+
+    fn applyPadding(self: *Editor, px: u16) bool {
         if (px == self.settings.padding) return false;
         self.settings.padding = px;
         self.canvas = extent.canvas(self.ctx(), self.doc);

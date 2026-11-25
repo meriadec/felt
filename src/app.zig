@@ -147,6 +147,7 @@ pub const App = struct {
             .side => |s| core.magnet.slotRect(imgs[imgs.len - 1].rect(), s, w, h),
         };
         _ = try self.doc.addImage(self.gpa, cv.width, cv.height, r.x0, r.y0, cv, true);
+        if (self.doc.scene.images.items.len == 2) self.editor.montageStarted();
     }
 
     /// Full-resolution image with annotations. Caller owns it.
@@ -278,4 +279,50 @@ test "a canvas switch over a grown canvas is an unsaved change until saved or sw
     var saved = try core.image_io.load(gpa, out);
     defer saved.deinit(gpa);
     try std.testing.expectEqual(core.settings.color_light.toPixel(), saved.at(@as(i32, @intCast(saved.width)) - 2, 2));
+}
+
+fn montageApp(gpa: std.mem.Allocator) !*App {
+    const image = try Canvas.init(gpa, 40, 30);
+    return App.create(gpa, image, 200, 150, .{ .output_path = null, .clipboard = .none });
+}
+
+fn addTile(app: *App) !void {
+    try app.addImageFile(.{ .path = "tests/fixtures/tile_a.png", .at = Placement{ .side = .right } });
+}
+
+test "montage start: an untouched padding becomes the 2nd step, once, view unchanged" {
+    const gpa = std.testing.allocator;
+    const app = try montageApp(gpa);
+    defer app.destroy();
+    try std.testing.expectEqual(@as(u16, 0), app.editor.settings.padding); // one image
+    _ = app.editor.syncView();
+    app.editor.fit();
+    const view = app.editor.view.xf;
+    try addTile(app);
+    try std.testing.expectEqual(core.settings.padding_steps[1], app.editor.settings.padding);
+    try std.testing.expect(std.meta.eql(view, app.editor.view.xf));
+    // The padding is no document step: undo of the image keeps it.
+    try std.testing.expect(app.editor.canUndo());
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
+    try std.testing.expectEqual(core.settings.padding_steps[1], app.editor.settings.padding);
+    // The user lowers it to 0: a third image does not bring it back.
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = ',' } } });
+    try std.testing.expectEqual(@as(u16, 0), app.editor.settings.padding);
+    try addTile(app);
+    try std.testing.expectEqual(@as(u16, 0), app.editor.settings.padding);
+}
+
+test "montage start: a padding the user chose stays (0 or 128)" {
+    const gpa = std.testing.allocator;
+    for ([_]u16{ 0, 128 }) |want| {
+        const app = try montageApp(gpa);
+        defer app.destroy();
+        _ = try app.handle(.{ .key = .{ .key = .{ .char = '.' } } }); // 64
+        while (app.editor.settings.padding != want) {
+            const k: u8 = if (app.editor.settings.padding < want) '.' else ',';
+            _ = try app.handle(.{ .key = .{ .key = .{ .char = k } } });
+        }
+        try addTile(app);
+        try std.testing.expectEqual(want, app.editor.settings.padding);
+    }
 }
