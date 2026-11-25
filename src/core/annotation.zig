@@ -96,6 +96,46 @@ pub const Annotation = union(enum) {
         return a;
     }
 
+    /// A point of the annotation that tells which image it was drawn on:
+    /// where it starts (a callout: the tip, else the box).
+    pub fn anchor(self: Annotation) Vec2 {
+        return switch (self) {
+            .arrow => |x| x.tail,
+            .rect => |x| x.a,
+            .pixelate => |x| x.a,
+            .text => |x| x.pos,
+            .number => |x| x.center,
+            .callout => |x| x.target orelse x.anchor,
+        };
+    }
+
+    /// The annotation with every point shifted by `d` (an image moves with
+    /// its annotations). It shares the text; the elbow stays.
+    pub fn shifted(self: Annotation, d: Vec2) Annotation {
+        var a = self;
+        switch (a) {
+            .arrow => |*x| {
+                x.tail = x.tail.add(d);
+                x.head = x.head.add(d);
+            },
+            .rect => |*x| {
+                x.a = x.a.add(d);
+                x.b = x.b.add(d);
+            },
+            .pixelate => |*x| {
+                x.a = x.a.add(d);
+                x.b = x.b.add(d);
+            },
+            .text => |*x| x.pos = x.pos.add(d),
+            .number => |*x| x.center = x.center.add(d),
+            .callout => |*x| {
+                x.anchor = x.anchor.add(d);
+                if (x.target) |t| x.target = t.add(d);
+            },
+        }
+        return a;
+    }
+
     /// The annotation with the elbow `e` on its arrow path (an arrow or a
     /// callout); others unchanged.
     pub fn withElbow(self: Annotation, e: Elbow) Annotation {

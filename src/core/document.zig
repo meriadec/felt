@@ -11,7 +11,10 @@
 const std = @import("std");
 const Annotation = @import("annotation.zig").Annotation;
 const Rect = @import("geom.zig").Rect;
-const Scene = @import("scene.zig").Scene;
+const scene_mod = @import("scene.zig");
+const Scene = scene_mod.Scene;
+const Placed = scene_mod.Placed;
+const Vec2 = @import("geom.zig").Vec2;
 const Canvas = @import("canvas.zig").Canvas;
 
 /// A crop: the kept rectangle (image pixels, may reach past the image into
@@ -28,24 +31,47 @@ pub const Move = struct { index: usize, other: Annotation, chained: bool = false
 /// A deleted annotation: it sat at `index`; the last `shifted` crops had
 /// counted it (their `first` is one less while it is gone). The history owns
 /// its text while the annotation is deleted.
-const Removed = struct { index: usize, ann: Annotation, shifted: usize };
+const Removed = struct { index: usize, ann: Annotation, owner: u32, shifted: usize };
+
+/// Owner of an annotation drawn where no image is.
+pub const no_image: u32 = std.math.maxInt(u32);
+
+/// A move of the image `id` by (`dx`, `dy`) scene px, with its annotations.
+const ImageMove = struct { id: u32, dx: i32, dy: i32 };
 
 /// One undoable step.
-const Change = union(enum) { add, crop, move: Move, remove: Removed };
+/// `image_remove`: the `n` steps before it are the removals of the annotations
+/// of the image (one undo step together); the history owns the image.
+const Change = union(enum) {
+    add,
+    crop,
+    move: Move,
+    remove: Removed,
+    image_add,
+    image_move: ImageMove,
+    image_remove: struct { placed: Placed, index: usize, n: usize },
+};
 
 /// One undone step for redo. An undone `remove` holds no annotation: it is
 /// back in `items`, and a redo deletes it again.
 const Undone = union(enum) {
-    add: Annotation,
+    add: struct { ann: Annotation, owner: u32 },
     crop: Crop,
     move: Move,
     remove: struct { index: usize, shifted: usize },
+    image_add: Placed,
+    image_move: ImageMove,
+    image_remove: struct { index: usize, n: usize },
 };
 
 pub const Document = struct {
     /// The placed images (scene.zig). Annotations live in its space.
     scene: Scene = .{},
     items: std.ArrayList(Annotation) = .empty,
+    /// The image (`Placed.id`) each annotation was drawn on, parallel to
+    /// `items`; `no_image` if it was drawn where no image is. A moved image
+    /// carries its annotations.
+    owners: std.ArrayList(u32) = .empty,
     /// Active crops, oldest first. Annotations keep their image
     /// coordinates: a crop only moves the window.
     crops: std.ArrayList(Crop) = .empty,
@@ -60,12 +86,21 @@ pub const Document = struct {
 
     pub fn deinit(self: *Document, gpa: std.mem.Allocator) void {
         for (self.items.items) |a| self.release(gpa, a);
-        for (self.history.items) |c| if (c == .remove) self.release(gpa, c.remove.ann);
-        for (self.undone.items) |u| if (u == .add) self.release(gpa, u.add);
+        for (self.history.items) |c| switch (c) {
+            .remove => |r| self.release(gpa, r.ann),
+            .image_remove => |r| r.placed.release(gpa),
+            else => {},
+        };
+        for (self.undone.items) |u| switch (u) {
+            .add => |a| self.release(gpa, a.ann),
+            .image_add => |p| p.release(gpa),
+            else => {},
+        };
         for (self.edit_texts.items) |t| gpa.free(t);
         self.edit_texts.deinit(gpa);
         self.scene.deinit(gpa);
         self.items.deinit(gpa);
+        self.owners.deinit(gpa);
         self.crops.deinit(gpa);
         self.history.deinit(gpa);
         self.undone.deinit(gpa);
@@ -112,7 +147,11 @@ pub const Document = struct {
     }
 
     fn clearRedo(self: *Document, gpa: std.mem.Allocator) void {
-        for (self.undone.items) |u| if (u == .add) self.release(gpa, u.add);
+        for (self.undone.items) |u| switch (u) {
+            .add => |a| self.release(gpa, a.ann),
+            .image_add => |p| p.release(gpa),
+            else => {},
+        };
         self.undone.clearRetainingCapacity();
     }
 
@@ -149,7 +188,9 @@ pub const Document = struct {
     /// Append `ann` and take ownership of its text. Clears the redo stack.
     pub fn add(self: *Document, gpa: std.mem.Allocator, ann: Annotation) !void {
         try self.history.ensureUnusedCapacity(gpa, 1);
+        try self.owners.ensureUnusedCapacity(gpa, 1);
         try self.items.append(gpa, ann);
+        self.owners.appendAssumeCapacity(if (self.scene.nearest(ann.anchor())) |i| self.scene.images.items[i].id else no_image);
         self.history.appendAssumeCapacity(.add);
         self.clearRedo(gpa);
         self.revision += 1;
@@ -160,9 +201,15 @@ pub const Document = struct {
     /// the crops that counted it. Clears the redo stack.
     pub fn remove(self: *Document, gpa: std.mem.Allocator, i: usize) !void {
         try self.history.ensureUnusedCapacity(gpa, 1);
-        const a = self.items.orderedRemove(i);
-        self.history.appendAssumeCapacity(.{ .remove = .{ .index = i, .ann = a, .shifted = self.shiftCrops(i, -1) } });
+        self.removeRaw(i);
         self.clearRedo(gpa);
+    }
+
+    /// Remove annotation `i` into the history; the room is made.
+    fn removeRaw(self: *Document, i: usize) void {
+        const a = self.items.orderedRemove(i);
+        const o = self.owners.orderedRemove(i);
+        self.history.appendAssumeCapacity(.{ .remove = .{ .index = i, .ann = a, .owner = o, .shifted = self.shiftCrops(i, -1) } });
         self.revision += 1;
         self.removals += 1;
     }
@@ -227,31 +274,138 @@ pub const Document = struct {
         self.revision += 1;
     }
 
+    /// Place `canvas` (null: size only) at (`x`, `y`) on top of the others,
+    /// as one undo step; returns its id. `owned`: the scene frees the canvas.
+    pub fn addImage(self: *Document, gpa: std.mem.Allocator, w: u32, h: u32, x: i32, y: i32, canvas: ?*const Canvas, owned: bool) !u32 {
+        try self.history.ensureUnusedCapacity(gpa, 1);
+        try self.scene.images.ensureUnusedCapacity(gpa, 1);
+        const id = self.scene.newId();
+        self.scene.images.appendAssumeCapacity(.{ .id = id, .w = @intCast(w), .h = @intCast(h), .x = x, .y = y, .canvas = canvas, .owned = owned });
+        self.history.appendAssumeCapacity(.image_add);
+        self.clearRedo(gpa);
+        self.touchScene();
+        return id;
+    }
+
+    /// Move the image `id` to (`x`, `y`) with its annotations, as one undo
+    /// step. Nothing if it is there already. Returns whether it moved.
+    pub fn moveImage(self: *Document, gpa: std.mem.Allocator, id: u32, x: i32, y: i32) !bool {
+        const i = self.scene.indexOf(id).?;
+        const p = self.scene.images.items[i];
+        if (p.x == x and p.y == y) return false;
+        try self.history.ensureUnusedCapacity(gpa, 1);
+        const m = ImageMove{ .id = id, .dx = x - p.x, .dy = y - p.y };
+        self.applyImageMove(m, 1);
+        self.history.appendAssumeCapacity(.{ .image_move = m });
+        self.clearRedo(gpa);
+        return true;
+    }
+
+    /// Remove the image `id` and the annotations drawn on it, as one undo
+    /// step. The history keeps them.
+    pub fn removeImage(self: *Document, gpa: std.mem.Allocator, id: u32) !void {
+        const index = self.scene.indexOf(id).?;
+        var n: usize = 0;
+        for (self.owners.items) |o| n += @intFromBool(o == id);
+        try self.history.ensureUnusedCapacity(gpa, n + 1);
+        var i = self.items.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.owners.items[i] == id) self.removeRaw(i);
+        }
+        const p = self.scene.images.orderedRemove(index);
+        self.history.appendAssumeCapacity(.{ .image_remove = .{ .placed = p, .index = index, .n = n } });
+        self.clearRedo(gpa);
+        self.touchScene();
+    }
+
+    /// Shift the image of `m` and its annotations by `m` times `sign`.
+    fn applyImageMove(self: *Document, m: ImageMove, sign: i32) void {
+        const d = Vec2.init(@floatFromInt(m.dx * sign), @floatFromInt(m.dy * sign));
+        const p = &self.scene.images.items[self.scene.indexOf(m.id).?];
+        p.x += m.dx * sign;
+        p.y += m.dy * sign;
+        for (self.items.items, self.owners.items) |*a, o| if (o == m.id) {
+            a.* = a.shifted(d);
+        };
+        self.touchScene();
+    }
+
+    /// A change of the scene: the compositor repaints everything.
+    fn touchScene(self: *Document) void {
+        self.revision += 1;
+        self.removals += 1;
+    }
+
+    /// Steps that undo takes together: the top one, its chained moves, or
+    /// an image removal with the removals of its annotations.
+    fn undoLen(self: *const Document) usize {
+        const top = self.history.items[self.history.items.len - 1];
+        if (top == .image_remove) return 1 + top.image_remove.n;
+        var n: usize = 1;
+        while (isChained(self.history.items[self.history.items.len - n])) n += 1;
+        return n;
+    }
+
+    /// Undo one annotation removal (the room is made).
+    fn unremove(self: *Document, r: Removed) void {
+        self.items.insertAssumeCapacity(r.index, r.ann);
+        self.owners.insertAssumeCapacity(r.index, r.owner);
+        for (self.crops.items[self.crops.items.len - r.shifted ..]) |*c| c.first += 1;
+        self.undone.appendAssumeCapacity(.{ .remove = .{ .index = r.index, .shifted = r.shifted } });
+        self.removals += 1;
+    }
+
     /// Undo the last step: its chained moves (last first), then the step.
     pub fn undo(self: *Document, gpa: std.mem.Allocator) !bool {
         if (self.history.items.len == 0) return false;
         // Room for the whole step first: it never stops half undone.
-        var n: usize = 1;
-        while (isChained(self.history.items[self.history.items.len - n])) n += 1;
+        const n = self.undoLen();
         try self.undone.ensureUnusedCapacity(gpa, n);
-        try self.items.ensureUnusedCapacity(gpa, 1);
+        try self.items.ensureUnusedCapacity(gpa, n);
+        try self.owners.ensureUnusedCapacity(gpa, n);
+        try self.scene.images.ensureUnusedCapacity(gpa, 1);
         for (0..n) |_| switch (self.history.pop().?) {
-            .remove => |r| {
-                self.items.insertAssumeCapacity(r.index, r.ann);
-                const shifted = r.shifted;
-                for (self.crops.items[self.crops.items.len - shifted ..]) |*c| c.first += 1;
-                self.undone.appendAssumeCapacity(.{ .remove = .{ .index = r.index, .shifted = shifted } });
-                self.removals += 1;
-            },
+            .remove => |r| self.unremove(r),
             .add => {
-                self.undone.appendAssumeCapacity(.{ .add = self.items.pop().? });
+                self.undone.appendAssumeCapacity(.{ .add = .{ .ann = self.items.pop().?, .owner = self.owners.pop().? } });
                 self.removals += 1;
             },
             .crop => self.undone.appendAssumeCapacity(.{ .crop = self.crops.pop().? }),
             .move => |m| self.undone.appendAssumeCapacity(.{ .move = self.swapMove(m) }),
+            .image_add => {
+                self.undone.appendAssumeCapacity(.{ .image_add = self.scene.images.pop().? });
+                self.touchScene();
+            },
+            .image_move => |m| {
+                self.applyImageMove(m, -1);
+                self.undone.appendAssumeCapacity(.{ .image_move = m });
+            },
+            .image_remove => |r| {
+                self.scene.images.insertAssumeCapacity(r.index, r.placed);
+                self.touchScene();
+                // Its annotations come back, then the marker goes last on
+                // the redo stack: a redo meets it first.
+                for (0..r.n) |_| self.unremove(self.history.pop().?.remove);
+                self.undone.appendAssumeCapacity(.{ .image_remove = .{ .index = r.index, .n = r.n } });
+                return self.finishUndo();
+            },
         };
+        return self.finishUndo();
+    }
+
+    fn finishUndo(self: *Document) bool {
         self.revision += 1;
         return true;
+    }
+
+    /// Redo one annotation removal (the room is made).
+    fn reremove(self: *Document, r: anytype) void {
+        const a = self.items.orderedRemove(r.index);
+        const o = self.owners.orderedRemove(r.index);
+        for (self.crops.items[self.crops.items.len - r.shifted ..]) |*c| c.first -= 1;
+        self.removals += 1;
+        self.history.appendAssumeCapacity(.{ .remove = .{ .index = r.index, .ann = a, .owner = o, .shifted = r.shifted } });
     }
 
     /// Redo the last undone step, then its chained moves (first first).
@@ -259,27 +413,46 @@ pub const Document = struct {
         const len = self.undone.items.len;
         if (len == 0) return false;
         var n: usize = 1;
-        while (n < len and isChained(self.undone.items[len - 1 - n])) n += 1;
+        const top = self.undone.items[len - 1];
+        if (top == .image_remove) {
+            n += top.image_remove.n;
+        } else while (n < len and isChained(self.undone.items[len - 1 - n])) n += 1;
         try self.items.ensureUnusedCapacity(gpa, 1);
+        try self.owners.ensureUnusedCapacity(gpa, 1);
         try self.crops.ensureUnusedCapacity(gpa, 1);
+        try self.scene.images.ensureUnusedCapacity(gpa, 1);
         try self.history.ensureUnusedCapacity(gpa, n);
-        for (0..n) |_| self.history.appendAssumeCapacity(switch (self.undone.pop().?) {
-            .add => |a| blk: {
-                self.items.appendAssumeCapacity(a);
-                break :blk .add;
+        for (0..n) |_| switch (self.undone.pop().?) {
+            .add => |a| {
+                self.items.appendAssumeCapacity(a.ann);
+                self.owners.appendAssumeCapacity(a.owner);
+                self.history.appendAssumeCapacity(.add);
             },
-            .crop => |c| blk: {
+            .crop => |c| {
                 self.crops.appendAssumeCapacity(c);
-                break :blk .crop;
+                self.history.appendAssumeCapacity(.crop);
             },
-            .move => |m| .{ .move = self.swapMove(m) },
-            .remove => |r| blk: {
-                const a = self.items.orderedRemove(r.index);
-                for (self.crops.items[self.crops.items.len - r.shifted ..]) |*c| c.first -= 1;
-                self.removals += 1;
-                break :blk .{ .remove = .{ .index = r.index, .ann = a, .shifted = r.shifted } };
+            .move => |m| self.history.appendAssumeCapacity(.{ .move = self.swapMove(m) }),
+            .remove => |r| self.reremove(r),
+            .image_add => |p| {
+                self.scene.images.appendAssumeCapacity(p);
+                self.history.appendAssumeCapacity(.image_add);
+                self.touchScene();
             },
-        });
+            .image_move => |m| {
+                self.applyImageMove(m, 1);
+                self.history.appendAssumeCapacity(.{ .image_move = m });
+            },
+            .image_remove => |r| {
+                // The annotations go first (they are the next `r.n` on the
+                // stack), then the image.
+                for (0..r.n) |_| self.reremove(self.undone.pop().?.remove);
+                const p = self.scene.images.orderedRemove(r.index);
+                self.history.appendAssumeCapacity(.{ .image_remove = .{ .placed = p, .index = r.index, .n = r.n } });
+                self.touchScene();
+                break;
+            },
+        };
         self.revision += 1;
         return true;
     }
@@ -477,4 +650,55 @@ test "a deletion is one undo step: undo puts the annotation back in place, crops
     // A new step clears the redo stack; the deleted text is freed with the history.
     try doc.remove(gpa, 1);
     try std.testing.expect(!try doc.redo(gpa));
+}
+
+test "images: add, move with their annotations, remove; undo and redo each" {
+    const gpa = std.testing.allocator;
+    var doc = Document{};
+    defer doc.deinit(gpa);
+    try doc.seed(gpa, 100, 80, null);
+    const b = try doc.addImage(gpa, 50, 50, 164, 0, null, false);
+    const num = struct {
+        fn at(x: f32, y: f32) Annotation {
+            return .{ .number = .{ .center = .{ .x = x, .y = y }, .value = 1, .size = 10, .color = .{ .r = 0, .g = 0, .b = 0 } } };
+        }
+    }.at;
+    try doc.add(gpa, num(10, 10)); // on image 0
+    try doc.add(gpa, num(180, 20)); // on image b
+    try std.testing.expectEqual(@as(u32, 0), doc.owners.items[0]);
+    try std.testing.expectEqual(b, doc.owners.items[1]);
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 214, 80), doc.base());
+
+    // Move b: its annotation follows, the other stays.
+    try std.testing.expect(try doc.moveImage(gpa, b, 0, 144));
+    try std.testing.expect(!try doc.moveImage(gpa, b, 0, 144));
+    try std.testing.expectEqual(Vec2.init(10, 10), doc.items.items[0].number.center);
+    try std.testing.expectEqual(Vec2.init(16, 164), doc.items.items[1].number.center);
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 100, 194), doc.base());
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(Vec2.init(180, 20), doc.items.items[1].number.center);
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(Vec2.init(16, 164), doc.items.items[1].number.center);
+
+    // Remove b with its annotation; undo brings both back, redo removes again.
+    try doc.removeImage(gpa, b);
+    try std.testing.expectEqual(@as(usize, 1), doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 1), doc.items.items.len);
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 100, 80), doc.base());
+    try std.testing.expect(try doc.undo(gpa));
+    try std.testing.expectEqual(@as(usize, 2), doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 2), doc.items.items.len);
+    try std.testing.expectEqual(b, doc.owners.items[1]);
+    try std.testing.expectEqual(Rect.fromSize(0, 0, 100, 194), doc.base());
+    try std.testing.expect(try doc.redo(gpa));
+    try std.testing.expectEqual(@as(usize, 1), doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 1), doc.items.items.len);
+
+    // Everything back to the start, and forward again.
+    while (try doc.undo(gpa)) {}
+    try std.testing.expectEqual(@as(usize, 1), doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 0), doc.items.items.len);
+    while (try doc.redo(gpa)) {}
+    try std.testing.expectEqual(@as(usize, 1), doc.scene.count());
+    try std.testing.expectEqual(@as(usize, 1), doc.items.items.len);
 }
