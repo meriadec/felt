@@ -65,8 +65,8 @@ image files. Build: `coreModule` in build.zig.
 | `chrome.zig` | Flat Nord chrome: icon dock, top bar, padding widget, folder button and file browser panel (contents in browser_draw.zig), help overlay, toast pill, hover states (layout as draw ops); a signature per panel (`State.panelSig`) for damage |
 | `compositor.zig` | Layer cache + damage tracking; produces screen frames |
 | `picker.zig` | Capture picker state machine: hover a window, drag a rectangle, confirm on release, cancel, delay toggle; rect normalization; `crop` of the frozen screen |
-| `ruler.zig` | Picker ruler layout, shown while the button is down: the size in a boxed label outside the selection, its edges as thin dashes to the screen edges, bold blue round-capped dashed guides (#1971C2) from the middle of each side to the screen edge with the distance in a white boxed label on the line and a grey cap at the screen edge; picker_draw hatches the 32 px band inside the selection; before the press the pointer carries a hatched padding square and four of the same guides |
-| `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, boxed size label, delay pill; `Scene.render` repaints only the difference |
+| `ruler.zig` | Picker ruler layout, shown while the button is down: the size outside the selection, its edges dashed to the screen edges, hairlines with T-shaped end ticks whose distances sit in opaque plates centred on the line (the dashes stop behind a plate); picker_draw hatches the 32 px band inside the selection; before the press the pointer carries a hatched padding square and four hairlines |
+| `picker_draw.zig` | Picker drawing: frozen screen dimmed, bright rectangle with border, size pill, delay pill; `Scene.render` repaints only the difference |
 | `exporter.zig` | Full-resolution export of the canvas (shift by the canvas origin, the canvas background outside the image) |
 
 `src/` (the `felt` executable module):
@@ -199,7 +199,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   release the nearest free slot to the pointer wins (`magnet.nearest`) and
   `Document.moveImage` records ONE step that carries the annotations; no
   slot, or the image already there: nothing. Esc, `q` or a right click
-  cancel (no history). The view NEVER changes by itself during a drag, a drop, a cancel, an undo or a redo (no zoom, no pan, no refit): the user zooms and pans by hand; slots off screen just do not show. Only a crop (and its undo/redo), `0`, a padding change and a resize refit; the start with several images fits once (`Editor.fit`).
+  cancel (no history). The view NEVER changes by itself during a drag, a drop, a cancel, an undo or a redo (no zoom, no pan, no refit): the user zooms and pans by hand; slots off screen just do not show. Only a crop (and its undo/redo), `0`, and a resize refit (a padding change never does); the start with several images fits once (`Editor.fit`).
 - File browser (`browser*.zig`, `dirlist`, `thumbs`, `loader`): the folder
   button (top left, a small panel like the top bar; also `o`) toggles a
   panel on the left, an OVERLAY: the canvas keeps its size and the panel is
@@ -356,7 +356,7 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   what came after). Like the canvas background it is not an undo step (no
   annotation changes), it is persisted, and an unsaved change counts as
   dirty (`Editor.saved_padding`) because the export differs. A step changes
-  every clip and the canvas, so the editor refits the view and the
+  every clip and the canvas, so the view keeps its scale and offset (the image stays put on screen, `0` refits) and the
   compositor repaints the whole scene (`scene_pad`; 5 to 8 ms at 1080p,
   docs/perf.md). Padding 0 is exactly the old behavior (goldens unchanged).
   Slider: a press sets the nearest step, a drag follows x, the release asks

@@ -1,10 +1,9 @@
-//! Layout of the picker ruler: the marks drawn over the dimmed screen. The
-//! size of the selection sits in a boxed label outside it; a bold dashed
-//! guide runs from the middle of each side to the screen edge, with its
-//! distance in a boxed label on the line, and a light cap line at the screen
-//! edge; the four edges extend to the screen edges as thin dashes. With no
-//! selection: bold guides from the pointer to the four screen edges. Pure
-//! geometry: `picker_draw.zig` paints the result (blue, hand-drawn look).
+//! Layout of the picker ruler: the marks drawn over the dimmed screen so the
+//! dimension line along its top and its left edge with the size on it (like
+//! an architect's plan: end ticks, number on the line), and a dashed hairline
+//! from each edge to the screen edge with its distance. With no selection:
+//! dashed hairlines from the pointer to the four screen edges. Pure geometry:
+//! `picker_draw.zig` paints the result.
 const std = @import("std");
 const geom = @import("geom.zig");
 const text = @import("text.zig");
@@ -15,12 +14,10 @@ const Vec2 = geom.Vec2;
 
 pub const Line = struct {
     r: Rect,
-    /// Painted as round-capped dashes (a guide) instead of solid.
+    /// Painted as dashes (a distance hairline) instead of solid.
     dashed: bool = false,
-    /// The light cap line at a screen edge (solid, grey).
-    cap: bool = false,
-    /// An edge extension: dashes thinner and shorter than a guide's.
-    thin: bool = false,
+    /// A dimension line of the selection, brighter than a distance hairline.
+    strong: bool = false,
 };
 
 /// A number on a line, in a small flat plate.
@@ -48,9 +45,8 @@ pub const Marks = struct {
     n_lines: usize = 0,
     labels: [8]Label = undefined,
     n_labels: usize = 0,
-    /// Guide thickness, px; `thin` is the one of the edge extensions.
-    t: i32 = 2,
-    thin: i32 = 1,
+    /// Line thickness, px.
+    t: i32 = 1,
     s: f32 = 1,
     w: i32 = 0,
     h: i32 = 0,
@@ -79,26 +75,25 @@ pub const Marks = struct {
 
     pub const max_rects = 24 + 8;
 
-    fn line(m: *Marks, l: Line) void {
-        if (l.r.isEmpty() or m.n_lines == m.lines.len) return;
-        m.lines[m.n_lines] = l;
+    fn line(m: *Marks, r: Rect, dashed: bool, strong: bool) void {
+        if (r.isEmpty() or m.n_lines == m.lines.len) return;
+        m.lines[m.n_lines] = .{ .r = r, .dashed = dashed, .strong = strong };
         m.n_lines += 1;
     }
 
-    /// A guide along x at row y from x0 to x1, with a cap of half length
-    /// `tick` at the end that lies on a screen edge.
-    fn hline(m: *Marks, x0: i32, x1: i32, y: i32, tick: i32) void {
+    /// A horizontal line from x0 to x1 at y, with a tick of half length `tick` at each end.
+    fn hline(m: *Marks, x0: i32, x1: i32, y: i32, tick: i32, dashed: bool, strong: bool) void {
         const t = m.t;
-        m.line(.{ .r = .{ .x0 = x0, .y0 = y, .x1 = x1, .y1 = y + t }, .dashed = true });
-        if (x0 <= 0) m.line(.{ .r = .{ .x0 = 0, .y0 = y - tick, .x1 = t, .y1 = y + t + tick }, .cap = true });
-        if (x1 >= m.w) m.line(.{ .r = .{ .x0 = m.w - t, .y0 = y - tick, .x1 = m.w, .y1 = y + t + tick }, .cap = true });
+        m.line(.{ .x0 = x0, .y0 = y, .x1 = x1, .y1 = y + t }, dashed, strong);
+        m.line(.{ .x0 = x0, .y0 = y - tick, .x1 = x0 + t, .y1 = y + t + tick }, false, strong);
+        m.line(.{ .x0 = x1 - t, .y0 = y - tick, .x1 = x1, .y1 = y + t + tick }, false, strong);
     }
 
-    fn vline(m: *Marks, y0: i32, y1: i32, x: i32, tick: i32) void {
+    fn vline(m: *Marks, y0: i32, y1: i32, x: i32, tick: i32, dashed: bool, strong: bool) void {
         const t = m.t;
-        m.line(.{ .r = .{ .x0 = x, .y0 = y0, .x1 = x + t, .y1 = y1 }, .dashed = true });
-        if (y0 <= 0) m.line(.{ .r = .{ .x0 = x - tick, .y0 = 0, .x1 = x + t + tick, .y1 = t }, .cap = true });
-        if (y1 >= m.h) m.line(.{ .r = .{ .x0 = x - tick, .y0 = m.h - t, .x1 = x + t + tick, .y1 = m.h }, .cap = true });
+        m.line(.{ .x0 = x, .y0 = y0, .x1 = x + t, .y1 = y1 }, dashed, strong);
+        m.line(.{ .x0 = x - tick, .y0 = y0, .x1 = x + t + tick, .y1 = y0 + t }, false, strong);
+        m.line(.{ .x0 = x - tick, .y0 = y1 - t, .x1 = x + t + tick, .y1 = y1 }, false, strong);
     }
 
     /// A plate with `n` centered on (cx, cy), kept inside the screen.
@@ -107,9 +102,9 @@ pub const Marks = struct {
         var l = Label{ .rect = .empty, .strong = strong };
         const s = std.fmt.bufPrint(&l.buf, "{s}", .{str}) catch return null;
         l.len = @intCast(s.len);
-        l.px = text.pxOf((if (strong) @as(f32, 15.0) else @as(f32, 13.5)) * m.s);
+        l.px = text.pxOf((if (strong) @as(f32, 13.0) else @as(f32, 11.5)) * m.s);
         const tw = text.measure(ctx.font, s, l.px).width;
-        const pad = 6 * m.s;
+        const pad = 4 * m.s;
         const lw = tw + 2 * pad;
         const lh = plateHeight(m.s);
         const x0 = std.math.clamp(cx - lw / 2, 0, @max(0, @as(f32, @floatFromInt(m.w)) - lw));
@@ -126,9 +121,9 @@ pub const Marks = struct {
     /// A dashed extension of an edge: along `pos` (x when `vertical`), from a to b.
     fn ext(m: *Marks, pos: i32, a: i32, b: i32, vertical: bool) void {
         if (b - a < 1) return;
-        const t = m.thin;
+        const t = m.t;
         const r: Rect = if (vertical) .{ .x0 = pos, .y0 = a, .x1 = pos + t, .y1 = b } else .{ .x0 = a, .y0 = pos, .x1 = b, .y1 = pos + t };
-        m.line(.{ .r = r, .dashed = true, .thin = true });
+        m.line(r, true, false);
     }
 
     fn free(m: *const Marks, r: Rect) bool {
@@ -140,21 +135,21 @@ pub const Marks = struct {
     /// when it fits and hides no other number.
     fn hdist(m: *Marks, ctx: Ctx, a: i32, b: i32, y: i32, n: i32) void {
         if (b - a < 2) return;
-        m.hline(a, b, y, @intFromFloat(@round(7 * m.s)));
+        m.hline(a, b, y, @intFromFloat(@round(3 * m.s)), true, false);
         m.distLabel(ctx, @as(f32, @floatFromInt(a + b)) / 2, @floatFromInt(y), n, true);
     }
 
     fn vdist(m: *Marks, ctx: Ctx, a: i32, b: i32, x: i32, n: i32) void {
         if (b - a < 2) return;
-        m.vline(a, b, x, @intFromFloat(@round(7 * m.s)));
+        m.vline(a, b, x, @intFromFloat(@round(3 * m.s)), true, false);
         m.distLabel(ctx, @floatFromInt(x), @as(f32, @floatFromInt(a + b)) / 2, n, false);
     }
 
     fn distLabel(m: *Marks, ctx: Ctx, cx: f32, cy: f32, n: i32, horizontal: bool) void {
         // Needs room for the plate along the line, plus a margin.
-        const need = (if (horizontal) @as(f32, 44.0) else @as(f32, 21.0)) * m.s + 10 * m.s;
+        const need = (if (horizontal) @as(f32, 36.0) else @as(f32, 16.0)) * m.s + 10 * m.s;
         if (@as(f32, @floatFromInt(n)) < need) return;
-        const probe = Rect{ .x0 = @intFromFloat(cx - 22 * m.s), .y0 = @intFromFloat(cy - 11 * m.s), .x1 = @intFromFloat(cx + 22 * m.s), .y1 = @intFromFloat(cy + 11 * m.s) };
+        const probe = Rect{ .x0 = @intFromFloat(cx - 18 * m.s), .y0 = @intFromFloat(cy - 8 * m.s), .x1 = @intFromFloat(cx + 18 * m.s), .y1 = @intFromFloat(cy + 8 * m.s) };
         if (!m.free(probe)) return;
         var nb: [12]u8 = undefined;
         _ = m.label(ctx, cx, cy, std.fmt.bufPrint(&nb, "{d}", .{n}) catch return, false);
@@ -162,7 +157,7 @@ pub const Marks = struct {
 };
 
 pub fn plateHeight(s: f32) f32 {
-    return 21 * s;
+    return 16 * s;
 }
 
 /// Marks for a selection `hi` on a screen of w x h, or for the `pointer`
@@ -170,8 +165,7 @@ pub fn plateHeight(s: f32) f32 {
 /// square) and carry the distance from the pointer itself.
 pub fn build(ctx: Ctx, hi: ?Rect, pointer: ?Vec2, arm: i32, w: u32, h: u32, scale: f32) Marks {
     var m = Marks{ .s = scale, .w = @intCast(w), .h = @intCast(h) };
-    m.t = @max(2, @as(i32, @intFromFloat(@round(2.2 * scale))));
-    m.thin = @max(1, @as(i32, @intFromFloat(@round(scale))));
+    m.t = @max(1, @as(i32, @intFromFloat(@round(scale))));
     if (hi) |r| {
         selection(ctx, &m, r);
     } else if (pointer) |p| {
@@ -194,12 +188,12 @@ fn selection(ctx: Ctx, m: *Marks, r: Rect) void {
     // The edges extended to the screen edges: dashed, outside the selection.
     m.ext(r.x0, 0, r.y0, true);
     m.ext(r.x0, r.y1, m.h, true);
-    m.ext(r.x1 - m.thin, 0, r.y0, true);
-    m.ext(r.x1 - m.thin, r.y1, m.h, true);
+    m.ext(r.x1 - m.t, 0, r.y0, true);
+    m.ext(r.x1 - m.t, r.y1, m.h, true);
     m.ext(r.y0, 0, r.x0, false);
     m.ext(r.y0, r.x1, m.w, false);
-    m.ext(r.y1 - m.thin, 0, r.x0, false);
-    m.ext(r.y1 - m.thin, r.x1, m.w, false);
+    m.ext(r.y1 - m.t, 0, r.x0, false);
+    m.ext(r.y1 - m.t, r.x1, m.w, false);
 
     // Distances to the screen edges, centered on the selection's sides.
     m.hdist(ctx, 0, r.x0, cy, r.x0);
