@@ -27,6 +27,7 @@ const nord = color.nord;
 pub const dim_level: u32 = 150;
 const border_color = nord.n10;
 /// Ruler lines: snow white, faint for the distance hairlines.
+const hatch_color = nord.n10.withAlpha(80);
 const line_soft = nord.n6.withAlpha(120);
 const line_strong = nord.n6.withAlpha(210);
 
@@ -45,6 +46,8 @@ const Items = struct {
     border: i32,
     hi: ?Rect,
     marks: ruler.Marks = .{},
+    /// Width of the hatched band inside the selection (0: none).
+    band: i32 = 0,
     delay_buf: [24]u8 = undefined,
     delay: Pill = .{},
 };
@@ -80,7 +83,10 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
     it.delay = d;
 
     // The ruler shows only while the button is down.
-    if (p.phase == .dragging) it.marks = ruler.build(ctx, it.hi, p.pointer, p.w, p.h, s);
+    if (p.phase == .dragging) {
+        it.marks = ruler.build(ctx, it.hi, p.pointer, p.w, p.h, s);
+        if (it.hi) |r| it.band = @min(@as(i32, @intFromFloat(@round(64 * s))), @divTrunc(@min(r.width(), r.height()), 2));
+    }
 }
 
 inline fn dim(p: u32) u32 {
@@ -118,6 +124,25 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
 }
 
+/// A faint diagonal hatching on the `band` px just inside `hi`: the margin
+/// to leave around the subject.
+fn hatch(cv: *Canvas, clip: Rect, hi: Rect, band: i32, s: f32) void {
+    const inner = hi.expand(-band);
+    const period: i32 = @intFromFloat(@round(7 * s));
+    const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
+    for (hi.minus(inner)) |part| {
+        const r = part.intersect(clip);
+        var y = r.y0;
+        while (y < r.y1) : (y += 1) {
+            // Stripes run up to the right: x + y is constant along one.
+            var x = r.x0 + @mod(period - @mod(r.x0 + y, period), period);
+            while (x < r.x1) : (x += period) {
+                cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = @min(x + th, r.x1), .y1 = y + 1 }, hatch_color);
+            }
+        }
+    }
+}
+
 fn drawLine(cv: *Canvas, clip: Rect, l: ruler.Line, s: f32) void {
     const c = if (l.strong) line_strong else line_soft;
     if (!l.dashed) return cv.blendRect(l.r.intersect(clip), c);
@@ -147,6 +172,7 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
         for (out.minus(hi)) |band| frame.fillRect(band.intersect(clip), border_color);
         frame.copyRect(frozen, hi.intersect(clip));
     }
+    if (it.hi) |hi| if (it.band > 0) hatch(frame, clip, hi, it.band, it.scale);
     for (it.marks.lineSlice()) |l| drawLine(frame, clip, l, it.scale);
     for (it.marks.labelSlice()) |l| try drawLabel(ctx, frame, clip, l, it.scale);
     // The delay pill shows only while a delay is on (--delay, or Tab).
