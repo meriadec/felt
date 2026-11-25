@@ -1,0 +1,4 @@
+# Two images on the light canvas (the default): checks the soft layered shadow and the faint border at the fit zoom.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right

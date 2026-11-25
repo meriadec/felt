@@ -44,6 +44,7 @@ image files. Build: `coreModule` in build.zig.
 | `scene.zig` | Placed images (id, size, position in scene px, canvas) and queries: bounding box, hit test, nearest image |
 | `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, left and right slots share the top edge of the neighbour, top and bottom slots its left edge; the nearest slot to a point |
 | `dashed.zig` | Dashed rectangle outline (inside the rectangle, alpha blend, clipped) |
+| `imgsel.zig` | Selection frame of an image in a montage: `frame` (screen rectangle), `paint`, `width` |
 | `dropzone.zig` | Montage drop overlay: `Drop` (the dragged image size + the pointer, screen px; `Editor.montage_drop`, set by `setMontageDrop`/`clearMontageDrop`) and `Overlay` (free slots on screen from `magnet.slots`, the hot one = `magnet.nearest`, the ghost outline of a dragged image; `slotList`, `build`, `eql`, `sameSlots`, `paint`). `Drop.exclude` = the dragged image: its place is free and no slot hangs on it |
 | `dirlist.zig` | One folder for the browser: `list` keeps folders and images (png, jpg, jpeg, bmp: what `image_io` decodes), skips hidden names and other files, sorts newest first (`newerFirst`, folders and images mixed); `formatDate`, `tildePath`, `parent` |
 | `thumbs.zig` | `make` (decode + area downscale into a box), `Cache` (LRU, 200 thumbnails, key = hash of the path, a changed mtime is a miss) |
@@ -186,6 +187,19 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   both bump `Document.removals`, so the compositor repaints the scene in
   full. The stairs paths near it re-route as chained moves of the same step
   (`route.settle`, like an add).
+- Image select and delete (move tool, 2+ images): a press on an image with
+  no annotation under it sets `Editor.selected_image` (the id; never together
+  with `selected`: each press, Esc, another tool, undo, redo and the hand
+  clear the other). A click or a drag both select. `Editor.imageFrame` gives
+  the screen rectangle of the accent frame (`imgsel.zig`: 2 px at 1080p
+  scaled with the screen, outside the image, above the scene, not
+  exported); the compositor keeps `prev_imgsel` and damages the frame bands
+  when it changes. With one image nothing selects. Delete and Backspace
+  (`Action.delete_selected`) call `Document.removeImage`: image and owned
+  annotations in ONE undo step (undo restores them in place). The last image
+  is never deleted (toast). The view does not change (no refit): only a crop
+  changes it; the canvas follows the scene (`syncView`), and with one image
+  left the padding stays.
 - Image drag (move tool, 2+ images): a left press on an image with no
   annotation under it (annotations keep priority) enters `Mode.image_drag`.
   Under 4 px of motion a release is a click (nothing changes). Past it the
@@ -383,8 +397,8 @@ image when the canvas background changes, repainted in full when the padding cha
 undo of an add or a crop, resize or zoom), `frame` (scene +
 canvas the shape in progress adds + crop dimming + move outline +
 chrome + move outline + montage drop slots + preview). With 2 or more images
-the scene paints, over the canvas background, a shadow and a light border for
-each image (`imageBackdrop`, shrinks with the view scale), then the images; a
+the scene paints, over the canvas background, a shadow and a border for
+each image (`shadow.paint`, src/core/shadow.zig: three stacked blurs, theme from the canvas color, size from the image's screen size), then the images; a
 change of any image position repaints the scene in full (`placesKept`). The
 drop overlay is drawn on the frame; when the slots or the hot slot change, the
 compositor damages the old and the new slot rectangles (`prev_drop`). Each chrome panel (dock, style switch, top bar, padding widget, help,

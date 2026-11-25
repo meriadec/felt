@@ -1,0 +1,5 @@
+# Two images on the light canvas, zoomed in by hand (Ctrl+wheel): the shadow grows with the zoom, up to its cap.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+wheel up 3 at 450 250 ctrl

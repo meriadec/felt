@@ -98,9 +98,16 @@ A moving ghost damages only its old and new rectangles; the slots are damaged
 only when they or the hot slot change (`Overlay.sameSlots`). A drag never
 repaints the scene: the dragged image stays in place until the drop.
 
-The shadow is a per-pixel loop over the bands around each image (like the
-canvas shadow), so it costs with the screen area they cover. Moving an image
-repaints the scene in full.
+The shadow (`src/core/shadow.zig`, also the canvas shadow) is analytic: the
+blur of a rectangle is separable, so a call builds short 1D edge tables per
+layer (3 layers) and shades each pixel of the bands with 8-wide SIMD
+(`@Vector`), plus an ordered dither against 8-bit banding. Nothing is cached.
+It reaches at most `shadow.max_reach` (76 px) from a rectangle, and the
+compositor grows its damage by that. It costs with the screen area the bands
+cover. Moving an image repaints the scene in full. Compared with the old
+per-pixel sqrt loop (larger, three layers): 4 images placed 3.0 -> 1.3 ms,
+pan 0.54 -> 0.55 ms, Ctrl+wheel zoom 2.5 -> 2.2 ms, image drag 0.15 ms
+(same), zoom out 5.7 -> 6.1 ms (wider canvas band).
 
 ## Auto-routing (2026-11)
 

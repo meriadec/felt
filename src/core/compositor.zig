@@ -16,6 +16,8 @@ const sdf = @import("sdf.zig");
 const raster = @import("raster.zig");
 const scene_mod = @import("scene.zig");
 const dropzone = @import("dropzone.zig");
+const imgsel = @import("imgsel.zig");
+const shadow = @import("shadow.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 const Annotation = @import("annotation.zig").Annotation;
@@ -31,59 +33,8 @@ pub const grid_color = color.Color.rgb(0x1B1F26);
 /// Distance between grid lines (screen px).
 pub const grid_step: i32 = 32;
 
-/// A soft shadow (down, `dy` px, fading over `blur` px) and a 1 px
-/// translucent light border, both outside a rectangle.
-const Backdrop = struct {
-    blur: i32,
-    dy: i32,
-    shadow_alpha: f32,
-    border: color.Color,
-
-    /// How far from the rectangle the shadow reaches (px).
-    fn reach(b: Backdrop) i32 {
-        return b.blur + b.dy + 1;
-    }
-};
-
-/// The canvas on the screen background.
-const canvas_backdrop = Backdrop{ .blur = 20, .dy = 6, .shadow_alpha = 110, .border = .{ .r = 255, .g = 255, .b = 255, .a = 34 } };
-/// How far from the canvas the shadow reaches (px).
-const shadow_reach: i32 = canvas_backdrop.reach();
-
-/// Each image of a scene with 2 or more, on the canvas: smaller and
-/// subtler, shrinking with the view scale (not below 40%).
-fn imageBackdrop(scale: f32) Backdrop {
-    const k = std.math.clamp(scale, 0.4, 1);
-    return .{
-        .blur = @intFromFloat(@round(16 * k)),
-        .dy = @intFromFloat(@round(5 * k)),
-        .shadow_alpha = 90,
-        .border = .{ .r = 255, .g = 255, .b = 255, .a = 56 },
-    };
-}
-
-/// Paint the shadow and the border of rectangle `c` in `r_in` (outside `c`: the
-/// caller has painted the background there).
-fn paintBackdrop(cv: *Canvas, r_in: Rect, c: Rect, bd: Backdrop) void {
-    const r = r_in.intersect(c.expand(bd.reach())).intersect(cv.bounds());
-    if (r.isEmpty() or c.isEmpty()) return;
-    const blur: f32 = @floatFromInt(bd.blur);
-    var y = r.y0;
-    while (y < r.y1) : (y += 1) {
-        var x = r.x0;
-        while (x < r.x1) : (x += 1) {
-            const dx = @max(c.x0 - x, 0, x - (c.x1 - 1));
-            const dy = @max(c.y0 - y, 0, y - (c.y1 - 1));
-            if (dx == 0 and dy == 0) continue;
-            const px: Rect = .{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 };
-            const sdx: f32 = @floatFromInt(@max(c.x0 - x, 0, x - (c.x1 - 1)));
-            const sdy: f32 = @floatFromInt(@max(c.y0 + bd.dy - y, 0, y - (c.y1 - 1 + bd.dy)));
-            const t = 1 - @sqrt(sdx * sdx + sdy * sdy) / blur;
-            if (t > 0) cv.blendRect(px, .{ .r = 0, .g = 0, .b = 0, .a = @intFromFloat(bd.shadow_alpha * t * t) });
-            if (@max(dx, dy) == 1) cv.blendRect(px, bd.border);
-        }
-    }
-}
+/// How far from the canvas its shadow reaches at most (px): damage grows by this.
+const shadow_reach: i32 = shadow.max_reach;
 
 /// Fill `r` with the screen background and its grid. The lines hang on the
 /// image origin of the view, so a pan (an integer scroll of the scene) keeps
@@ -253,6 +204,8 @@ pub const Compositor = struct {
     prev_crop: ?Rect = null,
     /// Move tool outline last drawn, and its screen rectangle.
     prev_outline: ?Outline = null,
+    /// Selection frame of an image last drawn (imgsel.zig), screen rectangle.
+    prev_imgsel: ?Rect = null,
     /// Drop-slot overlay last drawn (dropzone.zig).
     prev_drop: ?dropzone.Overlay = null,
     /// Chrome panels last drawn: kind, rect and what they showed.
@@ -307,17 +260,17 @@ pub const Compositor = struct {
         const oy: i32 = @intFromFloat(@round(s.xf.offset.y));
         for (r.minus(s.canvas_dst)) |b| {
             fillBackground(cv, b, ox, oy);
-            paintBackdrop(cv, b, s.canvas_dst, canvas_backdrop);
+            shadow.paint(cv, b, s.canvas_dst, .dark, shadow.canvas_unit, .{ ox, oy }); // on the dark screen background
         }
         if (s.doc.scene.count() > 1) {
             // Gaps between the images show the canvas background.
             const q = r.intersect(s.canvas_dst);
             if (!q.isEmpty()) cv.fillRect(q, s.bg);
             // Shadows first: an image never gets another one's shadow on it.
-            const bd = imageBackdrop(s.xf.scale);
+            const theme: shadow.Theme = if (s.bg.luminance() > 0.5) .light else .dark;
             for (s.doc.scene.images.items) |p| {
                 const pd = s.view.rect(s.doc.kept().intersect(p.rect()));
-                paintBackdrop(cv, q, pd, bd);
+                shadow.paint(cv, q, pd, theme, shadow.unitFor(pd), .{ ox, oy });
             }
             for (s.doc.scene.images.items) |p| try self.paintPlaced(cv, s, r, p);
         } else {
@@ -573,6 +526,15 @@ pub const Compositor = struct {
             self.prev_outline = outline;
         }
 
+        // Montage: the selection frame of an image.
+        const imgsel_frame = ed.imageFrame();
+        if (!std.meta.eql(imgsel_frame, self.prev_imgsel)) {
+            const bw = imgsel.width(h);
+            if (self.prev_imgsel) |o| for (o.minus(o.expand(-bw))) |b| dmg.add(b.intersect(full_rect));
+            if (imgsel_frame) |o| for (o.minus(o.expand(-bw))) |b| dmg.add(b.intersect(full_rect));
+            self.prev_imgsel = imgsel_frame;
+        }
+
         // Montage drop slots: damage the old and the new slots when they change.
         var drop: ?dropzone.Overlay = null;
         defer if (drop) |*o| o.deinit(self.gpa);
@@ -626,6 +588,7 @@ pub const Compositor = struct {
             for (extra) |b| frame.fillRect(b.intersect(r), s.bg);
             if (crop) |c| drawCropOverlay(frame, r, c);
             if (outline) |o| o.paint(ctx, frame, r, v.xf);
+            if (imgsel_frame) |o| imgsel.paint(frame, r, o, h);
             if (drop) |o| o.paint(frame, r);
             var chrome_clock = Clock.start();
             try chrome.draw(ctx, frame, r, &lay);

@@ -1,0 +1,5 @@
+# Two images on the dark canvas: the shadow is stronger, the border a faint light line.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+ui canvas-bg dark
