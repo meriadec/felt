@@ -26,10 +26,11 @@ DISPLAY=:0 zig build smoke-x11        # real window, driven by xdotool
   the binary is stale.
 - Self-improvement: every hiccup (confusing error, slow or missing command,
   repeated manual step, missing doc) is a harness bug. Fix it in the repo
-  (tool, flag, build step, script, doc) in its own small commit, and add one
-  line to docs/friction.md.
+  (tool, flag, build step, script, doc) in its own small commit. If you
+  cannot fix it now, add one line to docs/friction.md (open items only; the
+  fix commit deletes the line).
 - Commits: conventional (`feat:`, `fix:`, `perf:`, `refactor:`, `test:`,
-  `docs:`, `build:`, `chore:`), one concern each, green (`zig build check`).
+  `docs:`, `build:`, `chore:`), one concern each, green (`zig build check`). Chain `check && git commit`: never commit on a red check.
 - One concept per file, with a `//!` doc comment that states its role.
 - Do not edit docs/keymap.md: `zig build docs` writes it from src/core/keymap.zig.
 
@@ -38,4 +39,4 @@ DISPLAY=:0 zig build smoke-x11        # real window, driven by xdotool
 - docs/architecture.md: before you change src/core or a backend, or add a tool.
 - docs/testing.md: before you add or change a script, a golden or a test.
 - docs/perf.md: before you change the renderer, the compositor, image IO or the X11 loop.
-- docs/friction.md: when you hit a hiccup, and before you finish a task.
+- docs/friction.md: open hiccups; read it before you finish a task.

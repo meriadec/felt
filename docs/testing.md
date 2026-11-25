@@ -101,6 +101,15 @@ layout change never turns a drawing press into a button click. A script that end
 3. `zig build test -Dupdate-goldens=true`, then `zig build check`.
 4. Commit the script and both goldens together.
 
+## Habits
+
+- Probe frame pixels at the left or right edge: the dock and the top bar sit
+  at the bottom and top center and cover small screens.
+- After any chrome change, run `zig build shot` and read the PNG: no test
+  catches a wrong glyph.
+- Write zoom crops under `test-out/` with a new name and `+repage`: an image
+  reader caches a reused path.
+
 ## X11
 
 `DISPLAY=:0 zig build smoke-x11` opens the real window, draws with xdotool,
