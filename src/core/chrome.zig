@@ -207,7 +207,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
             const hb = b;
             l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
         }
-        l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) nord.n0 else nord.n4 } });
+        l.push(.{ .icon = .{ .tool = info.tool, .c = c, .size = 20 * s, .color = if (active) nord.n0 else nord.n4 } });
         // The hotkey: a faint letter in the corner, no badge.
         const kc = b.max.sub(.{ .x = 7 * s, .y = 7 * s });
         l.push(.{ .glyph = .{ .c = kc, .s = keymap.toolKey(info.tool), .px = px(10 * s), .color = (if (active) nord.n0 else nord.n4).withAlpha(if (active) 170 else 120) } });
