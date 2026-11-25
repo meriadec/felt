@@ -54,6 +54,10 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             if (d) |z| app.editor.setMontageDrop(z.w, z.h, z.pointer) else app.editor.clearMontageDrop();
             _ = try app.render();
         },
+        .browser => |b| {
+            if (try browserStep(app, b)) break;
+        },
+        .touch => |t| try touch(t.path, t.secs),
         .hover => |t| {
             const p = try uiPoint(app, t, .hover) orelse continue;
             if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
@@ -96,13 +100,86 @@ pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *con
             if (r.picker.finished()) break;
             if (r.picker.handle(ev).redraw) _ = try r.scene.render(ctx, &r.picker, frozen, &r.frame);
         },
-        .ui, .hover, .add_image, .dropzone => {
+        .ui, .hover, .add_image, .dropzone, .browser, .touch => {
             std.log.err("script: `ui`, `move ui`, `place`, `addimage` and `dropzone` need the editor, not the capture picker", .{});
             return error.BadScript;
         },
     };
     if (r.picker.result) |rect| r.crop = try core.picker.crop(gpa, frozen, rect);
     return r;
+}
+
+/// Set the modification time of `path` (repo-relative) to `secs`.
+fn touch(path: []const u8, secs: i64) !void {
+    var f = try std.fs.cwd().openFile(path, .{}); // a folder opens too
+    defer f.close();
+    const t = @as(i128, secs) * std.time.ns_per_s;
+    try f.updateTimes(t, t);
+}
+
+fn mid(b: core.geom.Bounds) core.geom.Vec2 {
+    return b.min.add(b.max).scale(0.5);
+}
+
+/// The browser row named `name` (`..` for the parent row), scrolled into view.
+fn rowNamed(app: *App, name: []const u8) !usize {
+    const b = &app.editor.browser;
+    var i: usize = 0;
+    while (i < b.rowCount()) : (i += 1) {
+        const hit = if (b.entryOf(i)) |e| std.mem.eql(u8, e.name, name) else std.mem.eql(u8, name, "..");
+        if (!hit) continue;
+        const g = b.geo();
+        const top = @as(f32, @floatFromInt(i)) * g.row_h;
+        if (top < b.scroll or top + g.row_h > b.scroll + g.listHeight()) _ = b.scrollBy(top - b.scroll);
+        return i;
+    }
+    std.log.err("script: browser: no row named {s} in {s}", .{ name, b.path });
+    return error.BrowserRowNotFound;
+}
+
+/// Run a `browser` command; true on quit.
+fn browserStep(app: *App, cmd: script_mod.BrowserCmd) !bool {
+    const b = &app.editor.browser;
+    switch (cmd) {
+        .home => |dir| {
+            const abs = try std.fs.cwd().realpathAlloc(app.gpa, dir);
+            defer app.gpa.free(abs);
+            try b.setHome(abs);
+        },
+        .up => {
+            const p = mid(b.geo().up);
+            if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) return true;
+            return feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } });
+        },
+        .cd => |name| {
+            const i = try rowNamed(app, name);
+            const p = mid(b.geo().row(i, b.scroll));
+            if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) return true;
+            if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) return true;
+            return feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } });
+        },
+        .scroll => |n| {
+            const p = mid(b.geo().list);
+            var k: u32 = 0;
+            while (k < @abs(n)) : (k += 1) {
+                if (try feed(app, .{ .wheel = .{ .delta = if (n > 0) -1 else 1, .x = p.x, .y = p.y } })) return true;
+            }
+        },
+        .drag => |d| {
+            const i = try rowNamed(app, d.name);
+            const p0 = mid(b.geo().row(i, b.scroll));
+            if (try feed(app, .{ .mouse_move = .{ .x = p0.x, .y = p0.y } })) return true;
+            if (try feed(app, .{ .mouse_down = .{ .x = p0.x, .y = p0.y } })) return true;
+            const steps = 8;
+            var k: u32 = 1;
+            while (k <= steps) : (k += 1) {
+                const t = @as(f32, @floatFromInt(k)) / steps;
+                if (try feed(app, .{ .mouse_move = .{ .x = p0.x + (d.x - p0.x) * t, .y = p0.y + (d.y - p0.y) * t } })) return true;
+            }
+            if (!d.hold) return feed(app, .{ .mouse_up = .{ .x = d.x, .y = d.y } });
+        },
+    }
+    return false;
 }
 
 /// A raw left press of a script that would land on the dock, its style
@@ -122,6 +199,7 @@ fn checkOffChrome(app: *App, ev: core.input.Event) !void {
 /// Handle one event, render if asked; true on quit.
 fn feed(app: *App, ev: core.input.Event) !bool {
     var r = try app.handle(ev);
+    if (app.pump()) r.redraw = true; // headless: results are there already
     // No clock in a replay: an animation ends at once, so frames are deterministic.
     if (app.editor.finishAnimation()) r.redraw = true;
     if (r.redraw) _ = try app.render();
@@ -137,11 +215,6 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
     const d = core.dock.Dock.of(w, h, app.editor.tool);
     const bar = core.topbar.TopBar.of(w, h);
     const pbar = core.padbar.PadBar.of(w, h);
-    const mid = struct {
-        fn f(b: core.geom.Bounds) core.geom.Vec2 {
-            return b.min.add(b.max).scale(0.5);
-        }
-    }.f;
     return switch (t) {
         .tool => |tool| for (core.keymap.tools, 0..) |info, i| {
             if (info.tool == tool) break mid(d.tools[i]);
@@ -151,6 +224,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
         .help => mid(d.help),
         .undo => mid(bar.slots[0]),
         .redo => mid(bar.slots[1]),
+        .browser => mid(core.browsergeo.Geo.of(w, h).folder),
         .canvas_bg => |want| if (why == .click and want != null and want.? == app.editor.settings.canvas_bg) null else mid(bar.slots[2]),
         .padding => |px| {
             const step = core.settings.paddingIndex(px);

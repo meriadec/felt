@@ -23,6 +23,9 @@ const Dock = dock.Dock;
 const TopBar = @import("topbar.zig").TopBar;
 const PadBar = @import("padbar.zig").PadBar;
 const Hover = @import("chrome.zig").Hover;
+const Ghost = @import("chrome.zig").Ghost;
+const Browser = @import("browser.zig").Browser;
+const browsergeo = @import("browsergeo.zig");
 const settings = @import("settings.zig");
 const Settings = settings.Settings;
 
@@ -42,6 +45,9 @@ pub const Command = enum {
     quit,
     /// The settings changed: the app may persist them (the editor does no IO).
     save_settings,
+    /// An image was dropped from the file browser: the app loads it
+    /// (`Editor.takeAdd` has the path and the place), adds it and calls `imageAdded`.
+    add_image,
 };
 
 pub const Effect = struct {
@@ -102,6 +108,22 @@ const ImageDrag = struct {
     orig_pos: Vec2 = undefined,
 };
 
+/// An image dragged out of the browser list. It starts once the pointer
+/// leaves `click_slop`; before that a release is a plain click (nothing).
+const BrowserDrag = struct {
+    /// The browser row.
+    row: usize,
+    start: Vec2,
+    pointer: Vec2,
+    active: bool = false,
+    /// Size of the image file (px), read when the drag becomes active.
+    w: i32 = 0,
+    h: i32 = 0,
+    /// The view when the drag became active: where a cancel goes back to.
+    orig_xf: geom.Xform = undefined,
+    orig_fitted: bool = true,
+};
+
 pub const Mode = union(enum) {
     idle,
     drag: Drag,
@@ -159,6 +181,18 @@ pub const Editor = struct {
     /// While set, the compositor shows the free magnet slots and the nearest
     /// one (dropzone.zig). Set by the drag UI (or the `dropzone` script command).
     montage_drop: ?dropzone.Drop = null,
+    /// The file browser (folder button, panel, thumbnails): an overlay on the left.
+    browser: Browser,
+    /// An image dragged out of the browser list, if any.
+    bdrag: ?BrowserDrag = null,
+    /// A drop waits for the app (`Command.add_image`): the file and the
+    /// scene position of the new image.
+    add_path: std.ArrayList(u8) = .empty,
+    add_pos: [2]i32 = .{ 0, 0 },
+    add_pending: bool = false,
+    /// The view before the drag of the pending drop (back to it if the file fails).
+    add_orig_xf: geom.Xform = .{},
+    add_orig_fitted: bool = true,
     /// Last pointer position on screen (hover), null before the first move.
     pointer: ?Vec2 = null,
     /// Move tool: the annotation part under the pointer.
@@ -190,10 +224,13 @@ pub const Editor = struct {
     pub fn init(gpa: std.mem.Allocator, font: *Font, doc: *Document, screen_w: u32, screen_h: u32) Editor {
         const dctx = draw.Ctx{ .gpa = gpa, .font = font };
         const canvas = extent.canvas(dctx, doc);
+        var br = Browser.init(gpa);
+        br.screen = .{ screen_w, screen_h };
         return .{
             .gpa = gpa,
             .font = font,
             .doc = doc,
+            .browser = br,
             .view = View.fit(canvas, screen_w, screen_h),
             .canvas = canvas,
             .canvas_rev = doc.revision,
@@ -209,6 +246,8 @@ pub const Editor = struct {
     pub fn deinit(self: *Editor) void {
         self.cancel(); // an edit in progress puts its annotation back
         self.draft.deinit(self.gpa);
+        self.add_path.deinit(self.gpa);
+        self.browser.deinit();
     }
 
     pub fn currentColor(self: *const Editor) color.Color {
@@ -256,7 +295,74 @@ pub const Editor = struct {
         if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.mode == .image_drag or self.panning != null) return .{};
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p) };
+        const g = browsergeo.Geo.of(w, h);
+        const folder = browsergeo.inside(g.folder, p);
+        if (self.browser.open and browsergeo.inside(g.panel, p)) return .{}; // the panel is on top
+        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p), .folder = folder };
+    }
+
+    /// The browser panel shows (open, panels not hidden).
+    pub fn browserVisible(self: *const Editor) bool {
+        return self.dock_visible and self.browser.open;
+    }
+
+    /// The ghost thumbnail of an image dragged out of the browser.
+    pub fn browserGhost(self: *const Editor) ?Ghost {
+        const d = self.bdrag orelse return null;
+        if (!d.active) return null;
+        return .{ .row = d.row, .at = d.pointer };
+    }
+
+    /// The pointer is on the browser panel.
+    fn onBrowserPanel(self: *const Editor, p: Vec2) bool {
+        return self.browserVisible() and browsergeo.inside(self.browser.geo().panel, p);
+    }
+
+    /// The app finished the drop (`Command.add_image`): ease the view from
+    /// the zoomed-out drag view to the fit of the whole new scene (in the room
+    /// right of the browser panel when it shows).
+    pub fn imageAdded(self: *Editor) void {
+        const zoomed = self.view;
+        _ = self.syncView();
+        self.fit();
+        var to = self.view.xf;
+        var fitted = true;
+        if (self.browserVisible()) { // fit in the room right of the panel
+            const g = self.browser.geo();
+            const left: f32 = @ceil(g.panel.max.x + 8 * g.s);
+            const room: u32 = @intFromFloat(@max(1, @as(f32, @floatFromInt(self.view.screen_w)) - left - 14 * g.s));
+            to = View.fit(self.canvas, room, self.view.screen_h).xf;
+            to.offset.x += left;
+            fitted = false;
+        }
+        self.view = zoomed;
+        self.fitted = false;
+        self.anim = if (std.meta.eql(to, zoomed.xf)) null else .{ .from = zoomed.xf, .to = to, .fitted_after = fitted };
+        if (self.anim == null) self.fitted = fitted;
+    }
+
+    /// The drop failed (the file did not load): the view goes back.
+    pub fn imageAddFailed(self: *Editor) void {
+        self.animateTo(self.add_orig_xf, self.add_orig_fitted);
+        self.setToast("Cannot open this image.", .{});
+    }
+
+    /// Ease the view to `xf` (no animation if it is there).
+    fn animateTo(self: *Editor, xf: geom.Xform, fitted: bool) void {
+        if (std.meta.eql(xf, self.view.xf)) {
+            self.fitted = fitted;
+            return;
+        }
+        self.fitted = false;
+        self.anim = .{ .from = self.view.xf, .to = xf, .fitted_after = fitted };
+    }
+
+    /// The path and place of the pending drop (see `Command.add_image`); valid
+    /// until the next drop. Null if none.
+    pub fn takeAdd(self: *Editor) ?struct { path: []const u8, x: i32, y: i32 } {
+        if (!self.add_pending) return null;
+        self.add_pending = false;
+        return .{ .path = self.add_path.items, .x = self.add_pos[0], .y = self.add_pos[1] };
     }
 
     /// The annotation part a press at screen point `p` would move: the
@@ -314,7 +420,7 @@ pub const Editor = struct {
 
     pub fn cursor(self: *const Editor) Cursor {
         if (self.hand) return if (self.panning != null) .grabbing else .grab;
-        if (self.panning != null or (self.mode == .image_drag and self.mode.image_drag.active)) return .grabbing; // a middle drag, an image drag
+        if (self.panning != null or (self.mode == .image_drag and self.mode.image_drag.active) or self.browserGhost() != null) return .grabbing; // a middle drag, an image drag
         return if (self.tool == .move) .move else .crosshair;
     }
 
@@ -430,7 +536,7 @@ pub const Editor = struct {
         if (!self.dock_visible) return false;
         const w = self.view.screen_w;
         const h = self.view.screen_h;
-        return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p) or PadBar.of(w, h).contains(p);
+        return Dock.of(w, h, self.tool).contains(p) or TopBar.of(w, h).contains(p) or PadBar.of(w, h).contains(p) or browsergeo.inside(browsergeo.Geo.of(w, h).folder, p);
     }
 
     /// Unsaved changes: the document changed, the padding changed, or the
@@ -476,6 +582,7 @@ pub const Editor = struct {
 
     /// A fitted view refits; a zoomed or panned one keeps its transform.
     pub fn resize(self: *Editor, w: u32, h: u32) void {
+        self.browser.resize(w, h);
         if (self.fitted) {
             self.view = View.fit(self.canvas, w, h);
         } else {
@@ -716,6 +823,10 @@ pub const Editor = struct {
                     self.sliderTo(m.x);
                     return .{ .redraw = true };
                 }
+                if (self.bdrag != null) {
+                    try self.browserDragTo(Vec2.init(m.x, m.y));
+                    return .{ .redraw = true };
+                }
                 if (self.mode == .drag) {
                     const p = Vec2.init(m.x, m.y);
                     self.mode.drag.cur_screen = p;
@@ -730,9 +841,16 @@ pub const Editor = struct {
                     try self.dragImageTo(Vec2.init(m.x, m.y));
                     return .{ .redraw = true };
                 }
-                return .{ .redraw = self.chromeHover().key() != hover_before };
+                var redraw = self.chromeHover().key() != hover_before;
+                if (self.browserVisible()) redraw = self.hoverBrowser(Vec2.init(m.x, m.y)) or redraw;
+                return .{ .redraw = redraw };
             },
             .wheel => |wh| {
+                if (self.onBrowserPanel(.{ .x = wh.x, .y = wh.y }) and !wh.mods.ctrl) {
+                    // The list scrolls (wheel up: delta > 0: toward the first row).
+                    const step = self.browser.geo().row_h * 1.5;
+                    return .{ .redraw = self.browser.scrollBy(-@as(f32, @floatFromInt(wh.delta)) * step) };
+                }
                 if (self.pointerOnSlider(wh.x, wh.y)) {
                     const changed = self.setPadding(settings.stepPadding(self.settings.padding, wh.delta));
                     return .{ .redraw = true, .command = if (changed) .save_settings else null };
@@ -770,6 +888,10 @@ pub const Editor = struct {
         }
         const p = Vec2.init(x, y);
         self.pointer = p;
+        if (self.bdrag != null) self.cancelBrowserDrag(); // lost release: start over
+        if (self.dock_visible and self.mode != .drag and self.mode != .moving and self.mode != .image_drag) {
+            if (self.browser.hitAt(p)) |hit| return self.onBrowserDown(hit, p, button);
+        }
         if (self.mode != .drag and self.mode != .moving and self.mode != .image_drag and self.onChrome(p)) {
             if (builtin.is_test and !self.chrome_press_ok) std.debug.panic("a test pressed at {d} {d} on the chrome (dock, top bar or padding widget): hide it (dock_visible = false), press elsewhere, or T.showChrome()", .{ x, y });
             if (button == .left) {
@@ -842,6 +964,7 @@ pub const Editor = struct {
     }
 
     fn onUp(self: *Editor, x: f32, y: f32, button: input.Button) !Effect {
+        if (button == .left and self.bdrag != null) return self.finishBrowserDrag(Vec2.init(x, y));
         if (button == .left and self.slider_drag) {
             self.slider_drag = false;
             self.sliderTo(x);
@@ -900,7 +1023,7 @@ pub const Editor = struct {
             d.orig_fitted = self.fitted;
             const o = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
             d.orig_pos = Vec2.init(@floatFromInt(o.x), @floatFromInt(o.y));
-            try self.makeRoomForSlots(d.id);
+            try self.makeRoomForSlots(d.id, o.w, o.h);
         }
         const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
         self.montage_drop = .{ .w = im.w, .h = im.h, .pointer = p, .exclude = d.id, .grab = d.grab };
@@ -909,9 +1032,8 @@ pub const Editor = struct {
     /// Zoom out (one step, to the fit of the scene and all slots plus a
     /// margin) when a slot would fall outside the screen; else do nothing.
     /// The drop or the cancel brings the view back (`backToView`).
-    fn makeRoomForSlots(self: *Editor, id: u32) !void {
-        const im = self.doc.scene.images.items[self.doc.scene.indexOf(id).?];
-        const list = try dropzone.slotList(self.gpa, self.doc, id, im.w, im.h);
+    fn makeRoomForSlots(self: *Editor, id: ?u32, w: i32, h: i32) !void {
+        const list = try dropzone.slotList(self.gpa, self.doc, id, w, h);
         defer self.gpa.free(list);
         var all = self.doc.scene.bounds();
         var inside = true;
@@ -964,6 +1086,103 @@ pub const Editor = struct {
         }
         self.fitted = false;
         self.anim = .{ .from = self.view.xf, .to = to, .fitted_after = fitted };
+    }
+
+    // ---- file browser input ------------------------------------------------
+
+    /// Set the hover of the panel rows from the pointer. True if it changed.
+    fn hoverBrowser(self: *Editor, p: Vec2) bool {
+        const h: ?browsergeo.Hit = if (self.browser.hitAt(p)) |x| switch (x) {
+            .up, .row => x,
+            else => null,
+        } else null;
+        return self.browser.setHover(h);
+    }
+
+    /// A left press on the folder button or the panel (anything else is eaten).
+    fn onBrowserDown(self: *Editor, hit: browsergeo.Hit, p: Vec2, button: input.Button) !Effect {
+        if (button == .right) {
+            self.cancel();
+            return .{ .redraw = true };
+        }
+        if (button != .left) return .{ .redraw = true };
+        switch (hit) {
+            .folder => try self.browser.toggle(),
+            .up => try self.browser.goUp(),
+            .panel => {},
+            .row => |i| {
+                const is_image = if (self.browser.entryOf(i)) |e| !e.is_dir else false;
+                if (is_image) {
+                    self.bdrag = .{ .row = i, .start = p, .pointer = p };
+                } else _ = try self.browser.activate(i); // a folder or `..`
+            },
+        }
+        _ = self.browser.setHover(null);
+        _ = self.hoverBrowser(p);
+        return .{ .redraw = true };
+    }
+
+    /// The pointer moved with a row grabbed. Past the click slop the drag
+    /// becomes active: the file header gives the size, the view makes room
+    /// for the slots. Over the canvas the slots show, over the panel not.
+    fn browserDragTo(self: *Editor, p: Vec2) !void {
+        const d = &self.bdrag.?;
+        d.pointer = p;
+        if (!d.active) {
+            if (p.dist(d.start) < click_slop) return;
+            const size = self.browser.imageSize(d.row) orelse {
+                self.bdrag = null;
+                self.setToast("Cannot read this image.", .{});
+                return;
+            };
+            d.active = true;
+            d.w = @intCast(size[0]);
+            d.h = @intCast(size[1]);
+            self.anim = null;
+            d.orig_xf = self.view.xf;
+            d.orig_fitted = self.fitted;
+            _ = self.browser.setHover(null);
+            try self.makeRoomForSlots(null, d.w, d.h);
+        }
+        self.montage_drop = if (self.onBrowserPanel(p)) null else .{ .w = d.w, .h = d.h, .pointer = p };
+    }
+
+    /// Release: over the canvas the image goes to the nearest free slot (the
+    /// app adds it: `Command.add_image`); over the panel it is cancelled.
+    fn finishBrowserDrag(self: *Editor, p: Vec2) !Effect {
+        const d = self.bdrag.?;
+        self.bdrag = null;
+        self.montage_drop = null;
+        if (!d.active) return .{ .redraw = true };
+        if (self.onBrowserPanel(p)) {
+            self.animateTo(d.orig_xf, d.orig_fitted);
+            return .{ .redraw = true };
+        }
+        const list = try dropzone.slotList(self.gpa, self.doc, null, d.w, d.h);
+        defer self.gpa.free(list);
+        const best = magnet.nearest(list, self.view.toImage(p)) orelse {
+            self.animateTo(d.orig_xf, d.orig_fitted);
+            return .{ .redraw = true };
+        };
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const e = self.browser.entryOf(d.row) orelse return .{ .redraw = true };
+        const path = self.browser.pathOf(&buf, e.name) orelse return .{ .redraw = true };
+        self.add_path.clearRetainingCapacity();
+        try self.add_path.appendSlice(self.gpa, path);
+        self.add_pos = .{ best.rect.x0, best.rect.y0 };
+        self.add_pending = true;
+        self.add_orig_xf = d.orig_xf;
+        self.add_orig_fitted = d.orig_fitted;
+        return .{ .redraw = true, .command = .add_image };
+    }
+
+    /// Drop the browser drag (Esc, right click, a lost release): the slots
+    /// go and the view eases back to the one before.
+    fn cancelBrowserDrag(self: *Editor) void {
+        const d = self.bdrag orelse return;
+        self.bdrag = null;
+        self.montage_drop = null;
+        if (d.active) self.animateTo(d.orig_xf, d.orig_fitted);
     }
 
     fn tooFar(self: *Editor) void {
@@ -1044,6 +1263,7 @@ pub const Editor = struct {
 
     /// Drop any shape or text in progress; put a moving annotation back.
     pub fn cancel(self: *Editor) void {
+        if (self.bdrag != null) self.cancelBrowserDrag();
         if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
         if (self.mode == .image_drag) {
             self.montage_drop = null;
@@ -1244,10 +1464,12 @@ pub const Editor = struct {
             // Esc and q: cancel the shape in progress, else close the help,
             // else quit (a second press when there are unsaved changes).
             .quit => {
-                if (self.mode == .drag or self.mode == .moving or self.mode == .image_drag) {
+                if (self.mode == .drag or self.mode == .moving or self.mode == .image_drag or self.bdrag != null) {
                     self.cancel();
                 } else if (self.help_visible) {
                     self.help_visible = false;
+                } else if (self.browser.open) {
+                    self.browser.close();
                 } else if (self.hand) {
                     self.hand = false;
                 } else if (self.selected != null) {
@@ -1259,6 +1481,7 @@ pub const Editor = struct {
                 }
             },
             .toggle_help => self.help_visible = !self.help_visible,
+            .toggle_browser => try self.browser.toggle(),
             .toggle_dock => self.dock_visible = !self.dock_visible,
             .toggle_hand => if (!self.hand) { // held: a repeat changes nothing
                 self.cancel();
@@ -2350,5 +2573,164 @@ test "image drag: a mouse move does not end the animation" {
     try mouse(&t, press.x - 40, press.y + 20, .move);
     _ = try t.key("esc");
     try mouse(&t, 50, 50, .move);
+    try std.testing.expect(t.ed.animating());
+}
+
+// ---- file browser tests ---------------------------------------------------
+
+/// A folder with `n` small PNGs (mtimes 1000, 1100, ...): newest is the last.
+fn browserFixture(tmp: *std.testing.TmpDir, n: usize) ![]u8 {
+    const Canvas = @import("canvas.zig").Canvas;
+    const image_io = @import("image_io.zig");
+    const gpa = std.testing.allocator;
+    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    errdefer gpa.free(dir);
+    var cv = try Canvas.init(gpa, 60, 40);
+    defer cv.deinit(gpa);
+    @memset(cv.pixels, 0xff224466);
+    for (0..n) |i| {
+        var nb: [16]u8 = undefined;
+        const name = try std.fmt.bufPrint(&nb, "img{d:0>2}.png", .{i});
+        const p = try std.fs.path.join(gpa, &.{ dir, name });
+        defer gpa.free(p);
+        try image_io.savePng(gpa, &cv, p);
+        var f = try tmp.dir.openFile(name, .{ .mode = .read_write });
+        defer f.close();
+        const t: i128 = (1000 + @as(i128, @intCast(i)) * 100) * std.time.ns_per_s;
+        try f.updateTimes(t, t);
+    }
+    return dir;
+}
+
+fn centerOf(b: geom.Bounds) Vec2 {
+    return b.min.add(b.max).scale(0.5);
+}
+
+fn browserMouse(t: *T, kind: enum { down, move, up }, p: Vec2) !Effect {
+    return switch (kind) {
+        .down => t.ed.handle(.{ .mouse_down = .{ .x = p.x, .y = p.y } }),
+        .move => t.ed.handle(.{ .mouse_move = .{ .x = p.x, .y = p.y } }),
+        .up => t.ed.handle(.{ .mouse_up = .{ .x = p.x, .y = p.y } }),
+    };
+}
+
+test "browser: o opens it, Esc closes it before anything else, then quits" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try browserFixture(&tmp, 2);
+    defer std.testing.allocator.free(dir);
+    var t = T{};
+    t.initSize(800, 600);
+    defer t.deinit();
+    t.ed.dock_visible = true;
+    try t.ed.browser.setHome(dir);
+    _ = try t.key("o");
+    try std.testing.expect(t.ed.browserVisible());
+    try std.testing.expectEqual(@as(?Command, null), (try t.key("esc")).command);
+    try std.testing.expect(!t.ed.browser.open);
+    try std.testing.expectEqual(Command.quit, (try t.key("esc")).command.?);
+    // The folder button toggles it too; `h` hides the panel with the others.
+    t.ed.chrome_press_ok = true;
+    const btn = centerOf(browsergeo.Geo.of(800, 600).folder);
+    _ = try browserMouse(&t, .down, btn);
+    try std.testing.expect(t.ed.browserVisible());
+    _ = try t.key("h");
+    try std.testing.expect(!t.ed.browserVisible());
+}
+
+test "browser: the wheel over the panel scrolls the list, not the size" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try browserFixture(&tmp, 12);
+    defer std.testing.allocator.free(dir);
+    var t = T{};
+    t.initSize(800, 400);
+    defer t.deinit();
+    t.ed.dock_visible = true;
+    try t.ed.browser.setHome(dir);
+    _ = try t.key("o");
+    const g = t.ed.browser.geo();
+    const p = centerOf(g.list);
+    const size0 = t.ed.size_idx;
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = -1, .x = p.x, .y = p.y } });
+    try std.testing.expect(t.ed.browser.scroll > 0);
+    try std.testing.expectEqual(size0, t.ed.size_idx);
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = 1000, .x = p.x, .y = p.y } });
+    try std.testing.expectEqual(@as(f32, 0), t.ed.browser.scroll);
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = -1000, .x = p.x, .y = p.y } });
+    try std.testing.expectEqual(g.maxScroll(t.ed.browser.rowCount()), t.ed.browser.scroll);
+    // Off the panel the wheel still changes the size.
+    _ = try t.ed.handle(.{ .wheel = .{ .delta = 1, .x = 700, .y = 200 } });
+    try std.testing.expect(t.ed.size_idx != size0);
+}
+
+test "browser drag: slop, slots over the canvas, cancel, drop over the panel, drop" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try browserFixture(&tmp, 3);
+    defer std.testing.allocator.free(dir);
+    var t = T{};
+    t.initSize(800, 600);
+    defer t.deinit();
+    t.ed.dock_visible = true;
+    try t.ed.browser.setHome(dir);
+    _ = try t.key("o");
+    const g = t.ed.browser.geo();
+    const row = g.row(1, 0); // `..` is row 0; the newest image, img02, row 1
+    try std.testing.expectEqualStrings("img02.png", t.ed.browser.entryOf(1).?.name);
+    const p0 = centerOf(row);
+    const view0 = t.ed.view;
+
+    // Under the slop: a click on an image does nothing.
+    _ = try browserMouse(&t, .down, p0);
+    try std.testing.expect(t.ed.bdrag != null);
+    _ = try browserMouse(&t, .move, p0.add(.{ .x = 2, .y = 0 }));
+    try std.testing.expect(t.ed.browserGhost() == null);
+    const up = try browserMouse(&t, .up, p0.add(.{ .x = 2, .y = 0 }));
+    try std.testing.expectEqual(@as(?Command, null), up.command);
+    try std.testing.expect(t.ed.bdrag == null);
+
+    // Past the slop: active, a ghost; over the canvas the slots show, over the panel not.
+    _ = try browserMouse(&t, .down, p0);
+    _ = try browserMouse(&t, .move, .{ .x = 600, .y = 300 });
+    try std.testing.expect(t.ed.browserGhost() != null);
+    try std.testing.expectEqual(@as(i32, 60), t.ed.montage_drop.?.w);
+    try std.testing.expectEqual(@as(i32, 40), t.ed.montage_drop.?.h);
+    try std.testing.expect(t.ed.montage_drop.?.exclude == null);
+    _ = try browserMouse(&t, .move, p0.add(.{ .x = 10, .y = 10 }));
+    try std.testing.expect(t.ed.montage_drop == null);
+    try std.testing.expect(t.ed.browserGhost() != null);
+
+    // Esc cancels: nothing pending, no history, the view goes back.
+    _ = try t.key("esc");
+    try std.testing.expect(t.ed.bdrag == null and t.ed.montage_drop == null);
+    _ = t.ed.finishAnimation();
+    try std.testing.expectEqual(view0.xf, t.ed.view.xf);
+    try std.testing.expect(t.ed.browser.open); // Esc cancelled the drag only
+    try std.testing.expectEqual(@as(usize, 0), t.doc.history.items.len);
+
+    // Released over the panel: cancelled too.
+    _ = try browserMouse(&t, .down, p0);
+    _ = try browserMouse(&t, .move, .{ .x = 600, .y = 300 });
+    const over = try browserMouse(&t, .up, p0.add(.{ .x = 10, .y = 10 }));
+    try std.testing.expectEqual(@as(?Command, null), over.command);
+    try std.testing.expect(t.ed.takeAdd() == null);
+
+    // Right click cancels.
+    _ = try browserMouse(&t, .down, p0);
+    _ = try browserMouse(&t, .move, .{ .x = 600, .y = 300 });
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 600, .y = 300, .button = .right } });
+    try std.testing.expect(t.ed.bdrag == null);
+
+    // Released over the canvas: the app is asked to add the file at the nearest slot.
+    _ = try browserMouse(&t, .down, p0);
+    _ = try browserMouse(&t, .move, .{ .x = 700, .y = 300 });
+    const drop = try browserMouse(&t, .up, .{ .x = 700, .y = 300 });
+    try std.testing.expectEqual(Command.add_image, drop.command.?);
+    const add = t.ed.takeAdd().?;
+    try std.testing.expect(std.mem.endsWith(u8, add.path, "/img02.png"));
+    try std.testing.expectEqual(@as(i32, 800 + magnet.gap), add.x); // right of the 800 px wide image
+    try std.testing.expect(t.ed.takeAdd() == null);
+    t.ed.imageAdded();
     try std.testing.expect(t.ed.animating());
 }

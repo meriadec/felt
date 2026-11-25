@@ -20,6 +20,9 @@ const dock = @import("dock.zig");
 const topbar = @import("topbar.zig");
 const padbar = @import("padbar.zig");
 const settings = @import("settings.zig");
+const browser_mod = @import("browser.zig");
+const browser_draw = @import("browser_draw.zig");
+const browsergeo = @import("browsergeo.zig");
 const Dock = dock.Dock;
 const TopBar = topbar.TopBar;
 const PadBar = padbar.PadBar;
@@ -50,6 +53,10 @@ pub const State = struct {
     /// Canvas padding (image px), for the padding widget.
     padding: u16 = 0,
     hover: Hover = .{},
+    /// The file browser panel, when it shows (open and the panels not hidden).
+    browser: ?*const browser_mod.Browser = null,
+    /// The ghost of an image dragged out of the browser list.
+    ghost: ?Ghost = null,
 
     pub fn of(ed: *const Editor) State {
         return .{
@@ -65,6 +72,8 @@ pub const State = struct {
             .can_redo = ed.canRedo(),
             .padding = ed.settings.padding,
             .hover = ed.chromeHover(),
+            .browser = if (ed.dock_visible and ed.browser.open) &ed.browser else null,
+            .ghost = ed.browserGhost(),
         };
     }
 
@@ -91,6 +100,9 @@ pub const State = struct {
                 h.update(std.mem.asBytes(&s.padding));
                 h.update(&.{@intFromBool(s.hover.pad)});
             },
+            .folder_btn => h.update(&.{ @intFromBool(s.dock_visible), @intFromBool(s.browser != null), @intFromBool(s.hover.folder) }),
+            .browser => h.update(std.mem.asBytes(&@as(u64, if (s.browser) |b| b.sig() else 0))),
+            .ghost => if (s.ghost) |g| h.update(std.mem.asBytes(&g.row)),
             .help => {}, // a fixed text, laid out from the screen size (its rect)
             .toast => h.update(s.toast orelse ""),
         }
@@ -99,7 +111,10 @@ pub const State = struct {
 };
 
 /// The floating panels of the chrome, each damaged on its own.
-pub const Panel = enum { dock, style_switch, top_bar, pad_bar, help, toast };
+pub const Panel = enum { dock, style_switch, top_bar, pad_bar, folder_btn, browser, ghost, help, toast };
+
+/// An image dragged out of the browser list: its row and the pointer.
+pub const Ghost = struct { row: usize, at: Vec2 };
 
 /// The chrome item under the pointer.
 pub const Hover = struct {
@@ -107,10 +122,12 @@ pub const Hover = struct {
     bar: ?topbar.Button = null,
     /// The pointer is on the padding widget.
     pad: bool = false,
+    /// The pointer is on the folder button (top left).
+    folder: bool = false,
 
     /// A small value that changes when the hovered item changes.
     pub fn key(h: Hover) u32 {
-        return h.dockKey() | h.barKey() << 16 | @as(u32, @intFromBool(h.pad)) << 24;
+        return h.dockKey() | h.barKey() << 16 | @as(u32, @intFromBool(h.pad)) << 24 | @as(u32, @intFromBool(h.folder)) << 25;
     }
 
     fn dockKey(h: Hover) u32 {
@@ -149,12 +166,16 @@ const Op = union(enum) {
     text_style: struct { style: TextStyle, c: Vec2, size: f32, color: Color },
     undo: struct { redo: bool, c: Vec2, size: f32, color: Color },
     canvas_bg: struct { c: Vec2, size: f32, color: Color },
+    folder: struct { c: Vec2, size: f32, color: Color },
+    /// The browser panel contents (browser_draw.zig).
+    browser: *const browser_mod.Browser,
+    ghost: struct { b: *const browser_mod.Browser, g: Ghost },
 };
 
 const max_ops = 256;
 
-/// Dock, arrow style switch, top bar, help overlay, toast.
-pub const max_panels = 5;
+/// Dock, arrow style switch, top bar, padding widget, folder button, browser, ghost, help overlay, toast.
+pub const max_panels = 8;
 
 pub const Layout = struct {
     ops: [max_ops]Op = undefined,
@@ -168,6 +189,13 @@ pub const Layout = struct {
             l.ops[l.n] = op;
             l.n += 1;
         }
+    }
+
+    /// A damage region with no fill of its own (the ghost of a drag).
+    fn region(l: *Layout, kind: Panel, b: Bounds) void {
+        l.panels[l.n_panels] = b.toRect();
+        l.kinds[l.n_panels] = kind;
+        l.n_panels += 1;
     }
 
     /// A floating panel: flat nord1 fill and a 1 px nord2 border.
@@ -310,6 +338,30 @@ fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
         l.push(.{ .disc = .{ .c = .{ .x = b.notchX(k), .y = ty }, .r = 2.5 * s, .color = if (k < i) accent else nord.n3 } });
     }
     l.push(.{ .disc = .{ .c = .{ .x = kx, .y = ty }, .r = 6.5 * s, .color = if (hovered) nord.n6 else nord.n5 } });
+}
+
+// ---- file browser --------------------------------------------------------
+
+/// The folder button (top left, a small panel) and, when open, the browser
+/// panel with the ghost of a dragged image.
+fn layoutBrowser(l: *Layout, st: State, g: *const browsergeo.Geo) void {
+    const s = g.s;
+    l.panel(.folder_btn, g.folder, 4 * s);
+    const open = st.browser != null;
+    const r = Bounds{ .min = g.folder.min.add(.{ .x = 2 * s, .y = 2 * s }), .max = g.folder.max.sub(.{ .x = 2 * s, .y = 2 * s }) };
+    if (open) {
+        l.push(.{ .rrect = .{ .b = r, .radius = 3 * s, .color = accent } });
+    } else if (st.hover.folder) l.push(.{ .rrect = .{ .b = r, .radius = 3 * s, .color = hover_bg } });
+    const ink = if (open) nord.n0 else if (st.hover.folder) nord.n6 else nord.n4;
+    l.push(.{ .folder = .{ .c = center(r), .size = 22 * s, .color = ink } });
+    if (st.browser) |b| {
+        l.panel(.browser, g.panel, 4 * s);
+        l.push(.{ .browser = b });
+        if (st.ghost) |gh| {
+            l.region(.ghost, browser_draw.ghostRect(g.*, b, gh.row, gh.at).toBounds().expand(3));
+            l.push(.{ .ghost = .{ .b = b, .g = gh } });
+        }
+    }
 }
 
 // ---- help overlay ------------------------------------------------------
@@ -506,6 +558,7 @@ pub fn layout(ctx: Ctx, st: State, w: u32, h: u32) Layout {
         layoutDock(&l, st, &d);
         layoutTopBar(&l, st, &bar);
         layoutPadBar(&l, st, &PadBar.of(w, h));
+        layoutBrowser(&l, st, &browsergeo.Geo.of(w, h));
     }
     if (st.help_visible) layoutOverlay(ctx, &l, &d, w, h);
     const s = style.uiScale(h);
@@ -541,6 +594,9 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .text_style => |i| icons.drawTextStyle(cv, clip, i.style, i.c, i.size, i.color),
         .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
         .canvas_bg => |i| icons.drawCanvasBg(cv, clip, i.c, i.size, i.color),
+        .folder => |i| icons.drawFolder(cv, clip, i.c, i.size, i.color, false),
+        .browser => |b| try browser_draw.draw(ctx, cv, clip, b),
+        .ghost => |gh| browser_draw.drawGhost(cv, clip, gh.b, gh.g.row, gh.g.at),
         .text => |t| {
             var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, null);
             defer mask.deinit(ctx.gpa);

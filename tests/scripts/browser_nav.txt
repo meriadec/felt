@@ -1,0 +1,16 @@
+# Go into a folder (trips), up again, scroll the list.
+image tests/fixtures/tile_a.png
+size 900 500
+touch tests/fixtures/browser/sunset.png 1700000000
+touch tests/fixtures/browser/tall.png 1700200000
+touch tests/fixtures/browser/plain.jpg 1690000000
+touch tests/fixtures/browser/archive/old.png 1500000000
+touch tests/fixtures/browser/archive 1600000000
+touch tests/fixtures/browser/trips/map.png 1600000000
+touch tests/fixtures/browser/trips/beach.png 1600000000
+touch tests/fixtures/browser/trips 1700100000
+browser home tests/fixtures/browser
+ui browser
+browser cd trips
+browser up
+browser scroll 3

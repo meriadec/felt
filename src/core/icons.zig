@@ -156,6 +156,46 @@ pub fn drawCanvasBg(cv: *Canvas, clip: Rect, c: Vec2, size: f32, color: Color) v
     pen.fill(sdf.Subtract(sdf.Disc, sdf.RoundRect){ .a = .{ .c = c, .r = r }, .b = pen.box(0, -2, 2, 2, 0) }, 1);
 }
 
+/// A folder: a tab and a body, outlined (`filled`: solid, for the file list).
+pub fn drawFolder(cv: *Canvas, clip: Rect, c: Vec2, size: f32, color: Color, filled: bool) void {
+    const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.11) };
+    const body = pen.box(-0.8, -0.38, 0.8, 0.66, 0.14);
+    const tab = pen.box(-0.8, -0.68, -0.1, -0.2, 0.12);
+    const shape = sdf.unite(body, tab);
+    if (filled) pen.fill(shape, 1) else pen.fill(sdf.ring(shape, pen.w), 1);
+}
+
+/// The up button: an arrow that points up.
+pub fn drawUp(cv: *Canvas, clip: Rect, c: Vec2, size: f32, color: Color) void {
+    const pen = Pen{ .cv = cv, .clip = clip, .c = c, .k = size * 0.5, .color = color, .w = @max(1.5, size * 0.12) };
+    pen.line(0, 0.7, 0, -0.45);
+    pen.line(0, -0.7, -0.55, -0.12);
+    pen.line(0, -0.7, 0.55, -0.12);
+}
+
+test "folder and up icons draw inside their box" {
+    const gpa = std.testing.allocator;
+    var cv = try Canvas.init(gpa, 40, 40);
+    defer cv.deinit(gpa);
+    for ([_]u8{ 0, 1, 2 }) |kind| {
+        cv.fill(.{ .r = 0, .g = 0, .b = 0 });
+        const white = Color{ .r = 255, .g = 255, .b = 255 };
+        switch (kind) {
+            0 => drawFolder(&cv, cv.bounds(), .{ .x = 20, .y = 20 }, 24, white, false),
+            1 => drawFolder(&cv, cv.bounds(), .{ .x = 20, .y = 20 }, 24, white, true),
+            else => drawUp(&cv, cv.bounds(), .{ .x = 20, .y = 20 }, 24, white),
+        }
+        var ink: usize = 0;
+        for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
+            ink += 1;
+            const x = i % 40;
+            const y = i / 40;
+            try std.testing.expect(x >= 6 and x < 34 and y >= 6 and y < 34);
+        };
+        try std.testing.expect(ink > 20);
+    }
+}
+
 test "every icon draws inside its box" {
     const gpa = std.testing.allocator;
     var cv = try Canvas.init(gpa, 40, 40);

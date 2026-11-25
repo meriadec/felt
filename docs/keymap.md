@@ -45,6 +45,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `q` | quit |
 | `?` | help |
 | `F1` | help |
+| `o` | open / close the file browser |
 | `h` | hide / show the panels |
 | `Space` | hold: hand, drag the canvas with the left button |
 | `b` | canvas: light / dark grey |
@@ -70,6 +71,9 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | Right click | Cancel the shape or text in progress |
 | Click on the dock | Pick a tool or a color; the size slot steps the size, `?` opens this help. With the arrow or callout tool, the switch above the dock picks the arrow style (arrows and callout pointers); with the text tool, the text style (plain or boxed) |
 | Click on the top bar | Undo or redo (a dim button has nothing to do); the half-filled circle switches the canvas background (like `b`); the slider sets the canvas padding: empty margin of 0, 64, 96, 128 or 192 px in the canvas color, in the export too (click or drag to a notch, or wheel over it; like `,` `.`; kept for the next sessions) |
+| Folder button (top left) or `o` | Opens a file browser panel over the left of the canvas (it does not shrink the canvas): your home folder at first, then the last folder. It lists folders and images (PNG, JPEG, BMP) only, hidden names left out, newest first, folders and images mixed, with a thumbnail, the date and the image size. Click a folder or `..` (or the up arrow) to go in or up; the wheel scrolls |
+| Drag an image from the browser | Drag a row onto the canvas: the free magnet slots next to the placed images show dashed and the nearest one lights up; let go to place the image there (one undo step), Esc, right click or a release over the panel cancels. The view zooms out if a slot would be off screen, then eases to the fit of the scene. The panel stays open |
+| Esc with the browser open | Close the browser (before the other Esc actions, but after cancelling a drag and closing the help) |
 | Esc or q while drawing | Cancel the shape in progress |
 | Esc with a selection | Clear the selection |
 | Esc or q with unsaved changes | Shows a warning; a second Esc or q quits. Ctrl+C counts as saved: the clipboard keeps the image. |

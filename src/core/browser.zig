@@ -11,6 +11,7 @@ const thumbs = @import("thumbs.zig");
 const loader_mod = @import("loader.zig");
 const browsergeo = @import("browsergeo.zig");
 const geom = @import("geom.zig");
+const image_io = @import("image_io.zig");
 
 const Geo = browsergeo.Geo;
 const Hit = browsergeo.Hit;
@@ -297,6 +298,19 @@ pub const Browser = struct {
         return if (s.mtime == e.mtime) s else null;
     }
 
+    /// Width and height of the image of a row: from its thumbnail if it is
+    /// ready, else from the file header (a small read). Null if it is not
+    /// an image or does not read.
+    pub fn imageSize(self: *const Browser, row: usize) ?[2]u32 {
+        const e = self.entryOf(row) orelse return null;
+        if (e.is_dir) return null;
+        if (self.thumbOf(e)) |sl| if (sl.thumb) |t| return .{ t.w, t.h };
+        var buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path = self.pathOf(&buf, e.name) orelse return null;
+        const i = image_io.info(self.gpa, path) catch return null;
+        return .{ i.w, i.h };
+    }
+
     /// Signature of what the panel shows (with its place, for the compositor).
     pub fn sig(self: *const Browser) u64 {
         return @as(u64, self.rev) << 1 | @intFromBool(self.open);
@@ -308,7 +322,6 @@ const testing = std.testing;
 /// A folder with 3 PNGs, a subfolder and a text file, mtimes set.
 fn fixtureDir(tmp: *testing.TmpDir) ![]u8 {
     const Canvas = @import("canvas.zig").Canvas;
-    const image_io = @import("image_io.zig");
     const dir = try tmp.dir.realpathAlloc(testing.allocator, ".");
     errdefer testing.allocator.free(dir);
     var cv = try Canvas.init(testing.allocator, 30, 20);

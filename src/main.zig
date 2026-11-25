@@ -31,6 +31,8 @@ pub fn main() !u8 {
     };
 
     var default_out: ?[]u8 = null;
+    var montage_out: ?[]u8 = null;
+    defer if (montage_out) |p| gpa.free(p);
     defer if (default_out) |p| gpa.free(p);
     // Only the window reads and writes the config file (headless: hermetic).
     const config_path = if (opts.mode == .window or opts.mode == .capture) try config.path(gpa, config.Env.ofProcess()) else null;
@@ -77,6 +79,10 @@ pub fn main() !u8 {
             .timing = opts.timing,
             .smoke = opts.smoke,
             .extra_paths = opts.extra[0..opts.n_extra],
+            .montage_output = if (opts.output == null and opts.n_extra == 0) blk: {
+                montage_out = try cli.montageOutput(gpa, opts.image.?);
+                break :blk montage_out.?;
+            } else null,
             .config_path = config_path,
             .canvas_bg = opts.canvas_bg,
         }, &start) catch |err| return fail(err, opts.image.?),

@@ -17,10 +17,17 @@ pub const Clipboard = union(enum) {
     none,
 };
 
+/// Where a placed image goes: a scene point, or a magnet side of the image placed last.
+pub const Placement = union(enum) { pos: [2]i32, side: core.magnet.Side };
+
 pub const Config = struct {
     /// Ctrl+S target; null disables save.
     output_path: ?[]const u8,
     clipboard: Clipboard = .xclip,
+    /// Ctrl+S target once the scene holds 2+ images through the browser:
+    /// `<first stem>.montage.png`, so the first image is never overwritten.
+    /// Null: the target stays (an explicit -o, a capture).
+    montage_output: ?[]const u8 = null,
     /// Settings at startup (config file and command line, see config.zig).
     settings: core.settings.Settings = .{},
     /// Config file to write on a settings change; null: never write (headless).
@@ -87,8 +94,30 @@ pub const App = struct {
                 res.redraw = true;
             },
             .save_settings => self.saveSettings(),
+            .add_image => {
+                self.addDropped();
+                res.redraw = true;
+            },
         };
         return res;
+    }
+
+    /// Finish a drop from the file browser (`Command.add_image`): load the
+    /// file, add it at the slot the editor chose (one undo step), switch the
+    /// save target to the montage name. A file that does not load: a toast.
+    fn addDropped(self: *App) void {
+        const a = self.editor.takeAdd() orelse return;
+        self.addImageFile(.{ .path = a.path, .at = Placement{ .pos = .{ a.x, a.y } } }) catch {
+            self.editor.imageAddFailed();
+            return;
+        };
+        if (self.cfg.montage_output) |m| self.cfg.output_path = m;
+        self.editor.imageAdded();
+    }
+
+    /// Take the results of the browser's background work. True: redraw.
+    pub fn pump(self: *App) bool {
+        return self.editor.browser.pump();
     }
 
     pub fn render(self: *App) !core.compositor.Damage {

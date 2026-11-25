@@ -27,6 +27,7 @@ pub const thumbs = @import("thumbs.zig");
 pub const loader = @import("loader.zig");
 pub const browsergeo = @import("browsergeo.zig");
 pub const browser = @import("browser.zig");
+pub const browser_draw = @import("browser_draw.zig");
 pub const document = @import("document.zig");
 pub const input = @import("input.zig");
 pub const keymap = @import("keymap.zig");

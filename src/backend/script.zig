@@ -26,6 +26,24 @@ pub const UiTarget = union(enum) {
     /// The padding widget: click the notch of the step
     /// nearest to this many px, unless that step is already set.
     padding: u16,
+    /// The folder button (top left): opens or closes the file browser.
+    browser,
+};
+
+/// A file browser command (`browser ...` in a script). Rows are found by
+/// name (`..` for the parent row) and clicked at their place, so the hit
+/// test is part of the replay; a row that is scrolled out is scrolled in.
+pub const BrowserCmd = union(enum) {
+    /// The folder the browser starts in (a repo-relative path; owned). Before the first open.
+    home: []const u8,
+    /// Click the row named so (a folder or `..`).
+    cd: []const u8,
+    /// Click the up button of the header.
+    up,
+    /// Press on the row, move to (x, y) in steps, release. `hold`: stay down (a script that ends mid-drag).
+    drag: struct { name: []const u8, x: f32, y: f32, hold: bool },
+    /// Wheel steps over the panel (positive: down).
+    scroll: i32,
 };
 
 pub const Step = union(enum) {
@@ -38,6 +56,9 @@ pub const Step = union(enum) {
     add_image: AddImage,
     /// Show (`dropzone W H X Y`) or hide (`dropzone off`) the montage drop slots.
     dropzone: ?core.dropzone.Drop,
+    browser: BrowserCmd,
+    /// Set the modification time of a file or folder (repo-relative; owned) to `secs` since the epoch.
+    touch: struct { path: []const u8, secs: i64 },
 };
 
 /// Where `add_image` puts the image: at a scene point, or on a magnet side
@@ -73,7 +94,16 @@ pub const Script = struct {
     pub fn deinit(self: *Script, gpa: std.mem.Allocator) void {
         self.windows.deinit(gpa);
         if (self.image) |p| gpa.free(p);
-        for (self.events.items) |st| if (st == .add_image) gpa.free(st.add_image.path);
+        for (self.events.items) |st| switch (st) {
+            .add_image => |a| gpa.free(a.path),
+            .touch => |t| gpa.free(t.path),
+            .browser => |b| switch (b) {
+                .home, .cd => |n| gpa.free(n),
+                .drag => |d| gpa.free(d.name),
+                else => {},
+            },
+            else => {},
+        };
         self.events.deinit(gpa);
     }
 };
@@ -139,6 +169,33 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
             const y = try num(err, &it);
             try s.events.append(gpa, .{ .dropzone = .{ .w = w, .h = h, .pointer = core.geom.Vec2.init(x, y) } });
         }
+    } else if (std.mem.eql(u8, cmd, "touch")) {
+        const path = it.next() orelse return fail(err, "touch needs a path and a time in seconds");
+        const secs: i64 = @intFromFloat(try num(err, &it));
+        const owned = try gpa.dupe(u8, path);
+        errdefer gpa.free(owned);
+        try s.events.append(gpa, .{ .touch = .{ .path = owned, .secs = secs } });
+    } else if (std.mem.eql(u8, cmd, "browser")) {
+        const what = it.next() orelse return fail(err, browser_help);
+        const eq = std.mem.eql;
+        if (eq(u8, what, "up")) {
+            try s.events.append(gpa, .{ .browser = .up });
+        } else if (eq(u8, what, "scroll")) {
+            try s.events.append(gpa, .{ .browser = .{ .scroll = @intFromFloat(try num(err, &it)) } });
+        } else if (eq(u8, what, "home") or eq(u8, what, "cd")) {
+            const name = it.next() orelse return fail(err, browser_help);
+            const owned = try gpa.dupe(u8, name);
+            errdefer gpa.free(owned);
+            try s.events.append(gpa, .{ .browser = if (what[0] == 'h') .{ .home = owned } else .{ .cd = owned } });
+        } else if (eq(u8, what, "drag")) {
+            const name = it.next() orelse return fail(err, browser_help);
+            const x = try num(err, &it);
+            const y = try num(err, &it);
+            const hold = if (it.next()) |w| eq(u8, w, "hold") else false;
+            const owned = try gpa.dupe(u8, name);
+            errdefer gpa.free(owned);
+            try s.events.append(gpa, .{ .browser = .{ .drag = .{ .name = owned, .x = x, .y = y, .hold = hold } } });
+        } else return fail(err, browser_help);
     } else if (std.mem.eql(u8, cmd, "capture")) {
         s.capture = true;
     } else if (std.mem.eql(u8, cmd, "window")) {
@@ -272,6 +329,7 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
         if (px < 0 or px > 65535) return fail(err, "ui padding: px, 0 to 65535 (the nearest step is used)");
         return .{ .padding = @intFromFloat(px) };
     }
+    if (eq(u8, what, "browser")) return .browser;
     if (eq(u8, what, "size")) return .size;
     if (eq(u8, what, "help")) return .help;
     if (eq(u8, what, "undo")) return .undo;
@@ -279,7 +337,9 @@ fn parseUi(it: *std.mem.TokenIterator(u8, .scalar), err: *ParseError) !UiTarget 
     return fail(err, ui_help);
 }
 
-const ui_help = "ui needs: tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark], padding PX, arrow-style [straight|stairs] (alias pointer-style) or text-style [plain|boxed]";
+const browser_help = "browser needs: home DIR, cd NAME, up, scroll N or drag NAME X Y [hold]";
+
+const ui_help = "ui needs: browser, tool NAME, color N, size, help, undo, redo, canvas-bg [light|dark], padding PX, arrow-style [straight|stairs] (alias pointer-style) or text-style [plain|boxed]";
 
 test "parse script" {
     const gpa = std.testing.allocator;

@@ -26,6 +26,8 @@ pub const Options = struct {
     /// More image files, placed one after the other to the right (magnet
     /// slots, as for `addimage right`), after the first one is open.
     extra_paths: []const []const u8 = &.{},
+    /// Ctrl+S target once the browser adds an image (see `App.Config.montage_output`).
+    montage_output: ?[]const u8 = null,
     /// Config file to read at startup and write on a settings change.
     config_path: ?[]const u8 = null,
     /// --canvas-bg: wins over the config file.
@@ -48,6 +50,14 @@ const Load = struct {
         self.ns = t.read();
     }
 };
+
+/// Seconds east of UTC now (for the dates in the file browser).
+fn localOffset() i32 {
+    var t: c.time_t = c.time(null);
+    var tm: c.struct_tm = undefined;
+    if (c.localtime_r(&t, &tm) == null) return 0;
+    return @intCast(tm.tm_gmtoff);
+}
 
 fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
@@ -126,8 +136,16 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const image = try load.image;
     const t_loaded = start.read();
 
-    const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path });
+    const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path, .montage_output = opts.montage_output });
     defer app.destroy();
+    // The file browser: background work wakes the loop through a pipe.
+    const wake = try std.posix.pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
+    defer std.posix.close(wake[0]);
+    defer std.posix.close(wake[1]);
+    app.editor.browser.threaded = true;
+    app.editor.browser.wake_fd = wake[1];
+    try app.editor.browser.setHome(std.posix.getenv("HOME"));
+    app.editor.browser.tz_off = localOffset();
     for (opts.extra_paths) |p| {
         app.addImageFile(.{ .path = p, .at = @as(@FieldType(@import("script.zig").AddImage, "at"), .{ .side = .right }) }) catch |err| {
             std.debug.print("felt: cannot open {s}: {s}\n", .{ p, @errorName(err) });
@@ -147,11 +165,22 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     // Double click: a second left press within 400 ms and 6 px of the first.
     var last_press: struct { t: c_ulong = 0, x: f32 = -100, y: f32 = -100, clicks: u8 = 0 } = .{};
     while (true) {
-        // A view animation runs: wake every ~8 ms to step it; else block.
+        // Wait for X events, and for the browser's background work while it
+        // runs; with a view animation running wake every ~8 ms to step it.
+        // With none of these the loop blocks in XNextEvent: no idle CPU.
         var have_event = true;
-        if (app.editor.animating() and c.XPending(dpy) == 0) {
-            var pfd = [1]std.posix.pollfd{.{ .fd = c.ConnectionNumber(dpy), .events = std.posix.POLL.IN, .revents = 0 }};
-            _ = std.posix.poll(&pfd, 8) catch 0;
+        const working = app.editor.browser.busy();
+        if ((app.editor.animating() or working) and c.XPending(dpy) == 0) {
+            var pfds = [2]std.posix.pollfd{
+                .{ .fd = c.ConnectionNumber(dpy), .events = std.posix.POLL.IN, .revents = 0 },
+                .{ .fd = wake[0], .events = std.posix.POLL.IN, .revents = 0 },
+            };
+            _ = std.posix.poll(&pfds, if (app.editor.animating()) 8 else -1) catch 0;
+            if (pfds[1].revents != 0) {
+                var sink: [64]u8 = undefined;
+                while ((std.posix.read(wake[0], &sink) catch 0) == sink.len) {}
+            }
+            if (app.pump()) need_render = true;
             have_event = c.XPending(dpy) > 0;
             if (!have_event and app.editor.tick(start.read())) need_render = true;
         }
