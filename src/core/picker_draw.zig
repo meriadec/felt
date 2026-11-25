@@ -79,8 +79,8 @@ fn layout(ctx: Ctx, it: *Items, p: *const picker.Picker) void {
     d.dot_on = p.delayOn();
     it.delay = d;
 
-    const pointer: ?Vec2 = if (p.seen) p.pointer else null;
-    it.marks = ruler.build(ctx, it.hi, pointer, p.w, p.h, s);
+    // The ruler shows only while the button is down.
+    if (p.phase == .dragging) it.marks = ruler.build(ctx, it.hi, p.pointer, p.w, p.h, s);
 }
 
 inline fn dim(p: u32) u32 {

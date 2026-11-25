@@ -1,5 +1,6 @@
-# Capture picker as a ruler: no window under the pointer, so dashed hairlines
-# run from the pointer to the four screen edges, each with its distance.
+# Capture picker as a ruler: while the button is down the selection snaps to
+# the 8 px grid, its size shows inside, its edges run dashed to the screen
+# edges and the distances sit on the margins.
 capture
-move 300 200
-move 760 430
+down 300 200
+move 703 517
