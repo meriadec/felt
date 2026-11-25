@@ -36,6 +36,8 @@ pub const Step = union(enum) {
     hover: UiTarget,
     /// Place another image on the scene (`place`, `addimage`).
     add_image: AddImage,
+    /// Show (`dropzone W H X Y`) or hide (`dropzone off`) the montage drop slots.
+    dropzone: ?core.dropzone.Drop,
 };
 
 /// Where `add_image` puts the image: at a scene point, or on a magnet side
@@ -126,6 +128,17 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         const owned = try gpa.dupe(u8, path);
         errdefer gpa.free(owned);
         try s.events.append(gpa, .{ .add_image = .{ .path = owned, .at = at } });
+    } else if (std.mem.eql(u8, cmd, "dropzone")) {
+        const first = it.peek() orelse return fail(err, "dropzone needs `off` or W H X Y");
+        if (std.mem.eql(u8, first, "off")) {
+            try s.events.append(gpa, .{ .dropzone = null });
+        } else {
+            const w: i32 = @intFromFloat(try num(err, &it));
+            const h: i32 = @intFromFloat(try num(err, &it));
+            const x = try num(err, &it);
+            const y = try num(err, &it);
+            try s.events.append(gpa, .{ .dropzone = .{ .w = w, .h = h, .pointer = core.geom.Vec2.init(x, y) } });
+        }
     } else if (std.mem.eql(u8, cmd, "capture")) {
         s.capture = true;
     } else if (std.mem.eql(u8, cmd, "window")) {

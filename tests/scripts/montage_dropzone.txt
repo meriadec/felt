@@ -1,0 +1,6 @@
+# A dragged image of 120x80 px: every free magnet slot is dashed, the one nearest to the pointer is highlighted.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+dropzone 120 80 700 100

@@ -11,6 +11,7 @@ const color = @import("color.zig");
 const ann = @import("annotation.zig");
 const extent = @import("extent.zig");
 const draw = @import("draw.zig");
+const dropzone = @import("dropzone.zig");
 const route = @import("route.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
@@ -131,6 +132,10 @@ pub const Editor = struct {
     /// meant. Off, such a press panics in a test build: a chrome that grew
     /// over a raw click would otherwise fail with a confusing assert.
     chrome_press_ok: bool = false,
+    /// Montage drag in progress: the dragged image size and the pointer.
+    /// While set, the compositor shows the free magnet slots and the nearest
+    /// one (dropzone.zig). Set by the drag UI (or the `dropzone` script command).
+    montage_drop: ?dropzone.Drop = null,
     /// Last pointer position on screen (hover), null before the first move.
     pointer: ?Vec2 = null,
     /// Move tool: the annotation part under the pointer.
@@ -204,6 +209,16 @@ pub const Editor = struct {
     }
 
     /// Ctrl+Z or the undo button does something.
+    /// Show the drop slots for a dragged image of `w` x `h` px with the
+    /// pointer at the screen point `pointer`; call again on every move.
+    pub fn setMontageDrop(self: *Editor, w: i32, h: i32, pointer: Vec2) void {
+        self.montage_drop = .{ .w = w, .h = h, .pointer = pointer };
+    }
+
+    pub fn clearMontageDrop(self: *Editor) void {
+        self.montage_drop = null;
+    }
+
     pub fn canUndo(self: *const Editor) bool {
         return self.mode != .idle or self.doc.history.items.len > 0;
     }

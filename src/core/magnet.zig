@@ -129,3 +129,14 @@ test "nearest picks the slot under the point, else the closest one" {
     try std.testing.expectEqual(Side.bottom, nearest(s, Vec2.init(50, 900)).?.side);
     try std.testing.expect(nearest(&.{}, Vec2.zero) == null);
 }
+
+test "a slot over a farther image is not offered" {
+    const a = Rect.fromSize(0, 0, 100, 100);
+    // c sits where a's bottom slot for a 100x100 image would go.
+    const c = Rect.fromSize(0, 100 + gap + 20, 100, 100);
+    var buf: [8]Slot = undefined;
+    for (slots(&buf, &.{ a, c }, 100, 100)) |x| {
+        try std.testing.expect(!c.intersects(x.rect));
+        try std.testing.expect(!(x.target == 0 and x.side == .bottom));
+    }
+}

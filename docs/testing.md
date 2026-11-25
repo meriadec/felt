@@ -91,6 +91,7 @@ One command per line, screen coordinates, `#` starts a comment.
 | `window X Y W H` | A top-level window for the picker, topmost first (the first one that holds the pointer wins) |
 | `place PATH X Y` | Place another image (repo-relative PNG) with its top-left corner at the scene point (X, Y) in image px; the first image is at (0, 0). One undo step |
 | `addimage PATH SIDE` | Place another image on a magnet side (`left`, `top`, `right`, `bottom`) of the image placed last: 64 px away, centered on the shared edge (src/core/magnet.zig). One undo step. See tests/scripts/montage.txt (small tiles: tests/fixtures/tile_{a,b,c}.png) |
+| `dropzone W H X Y` | Montage drop overlay for a dragged image of W x H px with the pointer at the screen point (X, Y): the free magnet slots around the placed images are dashed, the nearest to the pointer is highlighted (src/core/dropzone.zig). `dropzone off` clears it. Slots lie outside the images: with a canvas that fills the screen they are off-screen, so use small images (tests/scripts/montage_dropzone*.txt) |
 | `delay SECONDS` | The picker's initial delay (`--delay`); `key tab` toggles it |
 
 The replay renders after each event that asks for a redraw, like the X11

@@ -50,6 +50,10 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             _ = app.editor.syncView();
             _ = try app.render();
         },
+        .dropzone => |d| {
+            if (d) |z| app.editor.setMontageDrop(z.w, z.h, z.pointer) else app.editor.clearMontageDrop();
+            _ = try app.render();
+        },
         .hover => |t| {
             const p = try uiPoint(app, t, .hover) orelse continue;
             if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
@@ -92,8 +96,8 @@ pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *con
             if (r.picker.finished()) break;
             if (r.picker.handle(ev).redraw) _ = try r.scene.render(ctx, &r.picker, frozen, &r.frame);
         },
-        .ui, .hover, .add_image => {
-            std.log.err("script: `ui`, `move ui`, `place` and `addimage` need the editor, not the capture picker", .{});
+        .ui, .hover, .add_image, .dropzone => {
+            std.log.err("script: `ui`, `move ui`, `place`, `addimage` and `dropzone` need the editor, not the capture picker", .{});
             return error.BadScript;
         },
     };

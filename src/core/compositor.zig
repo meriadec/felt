@@ -1,6 +1,6 @@
 //! Compositor: builds screen frames with caching and damage tracking.
 //! Layers: `scaled` = the kept part of the image at the view scale (rebuilt on
-//! zoom or crop), `scene` = background + canvas background + image + committed
+//! zoom or crop), `scene` = background + canvas background + image(s, with a shadow each from two up) + committed
 //! annotations (appended in place, scrolled on a pan, repainted in place
 //! where an annotation moved or the canvas changed, repainted after undo of an add),
 //! `frame` = scene + canvas background the shape in progress adds + crop dimming +
@@ -15,6 +15,7 @@ const resample = @import("resample.zig");
 const sdf = @import("sdf.zig");
 const raster = @import("raster.zig");
 const scene_mod = @import("scene.zig");
+const dropzone = @import("dropzone.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 const Annotation = @import("annotation.zig").Annotation;
@@ -30,21 +31,43 @@ pub const grid_color = color.Color.rgb(0x1B1F26);
 /// Distance between grid lines (screen px).
 pub const grid_step: i32 = 32;
 
-/// The canvas casts a soft shadow (down, `shadow_dy` px, fading over
-/// `shadow_blur` px) and has a 1 px translucent light border, both outside it.
-const shadow_blur: i32 = 20;
-const shadow_dy: i32 = 6;
-const shadow_alpha: f32 = 110;
-const border_color = color.Color{ .r = 255, .g = 255, .b = 255, .a = 34 };
-/// How far from the canvas the shadow reaches (px).
-const shadow_reach: i32 = shadow_blur + shadow_dy + 1;
+/// A soft shadow (down, `dy` px, fading over `blur` px) and a 1 px
+/// translucent light border, both outside a rectangle.
+const Backdrop = struct {
+    blur: i32,
+    dy: i32,
+    shadow_alpha: f32,
+    border: color.Color,
 
-/// Paint the shadow and the border of canvas `c` in `r` (outside `c`: the
+    /// How far from the rectangle the shadow reaches (px).
+    fn reach(b: Backdrop) i32 {
+        return b.blur + b.dy + 1;
+    }
+};
+
+/// The canvas on the screen background.
+const canvas_backdrop = Backdrop{ .blur = 20, .dy = 6, .shadow_alpha = 110, .border = .{ .r = 255, .g = 255, .b = 255, .a = 34 } };
+/// How far from the canvas the shadow reaches (px).
+const shadow_reach: i32 = canvas_backdrop.reach();
+
+/// Each image of a scene with 2 or more, on the canvas: smaller and
+/// subtler, shrinking with the view scale (not below 40%).
+fn imageBackdrop(scale: f32) Backdrop {
+    const k = std.math.clamp(scale, 0.4, 1);
+    return .{
+        .blur = @intFromFloat(@round(16 * k)),
+        .dy = @intFromFloat(@round(5 * k)),
+        .shadow_alpha = 90,
+        .border = .{ .r = 255, .g = 255, .b = 255, .a = 56 },
+    };
+}
+
+/// Paint the shadow and the border of rectangle `c` in `r_in` (outside `c`: the
 /// caller has painted the background there).
-fn paintBackdrop(cv: *Canvas, r_in: Rect, c: Rect) void {
-    const r = r_in.intersect(c.expand(shadow_reach)).intersect(cv.bounds());
+fn paintBackdrop(cv: *Canvas, r_in: Rect, c: Rect, bd: Backdrop) void {
+    const r = r_in.intersect(c.expand(bd.reach())).intersect(cv.bounds());
     if (r.isEmpty() or c.isEmpty()) return;
-    const blur: f32 = @floatFromInt(shadow_blur);
+    const blur: f32 = @floatFromInt(bd.blur);
     var y = r.y0;
     while (y < r.y1) : (y += 1) {
         var x = r.x0;
@@ -54,10 +77,10 @@ fn paintBackdrop(cv: *Canvas, r_in: Rect, c: Rect) void {
             if (dx == 0 and dy == 0) continue;
             const px: Rect = .{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 };
             const sdx: f32 = @floatFromInt(@max(c.x0 - x, 0, x - (c.x1 - 1)));
-            const sdy: f32 = @floatFromInt(@max(c.y0 + shadow_dy - y, 0, y - (c.y1 - 1 + shadow_dy)));
+            const sdy: f32 = @floatFromInt(@max(c.y0 + bd.dy - y, 0, y - (c.y1 - 1 + bd.dy)));
             const t = 1 - @sqrt(sdx * sdx + sdy * sdy) / blur;
-            if (t > 0) cv.blendRect(px, .{ .r = 0, .g = 0, .b = 0, .a = @intFromFloat(shadow_alpha * t * t) });
-            if (@max(dx, dy) == 1) cv.blendRect(px, border_color);
+            if (t > 0) cv.blendRect(px, .{ .r = 0, .g = 0, .b = 0, .a = @intFromFloat(bd.shadow_alpha * t * t) });
+            if (@max(dx, dy) == 1) cv.blendRect(px, bd.border);
         }
     }
 }
@@ -216,6 +239,8 @@ pub const Compositor = struct {
     /// belongs to the document). A move shows up as a difference.
     painted: std.ArrayList(Annotation) = .empty,
     scene_removals: u64 = 0,
+    /// Where the scene placed its images: a move repaints all (shadows reach far).
+    scene_places: std.ArrayList(Rect) = .empty,
     /// Canvas (image px) the scene was painted with.
     scene_canvas: Rect = Rect.empty,
     /// Canvas background the scene was painted with.
@@ -228,6 +253,8 @@ pub const Compositor = struct {
     prev_crop: ?Rect = null,
     /// Move tool outline last drawn, and its screen rectangle.
     prev_outline: ?Outline = null,
+    /// Drop-slot overlay last drawn (dropzone.zig).
+    prev_drop: ?dropzone.Overlay = null,
     /// Chrome panels last drawn: kind, rect and what they showed.
     prev_chrome: [chrome.max_panels]PanelPaint = undefined,
     prev_chrome_n: usize = 0,
@@ -239,6 +266,8 @@ pub const Compositor = struct {
         if (self.scene) |*cv| cv.deinit(self.gpa);
         if (self.owns_frame) if (self.frame) |*cv| cv.deinit(self.gpa);
         self.painted.deinit(self.gpa);
+        self.scene_places.deinit(self.gpa);
+        if (self.prev_drop) |*o| o.deinit(self.gpa);
         for (self.scaled_many.items) |*e| e.canvas.deinit(self.gpa);
         self.scaled_many.deinit(self.gpa);
         self.scaled = null;
@@ -278,12 +307,18 @@ pub const Compositor = struct {
         const oy: i32 = @intFromFloat(@round(s.xf.offset.y));
         for (r.minus(s.canvas_dst)) |b| {
             fillBackground(cv, b, ox, oy);
-            paintBackdrop(cv, b, s.canvas_dst);
+            paintBackdrop(cv, b, s.canvas_dst, canvas_backdrop);
         }
         if (s.doc.scene.count() > 1) {
             // Gaps between the images show the canvas background.
             const q = r.intersect(s.canvas_dst);
             if (!q.isEmpty()) cv.fillRect(q, s.bg);
+            // Shadows first: an image never gets another one's shadow on it.
+            const bd = imageBackdrop(s.xf.scale);
+            for (s.doc.scene.images.items) |p| {
+                const pd = s.view.rect(s.doc.kept().intersect(p.rect()));
+                paintBackdrop(cv, q, pd, bd);
+            }
             for (s.doc.scene.images.items) |p| try self.paintPlaced(cv, s, r, p);
         } else {
             for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
@@ -374,6 +409,14 @@ pub const Compositor = struct {
         }
     }
 
+    /// The placed images are where the scene was painted with them.
+    fn placesKept(self: *const Compositor, doc: *const Document) bool {
+        const imgs = doc.scene.images.items;
+        if (imgs.len != self.scene_places.items.len) return false;
+        for (imgs, self.scene_places.items) |p, r| if (!std.meta.eql(p.rect(), r)) return false;
+        return true;
+    }
+
     /// The view only moved by whole pixels over a valid scene. Pixelate reads
     /// the pixels under it, so a strip repaint could differ: repaint all.
     fn canScroll(self: *const Compositor, doc: *const Document, old: View, new: View, pic: Rect) bool {
@@ -439,10 +482,12 @@ pub const Compositor = struct {
         // Scene: append new annotations; repaint in place where one moved or
         // the canvas grew or shrank; repaint all after a removal.
         var clock = Clock.start();
-        if (!self.scene_valid or ctx.pad != self.scene_pad or doc.removals != self.scene_removals or items.len < self.scene_count) {
+        if (!self.scene_valid or ctx.pad != self.scene_pad or doc.removals != self.scene_removals or items.len < self.scene_count or !self.placesKept(doc)) {
             try self.paintScene(&s, full_rect, items.len);
             self.painted.clearRetainingCapacity();
             try self.painted.appendSlice(self.gpa, items);
+            self.scene_places.clearRetainingCapacity();
+            for (doc.scene.images.items) |p| try self.scene_places.append(self.gpa, p.rect());
             full = true;
         } else {
             var fix = Fix{};
@@ -528,6 +573,21 @@ pub const Compositor = struct {
             self.prev_outline = outline;
         }
 
+        // Montage drop slots: damage the old and the new slots when they change.
+        var drop: ?dropzone.Overlay = null;
+        defer if (drop) |*o| o.deinit(self.gpa);
+        if (ed.montage_drop) |d| drop = try dropzone.Overlay.build(self.gpa, doc, v, d);
+        const same_drop = if (drop) |a| (if (self.prev_drop) |b| a.eql(b) else false) else self.prev_drop == null;
+        if (!same_drop) {
+            if (self.prev_drop) |o| for (o.rects) |r| dmg.add(r.intersect(full_rect));
+            if (drop) |o| for (o.rects) |r| dmg.add(r.intersect(full_rect));
+            if (self.prev_drop) |*o| o.deinit(self.gpa);
+            self.prev_drop = null;
+            if (drop) |o| {
+                self.prev_drop = .{ .rects = try self.gpa.dupe(Rect, o.rects), .hot = o.hot, .screen_h = o.screen_h };
+            }
+        }
+
         const st = chrome.State.of(ed);
         const lay = chrome.layout(ctx, st, w, h);
         // Chrome: repaint a panel where it was and where it is when it
@@ -559,6 +619,7 @@ pub const Compositor = struct {
             for (extra) |b| frame.fillRect(b.intersect(r), s.bg);
             if (crop) |c| drawCropOverlay(frame, r, c);
             if (outline) |o| o.paint(ctx, frame, r, v.xf);
+            if (drop) |o| o.paint(frame, r);
             var chrome_clock = Clock.start();
             try chrome.draw(ctx, frame, r, &lay);
             self.prof.chrome_ns += chrome_clock.read();

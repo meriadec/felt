@@ -1,0 +1,8 @@
+# The highlight follows the pointer (damage is exact), then the overlay goes away and comes back.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+dropzone 160 100 100 400
+dropzone 160 100 200 50
+dropzone off
+dropzone 160 100 50 200

@@ -42,6 +42,8 @@ image files. Build: `coreModule` in build.zig.
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
 | `scene.zig` | Placed images (id, size, position in scene px, canvas) and queries: bounding box, hit test, nearest image |
 | `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, centered on the shared edge; the nearest slot to a point |
+| `dashed.zig` | Dashed rectangle outline (inside the rectangle, alpha blend, clipped) |
+| `dropzone.zig` | Montage drop overlay: `Drop` (the dragged image size + the pointer, screen px; `Editor.montage_drop`, set by `setMontageDrop`/`clearMontageDrop`) and `Overlay` (free slots on screen from `magnet.slots`, the hot one = `magnet.nearest`; `build`, `eql`, `paint`) |
 | `document.zig` | The scene, the annotation list (each annotation knows its image: `owners`), crop stack, undo/redo of all, number counter. Images: `addImage`, `moveImage` (carries its annotations), `removeImage` (removes them too; one undo step), `base()` = scene bounding box. A scene change bumps `revision` and `removals`: the compositor repaints everything. A one-image document paints on the old fast path (`compositor.paintImage`, one cached downscale); 2+ images paint each image (`paintPlaced`, one cached downscale per image id) over the canvas background, and the export blits each image into one composite. The UI must not remove the last image |
 | `extent.zig` | Canvas of the document: the kept rectangle plus the canvas padding (`Ctx.pad`), grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
@@ -294,7 +296,12 @@ annotation moved or the canvas grew or shrank, and in the bands around the
 image when the canvas background changes, repainted in full when the padding changes; repainted in full after the
 undo of an add or a crop, resize or zoom), `frame` (scene +
 canvas the shape in progress adds + crop dimming + move outline +
-chrome + preview). Each chrome panel (dock, style switch, top bar, padding widget, help,
+chrome + move outline + montage drop slots + preview). With 2 or more images
+the scene paints, over the canvas background, a shadow and a light border for
+each image (`imageBackdrop`, shrinks with the view scale), then the images; a
+change of any image position repaints the scene in full (`placesKept`). The
+drop overlay is drawn on the frame; when the slots or the hot slot change, the
+compositor damages the old and the new slot rectangles (`prev_drop`). Each chrome panel (dock, style switch, top bar, padding widget, help,
 toast) repaints only when its rect or its signature changes: a toast that
 changes each frame does not repaint the dock. A
 move repaints the scene only in slabs along the old and the new place
