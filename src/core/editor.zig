@@ -62,7 +62,13 @@ const Typing = struct {
     /// text: top-left of the block; callout: box anchor. Image px.
     pos: Vec2,
     target: ?Vec2 = null,
+    /// Editing the text of an existing annotation (a double click with the
+    /// move tool): its index, and it as it was. The document holds it with
+    /// no text meanwhile, and `preview` draws it with the draft.
+    edit: ?Edit = null,
 };
+
+const Edit = struct { index: usize, before: Annotation };
 
 /// An annotation part under the pointer (move tool).
 pub const Grab = struct { index: usize, part: Part };
@@ -171,6 +177,7 @@ pub const Editor = struct {
     }
 
     pub fn deinit(self: *Editor) void {
+        self.cancel(); // an edit in progress puts its annotation back
         self.draft.deinit(self.gpa);
     }
 
@@ -495,11 +502,71 @@ pub const Editor = struct {
         return switch (self.mode) {
             .idle, .moving => null,
             .drag => |d| self.shapeFromDrag(d),
-            .typing => |t| switch (t.kind) {
+            .typing => |t| if (t.edit) |e| self.editedPreview(e) else switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .style = self.text_style } },
                 .callout => self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             },
         };
+    }
+
+    /// The annotation under edit, with the draft as its text.
+    fn editedPreview(self: *const Editor, e: Edit) Annotation {
+        var a = e.before;
+        switch (a) {
+            .text => |*t| t.text = self.draft.items,
+            .callout => |*c| c.text = self.draft.items,
+            else => unreachable,
+        }
+        return route.best(self.ctx(), self.doc.items.items, e.index, a);
+    }
+
+    /// Enter text mode on the text or callout under `g`, keeping its look.
+    fn startEdit(self: *Editor, g: Grab) !bool {
+        const a = self.doc.items.items[g.index];
+        const old = switch (a) {
+            .text => |t| t.text,
+            .callout => |c| c.text,
+            else => return false,
+        };
+        self.draft.clearRetainingCapacity();
+        try self.draft.appendSlice(self.gpa, old);
+        self.doc.setLive(g.index, blankText(a));
+        self.selected = g.index;
+        self.mode = .{ .typing = switch (a) {
+            .text => |t| .{ .kind = .text, .pos = t.pos, .edit = .{ .index = g.index, .before = a } },
+            else => .{ .kind = .callout, .pos = a.callout.anchor, .target = a.callout.target, .edit = .{ .index = g.index, .before = a } },
+        } };
+        return true;
+    }
+
+    fn blankText(a: Annotation) Annotation {
+        var b = a;
+        switch (b) {
+            .text => |*t| t.text = "",
+            .callout => |*c| c.text = "",
+            else => {},
+        }
+        return b;
+    }
+
+    /// Finish an edit: the draft becomes the text, as one undo step with the
+    /// re-routes of the stairs paths around it. A blank or unchanged draft
+    /// keeps the old text.
+    fn commitEdit(self: *Editor, e: Edit) !void {
+        const old = switch (e.before) {
+            .text => |t| t.text,
+            .callout => |c| c.text,
+            else => unreachable,
+        };
+        const draft = self.draft.items;
+        if (std.mem.trim(u8, draft, " \t\n").len == 0 or std.mem.eql(u8, draft, old)) return self.cancel();
+        _ = try self.doc.setText(self.gpa, e.index, e.before, draft);
+        var changed: [route.max_settle]route.Rerouted = undefined;
+        const n = self.settle(e.index, e.before, &changed);
+        self.mode = .idle;
+        self.draft.clearRetainingCapacity();
+        const step = try self.doc.commitMove(self.gpa, e.index, e.before);
+        try self.commitRerouted(changed[0..n], e.index, step);
     }
 
     fn shapeFromDrag(self: *const Editor, d: Drag) ?Annotation {
@@ -528,7 +595,7 @@ pub const Editor = struct {
                 self.quit_armed = false;
                 const had_toast = self.toast_len > 0;
                 self.toast_len = 0;
-                var eff = if (ev == .key) try self.onKey(ev.key, was_armed) else try self.onDown(ev.mouse_down.x, ev.mouse_down.y, ev.mouse_down.button);
+                var eff = if (ev == .key) try self.onKey(ev.key, was_armed) else try self.onDown(ev.mouse_down.x, ev.mouse_down.y, ev.mouse_down.button, ev.mouse_down.clicks);
                 eff.redraw = eff.redraw or had_toast or was_armed;
                 return eff;
             },
@@ -597,7 +664,7 @@ pub const Editor = struct {
         self.size_idx = @intCast(std.math.clamp(@as(i32, self.size_idx) + delta, 0, n - 1));
     }
 
-    fn onDown(self: *Editor, x: f32, y: f32, button: input.Button) !Effect {
+    fn onDown(self: *Editor, x: f32, y: f32, button: input.Button, clicks: u8) !Effect {
         if (self.help_visible) { // any click closes the help
             self.help_visible = false;
             return .{ .redraw = true };
@@ -646,6 +713,7 @@ pub const Editor = struct {
         const ip = self.view.toImage(sp);
         if (self.tool == .move) {
             const grab = self.grabAt(sp);
+            if (clicks >= 2 and button == .left) if (grab) |g| if (g.part == .whole and try self.startEdit(g)) return .{ .redraw = true };
             self.selected = if (grab) |g| g.index else null;
             if (grab) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
             return .{ .redraw = true };
@@ -714,6 +782,7 @@ pub const Editor = struct {
     /// Drop any shape or text in progress; put a moving annotation back.
     pub fn cancel(self: *Editor) void {
         if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
+        if (self.mode == .typing) if (self.mode.typing.edit) |e| self.doc.setLive(e.index, e.before);
         self.draft.clearRetainingCapacity();
         self.mode = .idle;
     }
@@ -721,6 +790,7 @@ pub const Editor = struct {
     /// Turn the text in progress into an annotation (nothing if blank).
     pub fn commitTyping(self: *Editor) !void {
         if (self.mode != .typing) return;
+        if (self.mode.typing.edit) |e| return self.commitEdit(e);
         defer self.cancel();
         if (std.mem.trim(u8, self.draft.items, " \t\n").len == 0) return;
         var a = self.preview().?;
@@ -1603,6 +1673,56 @@ test "text style: plain at start, `t` again and the switch change it for new tex
     _ = try t.key("enter");
     try std.testing.expectEqual(ann.TextStyle.boxed, t.doc.items.items[1].text.style);
     try std.testing.expectEqual(ann.TextStyle.plain, t.doc.items.items[0].text.style);
+}
+
+test "move/select: a double click edits the text in place; one undo step; blank or unchanged keeps it" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.tool = .text;
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 20 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 20, .y = 20 } });
+    for ("ab") |ch| _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    _ = try t.key("enter");
+    _ = try t.key("m");
+    const dbl = input.Event{ .mouse_down = .{ .x = 22, .y = 25, .clicks = 2 } };
+    const h = t.doc.history.items.len;
+    // A single click only selects.
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 22, .y = 25 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 22, .y = 25 } });
+    try std.testing.expect(t.ed.mode == .idle);
+    // A double click enters text mode on the same element, with its text.
+    _ = try t.ed.handle(dbl);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 22, .y = 25 } });
+    try std.testing.expect(t.ed.mode == .typing);
+    try std.testing.expectEqualStrings("ab", t.ed.draft.items);
+    try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+    // Esc with the text unchanged keeps it and records nothing.
+    _ = try t.key("esc");
+    try std.testing.expectEqualStrings("ab", t.doc.items.items[0].text.text);
+    try std.testing.expectEqual(h, t.doc.history.items.len);
+    // New text: one step; undo and redo swap the texts.
+    _ = try t.ed.handle(dbl);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 22, .y = 25 } });
+    _ = try t.key("backspace");
+    _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'z' } } });
+    _ = try t.key("enter");
+    try std.testing.expectEqualStrings("az", t.doc.items.items[0].text.text);
+    try std.testing.expectEqual(h + 1, t.doc.history.items.len);
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqualStrings("ab", t.doc.items.items[0].text.text);
+    _ = try t.key("ctrl+shift+z");
+    try std.testing.expectEqualStrings("az", t.doc.items.items[0].text.text);
+    // Blank keeps the old text; quitting mid-edit leaves nothing behind (leak check).
+    _ = try t.ed.handle(dbl);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 22, .y = 25 } });
+    _ = try t.key("backspace");
+    _ = try t.key("backspace");
+    _ = try t.key("enter");
+    try std.testing.expectEqualStrings("az", t.doc.items.items[0].text.text);
+    _ = try t.ed.handle(dbl);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 22, .y = 25 } });
+    try std.testing.expect(t.ed.mode == .typing);
 }
 
 test "move/select: a press selects, Delete deletes as one undo step, undo restores, Esc and other tools clear" {

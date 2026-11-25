@@ -78,6 +78,7 @@ One command per line, screen coordinates, `#` starts a comment.
 | `key CHORD...` | Key presses: `a`, `5`, `]`, `?`, `ctrl+z`, `ctrl+shift+z`, `enter`, `shift+enter`, `esc`, `backspace`, `f1`, `space` |
 | `type TEXT` | Types the rest of the line literally; `\n` is Shift+Enter |
 | `click X Y [button]` | Press and release (`left`, `middle`, `right`; middle drag pans) |
+| `dblclick X Y` | Two clicks; the second one is a double click (the move tool edits a text or callout) |
 | `down X Y [button]`, `up X Y [button]` | Press, release |
 | `move X Y` | Pointer motion |
 | `move ui NAME...` | Pointer onto a chrome item, no click (hover); NAME as for `ui` |

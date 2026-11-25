@@ -1,0 +1,23 @@
+# Move tool: a double click on a text or a callout box enters text mode on
+# the same element; Enter commits the new text as one undo step.
+size 900 500
+ui tool callout
+ui arrow-style straight
+drag 200 200 330 160
+type Old note
+key enter
+ui tool text
+click 500 300
+type plain
+key enter
+key m
+dblclick 520 308
+key backspace backspace backspace backspace backspace
+type words
+key enter
+move 700 100
+dblclick 371 160
+key backspace backspace backspace backspace backspace backspace backspace backspace
+type "Edited\nnote"
+key enter
+move 700 100

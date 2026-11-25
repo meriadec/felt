@@ -26,7 +26,8 @@ pub const Button = enum { left, middle, right };
 pub const Pointer = struct { x: f32, y: f32 };
 
 pub const Event = union(enum) {
-    mouse_down: struct { x: f32, y: f32, button: Button = .left },
+    /// `clicks`: 1 for a press, 2 for the second press of a double click (the backend counts).
+    mouse_down: struct { x: f32, y: f32, button: Button = .left, clicks: u8 = 1 },
     mouse_up: struct { x: f32, y: f32, button: Button = .left },
     mouse_move: Pointer,
     /// `delta`: +1 per wheel step up, -1 down; at the pointer, with the

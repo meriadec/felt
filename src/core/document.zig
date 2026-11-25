@@ -38,10 +38,6 @@ const Undone = union(enum) {
     crop: Crop,
     move: Move,
     remove: struct { index: usize, shifted: usize },
-
-    fn deinit(u: Undone, gpa: std.mem.Allocator) void {
-        if (u == .add) u.add.deinit(gpa);
-    }
 };
 
 pub const Document = struct {
@@ -53,11 +49,17 @@ pub const Document = struct {
     undone: std.ArrayList(Undone) = .empty,
     revision: u64 = 0,
     removals: u64 = 0,
+    /// Every text that a text edit replaced or made. Undo and redo swap
+    /// them in and out of `items` (a move never owns text), so the document
+    /// owns them all until it ends; an annotation does not free these.
+    edit_texts: std.ArrayList([]const u8) = .empty,
 
     pub fn deinit(self: *Document, gpa: std.mem.Allocator) void {
-        for (self.items.items) |a| a.deinit(gpa);
-        for (self.history.items) |c| if (c == .remove) c.remove.ann.deinit(gpa);
-        for (self.undone.items) |u| u.deinit(gpa);
+        for (self.items.items) |a| self.release(gpa, a);
+        for (self.history.items) |c| if (c == .remove) self.release(gpa, c.remove.ann);
+        for (self.undone.items) |u| if (u == .add) self.release(gpa, u.add);
+        for (self.edit_texts.items) |t| gpa.free(t);
+        self.edit_texts.deinit(gpa);
         self.items.deinit(gpa);
         self.crops.deinit(gpa);
         self.history.deinit(gpa);
@@ -93,8 +95,38 @@ pub const Document = struct {
     }
 
     fn clearRedo(self: *Document, gpa: std.mem.Allocator) void {
-        for (self.undone.items) |u| u.deinit(gpa);
+        for (self.undone.items) |u| if (u == .add) self.release(gpa, u.add);
         self.undone.clearRetainingCapacity();
+    }
+
+    /// Free the text of `a`, unless the document owns it as an edit text.
+    fn release(self: *const Document, gpa: std.mem.Allocator, a: Annotation) void {
+        const t = a.ownedText() orelse return;
+        for (self.edit_texts.items) |e| if (e.ptr == t.ptr) return;
+        gpa.free(t);
+    }
+
+    /// Replace the text of annotation `i` (a text or a callout) by a copy of
+    /// `text`, in place and without a history step: `commitMove` records it
+    /// with the annotation as it was before. `old` is the text it had: the
+    /// document keeps it for the undo. Returns the new annotation.
+    pub fn setText(self: *Document, gpa: std.mem.Allocator, i: usize, old: Annotation, text: []const u8) !Annotation {
+        try self.edit_texts.ensureUnusedCapacity(gpa, 2);
+        const owned = try gpa.dupe(u8, text);
+        var a = old;
+        switch (a) {
+            .text => |*t| t.text = owned,
+            .callout => |*c| c.text = owned,
+            else => unreachable,
+        }
+        if (old.ownedText()) |o| {
+            var known = false;
+            for (self.edit_texts.items) |e| known = known or e.ptr == o.ptr;
+            if (!known) self.edit_texts.appendAssumeCapacity(o);
+        }
+        self.edit_texts.appendAssumeCapacity(owned);
+        self.setLive(i, a);
+        return a;
     }
 
     /// Append `ann` and take ownership of its text. Clears the redo stack.

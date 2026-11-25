@@ -49,6 +49,13 @@ fn ms(ns: u64) f64 {
     return @as(f64, @floatFromInt(ns)) / 1e6;
 }
 
+/// 2 for the second left press of a double click, else 1 (and remember it).
+fn clickCount(last: anytype, time: c_ulong, x: f32, y: f32) u8 {
+    const double = last.clicks == 1 and time -% last.t <= 400 and @abs(x - last.x) <= 6 and @abs(y - last.y) <= 6;
+    last.* = .{ .t = time, .x = x, .y = y, .clicks = if (double) 2 else 1 };
+    return last.clicks;
+}
+
 pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void {
     var load = Load{};
     var loader: ?std.Thread = null;
@@ -118,6 +125,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     var exposed = false;
     var need_render = true;
     var frames: u64 = 0;
+    // Double click: a second left press within 400 ms and 6 px of the first.
+    var last_press: struct { t: c_ulong = 0, x: f32 = -100, y: f32 = -100, clicks: u8 = 0 } = .{};
     while (true) {
         _ = c.XNextEvent(dpy, &ev);
         var quit = false;
@@ -164,7 +173,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
                                 2 => .middle,
                                 else => .right,
                             };
-                            break :blk if (down) .{ .mouse_down = .{ .x = x, .y = y, .button = btn } } else .{ .mouse_up = .{ .x = x, .y = y, .button = btn } };
+                            break :blk if (down) .{ .mouse_down = .{ .x = x, .y = y, .button = btn, .clicks = if (btn == .left) clickCount(&last_press, b.time, x, y) else 1 } } else .{ .mouse_up = .{ .x = x, .y = y, .button = btn } };
                         },
                         4 => if (down) .{ .wheel = .{ .delta = 1, .x = x, .y = y, .mods = mods(b.state) } } else null,
                         5 => if (down) .{ .wheel = .{ .delta = -1, .x = x, .y = y, .mods = mods(b.state) } } else null,

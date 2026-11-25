@@ -130,6 +130,13 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         const b: input.Button = if (it.next()) |bn| std.meta.stringToEnum(input.Button, bn) orelse return fail(err, "button must be left, middle or right") else .left;
         if (cmd[0] != 'u') try ev.append(gpa, .{ .mouse_down = .{ .x = x, .y = y, .button = b } });
         if (cmd[0] != 'd') try ev.append(gpa, .{ .mouse_up = .{ .x = x, .y = y, .button = b } });
+    } else if (std.mem.eql(u8, cmd, "dblclick")) { // two clicks; the second one is the double click
+        const x = try num(err, &it);
+        const y = try num(err, &it);
+        try ev.append(gpa, .{ .mouse_down = .{ .x = x, .y = y } });
+        try ev.append(gpa, .{ .mouse_up = .{ .x = x, .y = y } });
+        try ev.append(gpa, .{ .mouse_down = .{ .x = x, .y = y, .clicks = 2 } });
+        try ev.append(gpa, .{ .mouse_up = .{ .x = x, .y = y } });
     } else if (std.mem.eql(u8, cmd, "drag")) {
         const x0 = try num(err, &it);
         const y0 = try num(err, &it);
