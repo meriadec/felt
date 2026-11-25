@@ -24,6 +24,9 @@ pub const Options = struct {
     clipboard_out: ?[]const u8 = null,
     /// --canvas-bg. Headless never reads or writes the config file.
     canvas_bg: ?core.settings.CanvasBg = null,
+    /// UI font file and size (main.zig reads FELT_UI_FONT, FELT_UI_FONT_SIZE):
+    /// to look at a font in a shot. Not the config file; unset in the tests.
+    ui_font: core.settings.Settings = .{},
 };
 
 /// Replay `script` on a new App that owns `image`. Renders after each event
@@ -84,10 +87,12 @@ pub const CaptureReplay = struct {
 
 /// Replay a `capture` script on the picker. `frozen` is the screen: the
 /// frame has its size. Borrows `script` (the picker points at its windows).
-pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *const script_mod.Script) !CaptureReplay {
+pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *const script_mod.Script, ui: core.settings.Settings) !CaptureReplay {
     var font = try core.font.Font.init(gpa, core.font_ttf);
     defer font.deinit();
-    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font };
+    var ui_font = core.ui_font.UiFont.init(gpa, ui);
+    defer ui_font.deinit();
+    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font, .ui = ui_font.get() };
     var r = CaptureReplay{
         .picker = core.picker.Picker.init(frozen.width, frozen.height, script.windows.items, script.delay_ms),
         .frame = try Canvas.init(gpa, frozen.width, frozen.height),
@@ -282,7 +287,7 @@ fn appConfig(opts: Options) app_mod.Config {
     return .{
         .output_path = opts.output_path,
         .clipboard = if (opts.clipboard_out) |p| .{ .file = p } else .none,
-        .settings = config.resolve(.{}, opts.canvas_bg),
+        .settings = config.resolve(opts.ui_font, opts.canvas_bg),
         .settings_path = null,
     };
 }
@@ -298,7 +303,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     if (script.capture) {
         var frozen = image;
         defer frozen.deinit(gpa);
-        var r = try replayCapture(gpa, &frozen, &script);
+        var r = try replayCapture(gpa, &frozen, &script, opts.ui_font);
         defer r.deinit(gpa);
         if (opts.frame_out) |p| {
             try save(gpa, &r.frame, p);

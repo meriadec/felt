@@ -50,8 +50,38 @@ pub fn stepPadding(px: u16, delta: i32) u16 {
     return padding_steps[@intCast(std.math.clamp(i + delta, 0, padding_steps.len - 1))];
 }
 
+/// A file path in a fixed buffer, so `Settings` stays a plain value.
+pub const FontPath = struct {
+    buf: [max_path]u8 = [_]u8{0} ** max_path,
+    len: u16 = 0,
+
+    pub const max_path = 400;
+
+    /// A path longer than the buffer reads as no path.
+    pub fn of(s: []const u8) FontPath {
+        var p = FontPath{};
+        if (s.len > max_path) return p;
+        @memcpy(p.buf[0..s.len], s);
+        p.len = @intCast(s.len);
+        return p;
+    }
+
+    pub fn slice(p: *const FontPath) []const u8 {
+        return p.buf[0..p.len];
+    }
+};
+
+/// The UI font size: the pixel size of the small label text at UI scale 1
+/// (see font.zig `Font.size_k`).
+pub const ui_font_size_default: u8 = 11;
+pub const ui_font_size_min: u8 = 6;
+pub const ui_font_size_max: u8 = 24;
+
 pub const Settings = struct {
     canvas_bg: CanvasBg = .light,
+    /// Font file for the chrome and the ruler labels; empty: the embedded font.
+    ui_font: FontPath = .{},
+    ui_font_size: u8 = ui_font_size_default,
     /// Canvas padding in image px: one of `padding_steps`.
     padding: u16 = padding_steps[0],
 };
@@ -74,6 +104,11 @@ pub fn parse(src: []const u8) Settings {
         const val = std.mem.trim(u8, line[eq + 1 ..], " \t");
         if (std.mem.eql(u8, key, "canvas_bg")) {
             if (std.meta.stringToEnum(CanvasBg, val)) |v| s.canvas_bg = v;
+        } else if (std.mem.eql(u8, key, "ui_font")) {
+            s.ui_font = FontPath.of(val);
+        } else if (std.mem.eql(u8, key, "ui_font_size")) {
+            const n = std.fmt.parseInt(u8, val, 10) catch continue;
+            if (n >= ui_font_size_min and n <= ui_font_size_max) s.ui_font_size = n;
         }
     }
     return s;
@@ -85,8 +120,13 @@ pub fn write(s: Settings, w: *std.Io.Writer) !void {
         \\# felt settings (written by felt; `b` switches the canvas)
         \\# canvas_bg: light or dark, the canvas outside the image
         \\canvas_bg={s}
+        \\# ui_font: path of a .ttf or .otf for the chrome and the ruler labels
+        \\# (empty: the embedded font); a missing file falls back to it
+        \\ui_font={s}
+        \\# ui_font_size: pixels of the small label text, 6 to 24
+        \\ui_font_size={d}
         \\
-    , .{@tagName(s.canvas_bg)});
+    , .{ @tagName(s.canvas_bg), s.ui_font.slice(), s.ui_font_size });
 }
 
 test "parse: good, defaults, bad lines" {
@@ -102,6 +142,21 @@ test "parse: good, defaults, bad lines" {
     try std.testing.expectEqual(CanvasBg.light, parse(&big).canvas_bg);
 }
 
+test "ui font keys: parse, bad values, write keeps them" {
+    const s = parse("ui_font = /a/b c.otf \nui_font_size=10\n");
+    try std.testing.expectEqualStrings("/a/b c.otf", s.ui_font.slice());
+    try std.testing.expectEqual(@as(u8, 10), s.ui_font_size);
+    try std.testing.expectEqual(ui_font_size_default, parse("ui_font_size=99\n").ui_font_size);
+    try std.testing.expectEqual(ui_font_size_default, parse("ui_font_size=x\n").ui_font_size);
+    try std.testing.expectEqual(@as(usize, 0), parse("").ui_font.slice().len);
+    var buf: [1024]u8 = undefined;
+    var w = std.Io.Writer.fixed(&buf);
+    try write(s, &w);
+    const t = parse(w.buffered());
+    try std.testing.expectEqualStrings("/a/b c.otf", t.ui_font.slice());
+    try std.testing.expectEqual(@as(u8, 10), t.ui_font_size);
+}
+
 test "padding steps: nearest, stepping, clamping" {
     try std.testing.expectEqual(@as(u16, 0), (Settings{}).padding);
     try std.testing.expectEqual(@as(u16, 96), stepPadding(64, 1));
@@ -111,7 +166,7 @@ test "padding steps: nearest, stepping, clamping" {
     try std.testing.expectEqual(@as(u16, 128), stepPadding(100, 1)); // 100 reads as 96
     // The padding is not in the config file: every session starts at 0.
     try std.testing.expectEqual(@as(u16, 0), parse("padding=128\n").padding);
-    var buf: [256]u8 = undefined;
+    var buf: [1024]u8 = undefined;
     var w = std.Io.Writer.fixed(&buf);
     try write(.{ .padding = 128 }, &w);
     try std.testing.expectEqual(@as(u16, 0), parse(w.buffered()).padding);
@@ -119,7 +174,7 @@ test "padding steps: nearest, stepping, clamping" {
 
 test "write then parse gives the same settings" {
     for ([_]CanvasBg{ .light, .dark }) |bg| {
-        var buf: [256]u8 = undefined;
+        var buf: [1024]u8 = undefined;
         var w = std.Io.Writer.fixed(&buf);
         try write(.{ .canvas_bg = bg }, &w);
         try std.testing.expectEqual(bg, parse(w.buffered()).canvas_bg);

@@ -42,6 +42,7 @@ pub const Result = struct {
 pub const App = struct {
     gpa: std.mem.Allocator,
     font: core.font.Font,
+    ui_font: core.ui_font.UiFont,
     image: Canvas,
     doc: core.document.Document = .{},
     editor: Editor,
@@ -55,6 +56,7 @@ pub const App = struct {
         self.* = .{
             .gpa = gpa,
             .font = try core.font.Font.init(gpa, core.font_ttf),
+            .ui_font = core.ui_font.UiFont.init(gpa, cfg.settings),
             .image = image,
             .editor = undefined,
             .comp = .{ .gpa = gpa },
@@ -72,12 +74,13 @@ pub const App = struct {
         self.editor.deinit();
         self.doc.deinit(self.gpa);
         self.font.deinit();
+        self.ui_font.deinit();
         self.image.deinit(self.gpa);
         self.gpa.destroy(self);
     }
 
     pub fn ctx(self: *App) core.draw.Ctx {
-        return .{ .gpa = self.gpa, .font = &self.font, .pad = self.editor.settings.padding };
+        return .{ .gpa = self.gpa, .font = &self.font, .ui = self.ui_font.get(), .pad = self.editor.settings.padding };
     }
 
     pub fn handle(self: *App, ev: core.input.Event) !Result {

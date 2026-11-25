@@ -141,7 +141,7 @@ fn captureGolden(gpa: std.mem.Allocator, name: []const u8) !?usize {
     if (!script.capture) return null;
     var frozen = try core.image_io.load(gpa, script.image orelse fixture);
     defer frozen.deinit(gpa);
-    var r = try headless.replayCapture(gpa, &frozen, &script);
+    var r = try headless.replayCapture(gpa, &frozen, &script, .{});
     defer r.deinit(gpa);
     var failed: usize = 0;
 

@@ -11,6 +11,7 @@
 const std = @import("std");
 const core = @import("core");
 const xlib = @import("xlib.zig");
+const config = @import("../config.zig");
 
 const c = xlib.c;
 const Surface = xlib.Surface;
@@ -22,6 +23,8 @@ pub const Options = struct {
     /// Initial delay before the live grab, ms (Tab toggles it).
     delay_ms: u32 = 0,
     timing: bool = false,
+    /// Config file: only its UI font settings count here.
+    config_path: ?[]const u8 = null,
 };
 
 /// After the overlay is gone, wait at least this long for the screen to
@@ -137,7 +140,9 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !?Canvas {
 
     var font = try core.font.Font.init(gpa, core.font_ttf);
     defer font.deinit();
-    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font };
+    var ui_font = core.ui_font.UiFont.init(gpa, if (opts.config_path) |p| config.load(p) else .{});
+    defer ui_font.deinit();
+    const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font, .ui = ui_font.get() };
     var picker = core.picker.Picker.init(sw, sh, windows, opts.delay_ms);
     var scene = core.picker_draw.Scene{};
 

@@ -54,10 +54,11 @@ pub fn main() !u8 {
             .output_path = opts.output,
             .clipboard_out = opts.clipboard_out,
             .canvas_bg = opts.canvas_bg,
+            .ui_font = headlessUiFont(),
         }) catch |err| return fail(err, opts.image.?),
         .capture => {
             // Pick the region first; null: cancelled (no editor, exit status 1).
-            const image = (x11_capture.run(gpa, .{ .delay_ms = opts.delay_ms, .timing = opts.timing }) catch |err| return fail(err, "(screen)")) orelse return 1;
+            const image = (x11_capture.run(gpa, .{ .delay_ms = opts.delay_ms, .timing = opts.timing, .config_path = config_path }) catch |err| return fail(err, "(screen)")) orelse return 1;
             const out = opts.output orelse blk: {
                 default_out = try cli.captureOutput(gpa, std.posix.getenv("HOME"), std.time.timestamp());
                 break :blk default_out.?;
@@ -92,6 +93,16 @@ pub fn main() !u8 {
         }) catch |err| return fail(err, opts.image orelse "(synthetic)"),
     }
     return 0;
+}
+
+/// Headless only: FELT_UI_FONT (a font file) and FELT_UI_FONT_SIZE, to look
+/// at a font in a shot. Never the config file.
+fn headlessUiFont() core.settings.Settings {
+    var s = core.settings.Settings{};
+    const path = std.posix.getenv("FELT_UI_FONT") orelse return s;
+    s.ui_font = core.settings.FontPath.of(path);
+    if (std.posix.getenv("FELT_UI_FONT_SIZE")) |v| s.ui_font_size = std.fmt.parseInt(u8, v, 10) catch s.ui_font_size;
+    return s;
 }
 
 fn fail(err: anyerror, image: []const u8) u8 {

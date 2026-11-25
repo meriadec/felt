@@ -36,7 +36,8 @@ image files. Build: `coreModule` in build.zig.
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
 | `view.zig` | Image-to-screen transform: fit the canvas to the screen (never above 1:1, centered) |
-| `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks |
+| `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks. A font has a size factor and may size by em (the UI font) |
+| `ui_font.zig` | The optional UI font file from the settings (`ui_font`, `ui_font_size`): chrome, browser, picker and ruler draw with `Ctx.uiFont()`; annotations keep `Ctx.font`. Missing or bad file: the embedded font, one warning. Tests never load one (headless reads no config) |
 | `image_io.zig` | Decode and encode image files: `png.zig` first, stb_image for the rest |
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
@@ -53,7 +54,7 @@ image files. Build: `coreModule` in build.zig.
 | `document.zig` | The scene, the annotation list (each annotation knows its image: `owners`), crop stack, undo/redo of all, number counter. Images: `addImage`, `moveImage` (carries its annotations), `removeImage` (removes them too; one undo step), `base()` = scene bounding box. A scene change bumps `revision` and `removals`: the compositor repaints everything. A one-image document paints on the old fast path (`compositor.paintImage`, one cached downscale); 2+ images paint each image (`paintPlaced`, one cached downscale per image id) over the canvas background, and the export blits each image into one composite. The UI must not remove the last image |
 | `extent.zig` | Canvas of the document: the kept rectangle plus the canvas padding (`Ctx.pad`), grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
-| `settings.zig` | User settings, not document state: the canvas background (light, dark grey), the canvas padding and its step list (`padding_steps`); the config file text (`parse`, `write`) |
+| `settings.zig` | User settings, not document state: the canvas background (light, dark grey), the canvas padding and its step list (`padding_steps`), the UI font path and size; the config file text (`parse`, `write`) |
 | `input.zig` | Backend-neutral events and key chords |
 | `keymap.zig` | Single source of truth for keys: dispatch, dock order, help overlay, docs/keymap.md; a tool key pressed again (`ToolInfo.again`) |
 | `editor.zig` | Input state machine: tools, drag, typing, commands; no drawing, no IO |

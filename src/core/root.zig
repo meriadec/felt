@@ -13,6 +13,7 @@ pub const png = @import("png.zig");
 pub const resample = @import("resample.zig");
 pub const view = @import("view.zig");
 pub const font = @import("font.zig");
+pub const ui_font = @import("ui_font.zig");
 pub const text = @import("text.zig");
 pub const style = @import("style.zig");
 pub const settings = @import("settings.zig");

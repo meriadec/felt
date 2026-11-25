@@ -22,11 +22,21 @@ pub const Font = struct {
     line_gap: f32,
     bitmaps: std.heap.ArenaAllocator,
     glyphs: std.AutoHashMapUnmanaged(u64, Glyph) = .empty,
+    /// Multiplies every pixel size: a UI font set to a size of its own
+    /// (ui_font.zig). 1 for the embedded font.
+    size_k: f32 = 1,
+    /// A size is the em height, not the line height (ascent - descent): the
+    /// sizes of a font from a file mean the same for any family.
+    by_em: bool = false,
 
     /// `ttf` must outlive the font.
     pub fn init(gpa: std.mem.Allocator, ttf: []const u8) !Font {
         var info: c.stbtt_fontinfo = undefined;
-        if (c.stbtt_InitFont(&info, ttf.ptr, c.stbtt_GetFontOffsetForIndex(ttf.ptr, 0)) == 0) return error.BadFont;
+        // stb_truetype trusts its input: a file that is no font must not reach it.
+        if (ttf.len < 12) return error.BadFont;
+        const off = c.stbtt_GetFontOffsetForIndex(ttf.ptr, 0);
+        if (off < 0) return error.BadFont;
+        if (c.stbtt_InitFont(&info, ttf.ptr, off) == 0) return error.BadFont;
         var a: c_int = 0;
         var d: c_int = 0;
         var g: c_int = 0;
@@ -48,7 +58,9 @@ pub const Font = struct {
 
     /// Font units to pixels for a size where ascent - descent = px.
     pub fn scale(self: *const Font, px: u16) f32 {
-        return c.stbtt_ScaleForPixelHeight(&self.info, @floatFromInt(px));
+        const p: f32 = @floatFromInt(px);
+        if (self.by_em) return c.stbtt_ScaleForMappingEmToPixels(&self.info, p * self.size_k);
+        return c.stbtt_ScaleForPixelHeight(&self.info, p) * self.size_k;
     }
 
     pub fn ascentPx(self: *const Font, px: u16) f32 {

@@ -125,6 +125,21 @@ session starts at 0. `--canvas-bg light|dark` overrides the file for one
 run and does not change it. Headless runs (`--headless`, tests) never read or
 write the file.
 
+The interface font is a setting too (the chrome, the file browser, the capture
+picker and its ruler; not the text and callouts drawn into the image):
+
+```
+ui_font=/home/me/.local/share/fonts/MyMono.otf
+ui_font_size=10
+```
+
+`ui_font` is a `.ttf` or `.otf` file (OpenType/CFF works). `ui_font_size` is the
+em size in px of the small label text at scale 1 (6 to 24, default 11); the
+other texts scale with it. Empty, missing or unreadable font: the embedded
+font, with one warning on stderr. Felt keeps both keys when it writes the file.
+To look at a font in a headless shot, set `FELT_UI_FONT` and `FELT_UI_FONT_SIZE`
+(the file is never read there).
+
 ## i3
 
 One line gives you a screenshot key:

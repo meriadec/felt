@@ -218,7 +218,7 @@ fn center(b: Bounds) Vec2 {
 }
 
 fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
-    return text.measure(ctx.font, s, size).width;
+    return text.measure(ctx.uiFont(), s, size).width;
 }
 
 // ---- dock --------------------------------------------------------------
@@ -598,12 +598,12 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .browser => |b| try browser_draw.draw(ctx, cv, clip, b),
         .ghost => |gh| browser_draw.drawGhost(cv, clip, gh.b, gh.g.row, gh.g.at),
         .text => |t| {
-            var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, null);
+            var mask = try text.render(ctx.gpa, ctx.uiFont(), t.s, t.px, 0, 0, null);
             defer mask.deinit(ctx.gpa);
             cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(t.pos.x), @intFromFloat(t.pos.y), t.color, clip);
         },
         .glyph => |g| {
-            var mask = try text.render(ctx.gpa, ctx.font, g.s, g.px, 1, 0, null);
+            var mask = try text.render(ctx.gpa, ctx.uiFont(), g.s, g.px, 1, 0, null);
             defer mask.deinit(ctx.gpa);
             const ink = mask.inkBounds();
             const ix = @as(f32, @floatFromInt(ink[0] + ink[2])) * 0.5;

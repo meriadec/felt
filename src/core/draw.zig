@@ -21,8 +21,15 @@ const Color = color.Color;
 const Annotation = ann_mod.Annotation;
 
 pub const Ctx = struct {
+    pub fn uiFont(c: Ctx) *Font {
+        return c.ui orelse c.font;
+    }
+
     gpa: std.mem.Allocator,
+    /// The annotation font: text and callouts drawn into the image.
     font: *Font,
+    /// The font of the chrome, the browser and the picker; null: `font`.
+    ui: ?*Font = null,
     /// Canvas padding (image px, settings.zig `padding_steps`): margin around
     /// the kept rectangle that is always canvas (extent.zig). 0: none.
     pad: i32 = 0,

@@ -59,7 +59,7 @@ const Items = struct {
 fn pill(ctx: Ctx, s: []const u8, px: u16, x: f32, y: f32, s_ui: f32) Pill {
     const ph = 26 * s_ui;
     const pad = 10 * s_ui;
-    const tw = text.measure(ctx.font, s, px).width;
+    const tw = text.measure(ctx.uiFont(), s, px).width;
     const dot_w = 14 * s_ui;
     const pw = tw + 2 * pad + dot_w;
     const x0 = @round(x);
@@ -116,7 +116,7 @@ fn drawPill(ctx: Ctx, cv: *Canvas, clip: Rect, p: Pill, s: f32) !void {
     raster.fill(cv, clip, rrect(b, 6 * s), .{ .solid = nord.n1 }, .{});
     raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), 6 * s - 0.5), 1), .{ .solid = nord.n2 }, .{});
     if (p.dot) |c| raster.fill(cv, clip, sdf.Disc{ .c = c, .r = 4 * s }, .{ .solid = if (p.dot_on) nord.n14 else nord.n3 }, .{});
-    var mask = try text.render(ctx.gpa, ctx.font, p.s, p.px, 0, 0, null);
+    var mask = try text.render(ctx.gpa, ctx.uiFont(), p.s, p.px, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     const ph: f32 = @floatFromInt(p.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(p.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(p.px)) * 0.6));
@@ -127,7 +127,7 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     if (!l.rect.intersects(clip)) return;
     const b = l.rect.toBounds();
     raster.fill(cv, clip, rrect(b, 3 * s), .{ .solid = if (l.strong) nord.n1 else nord.n0 }, .{});
-    var mask = try text.render(ctx.gpa, ctx.font, l.str(), l.px, 0, 0, null);
+    var mask = try text.render(ctx.gpa, ctx.uiFont(), l.str(), l.px, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     const ph: f32 = @floatFromInt(l.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(l.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(l.px)) * 0.6));

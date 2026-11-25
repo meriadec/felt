@@ -31,12 +31,12 @@ fn px(v: f32) u16 {
 }
 
 fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
-    return text.measure(ctx.font, s, size).width;
+    return text.measure(ctx.uiFont(), s, size).width;
 }
 
 fn drawText(ctx: Ctx, cv: *Canvas, clip: Rect, pos: Vec2, s: []const u8, size: u16, col: Color) !void {
     if (s.len == 0) return;
-    var mask = try text.render(ctx.gpa, ctx.font, s, size, 0, 0, null);
+    var mask = try text.render(ctx.gpa, ctx.uiFont(), s, size, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(@round(pos.x)), @intFromFloat(@round(pos.y)), col, clip);
 }
