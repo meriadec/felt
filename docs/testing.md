@@ -89,6 +89,8 @@ One command per line, screen coordinates, `#` starts a comment.
 | `resize W H` | Window resize |
 | `capture` | Replay on the capture picker (src/core/picker.zig), not the editor: the image is the frozen screen and the screen has its size (`size` is ignored). The frame is the last picker frame; the export is the crop if the script confirmed a selection (a drag released, or a click on a window). `ui` is an error. The delay never waits: the crop is of the frozen picture |
 | `window X Y W H` | A top-level window for the picker, topmost first (the first one that holds the pointer wins) |
+| `place PATH X Y` | Place another image (repo-relative PNG) with its top-left corner at the scene point (X, Y) in image px; the first image is at (0, 0). One undo step |
+| `addimage PATH SIDE` | Place another image on a magnet side (`left`, `top`, `right`, `bottom`) of the image placed last: 64 px away, centered on the shared edge (src/core/magnet.zig). One undo step. See tests/scripts/montage.txt (small tiles: tests/fixtures/tile_{a,b,c}.png) |
 | `delay SECONDS` | The picker's initial delay (`--delay`); `key tab` toggles it |
 
 The replay renders after each event that asks for a redraw, like the X11

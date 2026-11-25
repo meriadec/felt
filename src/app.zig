@@ -99,6 +99,24 @@ pub const App = struct {
         return &self.comp.frame.?;
     }
 
+    /// Load the PNG of `a.path` and place it on the scene: at a scene point,
+    /// or `magnet.gap` away from the image placed last, on a side of it
+    /// (centered on the shared edge). One undo step.
+    pub fn addImageFile(self: *App, a: anytype) !void {
+        const cv = try self.gpa.create(Canvas);
+        errdefer self.gpa.destroy(cv);
+        cv.* = try core.image_io.load(self.gpa, a.path);
+        errdefer cv.deinit(self.gpa);
+        const w: i32 = @intCast(cv.width);
+        const h: i32 = @intCast(cv.height);
+        const imgs = self.doc.scene.images.items;
+        const r = switch (a.at) {
+            .pos => |p| core.geom.Rect.fromSize(p[0], p[1], w, h),
+            .side => |s| core.magnet.slotRect(imgs[imgs.len - 1].rect(), s, w, h),
+        };
+        _ = try self.doc.addImage(self.gpa, cv.width, cv.height, r.x0, r.y0, cv, true);
+    }
+
     /// Full-resolution image with annotations. Caller owns it.
     pub fn exportImage(self: *App) !Canvas {
         return core.exporter.render(self.ctx(), &self.doc, self.editor.settings.canvas_bg.color());

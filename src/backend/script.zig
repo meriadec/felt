@@ -34,6 +34,15 @@ pub const Step = union(enum) {
     ui: UiTarget,
     /// Move the pointer onto a chrome item (hover, no click).
     hover: UiTarget,
+    /// Place another image on the scene (`place`, `addimage`).
+    add_image: AddImage,
+};
+
+/// Where `add_image` puts the image: at a scene point, or on a magnet side
+/// of the image placed last.
+pub const AddImage = struct {
+    path: []const u8,
+    at: union(enum) { pos: [2]i32, side: core.magnet.Side },
 };
 
 /// A list of steps that takes events, for the parser.
@@ -60,9 +69,10 @@ pub const Script = struct {
     delay_ms: u32 = 0,
 
     pub fn deinit(self: *Script, gpa: std.mem.Allocator) void {
-        self.events.deinit(gpa);
         self.windows.deinit(gpa);
         if (self.image) |p| gpa.free(p);
+        for (self.events.items) |st| if (st == .add_image) gpa.free(st.add_image.path);
+        self.events.deinit(gpa);
     }
 };
 
@@ -107,6 +117,15 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         const path = it.next() orelse return fail(err, "image needs a path");
         if (s.image) |old| gpa.free(old);
         s.image = try gpa.dupe(u8, path);
+    } else if (std.mem.eql(u8, cmd, "place") or std.mem.eql(u8, cmd, "addimage")) {
+        const path = it.next() orelse return fail(err, "needs an image path");
+        const at: @FieldType(AddImage, "at") = if (cmd[0] == 'p') .{ .pos = .{
+            @intFromFloat(try num(err, &it)),
+            @intFromFloat(try num(err, &it)),
+        } } else .{ .side = std.meta.stringToEnum(core.magnet.Side, it.next() orelse "") orelse return fail(err, "side must be left, top, right or bottom") };
+        const owned = try gpa.dupe(u8, path);
+        errdefer gpa.free(owned);
+        try s.events.append(gpa, .{ .add_image = .{ .path = owned, .at = at } });
     } else if (std.mem.eql(u8, cmd, "capture")) {
         s.capture = true;
     } else if (std.mem.eql(u8, cmd, "window")) {

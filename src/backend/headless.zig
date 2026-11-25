@@ -45,6 +45,11 @@ pub fn replay(gpa: std.mem.Allocator, image: Canvas, script: *const script_mod.S
             if (try feed(app, .{ .mouse_down = .{ .x = p.x, .y = p.y } })) break;
             if (try feed(app, .{ .mouse_up = .{ .x = p.x, .y = p.y } })) break;
         },
+        .add_image => |a| {
+            try app.addImageFile(a);
+            _ = app.editor.syncView();
+            _ = try app.render();
+        },
         .hover => |t| {
             const p = try uiPoint(app, t, .hover) orelse continue;
             if (try feed(app, .{ .mouse_move = .{ .x = p.x, .y = p.y } })) break;
@@ -87,8 +92,8 @@ pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *con
             if (r.picker.finished()) break;
             if (r.picker.handle(ev).redraw) _ = try r.scene.render(ctx, &r.picker, frozen, &r.frame);
         },
-        .ui, .hover => {
-            std.log.err("script: `ui` and `move ui` need the editor, not the capture picker", .{});
+        .ui, .hover, .add_image => {
+            std.log.err("script: `ui`, `move ui`, `place` and `addimage` need the editor, not the capture picker", .{});
             return error.BadScript;
         },
     };

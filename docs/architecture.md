@@ -42,7 +42,7 @@ image files. Build: `coreModule` in build.zig.
 | `annotation.zig` | Annotation union; image coordinates and image-pixel sizes |
 | `scene.zig` | Placed images (id, size, position in scene px, canvas) and queries: bounding box, hit test, nearest image |
 | `magnet.zig` | Pure magnet slots: rectangles at the left, top, right, bottom of each placed image, `gap` = 64 px away, centered on the shared edge; the nearest slot to a point |
-| `document.zig` | Annotation list, crop stack, undo/redo of both, number counter |
+| `document.zig` | The scene, the annotation list (each annotation knows its image: `owners`), crop stack, undo/redo of all, number counter. Images: `addImage`, `moveImage` (carries its annotations), `removeImage` (removes them too; one undo step), `base()` = scene bounding box. A scene change bumps `revision` and `removals`: the compositor repaints everything. A one-image document paints on the old fast path (`compositor.paintImage`, one cached downscale); 2+ images paint each image (`paintPlaced`, one cached downscale per image id) over the canvas background, and the export blits each image into one composite. The UI must not remove the last image |
 | `extent.zig` | Canvas of the document: the kept rectangle plus the canvas padding (`Ctx.pad`), grown by annotations; each annotation's clip |
 | `style.zig` | Size levels (stroke, font), UI scale from the screen height |
 | `settings.zig` | User settings, not document state: the canvas background (light, dark grey), the canvas padding and its step list (`padding_steps`); the config file text (`parse`, `write`) |

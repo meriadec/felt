@@ -469,7 +469,7 @@ pub const Editor = struct {
     /// Follow document changes: recompute the canvas, and refit the view
     /// when the kept rectangle changed (crop, its undo or redo). A canvas
     /// that grows or shrinks with annotations keeps the view: no jumps.
-    fn syncView(self: *Editor) bool {
+    pub fn syncView(self: *Editor) bool {
         if (self.doc.revision == self.canvas_rev) return false;
         self.canvas_rev = self.doc.revision;
         self.canvas = extent.canvas(self.ctx(), self.doc);

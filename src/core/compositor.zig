@@ -14,6 +14,7 @@ const chrome = @import("chrome.zig");
 const resample = @import("resample.zig");
 const sdf = @import("sdf.zig");
 const raster = @import("raster.zig");
+const scene_mod = @import("scene.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 const Annotation = @import("annotation.zig").Annotation;
@@ -189,6 +190,9 @@ const Clock = struct {
     }
 };
 
+/// A downscaled kept part of a placed image (see `Compositor.scaled_many`).
+const ScaledImage = struct { id: u32, key: Rect, pic: Rect, canvas: Canvas };
+
 pub const Compositor = struct {
     gpa: std.mem.Allocator,
     /// The kept part of the image at the view scale, when the scale is
@@ -197,6 +201,9 @@ pub const Compositor = struct {
     scaled: ?Canvas = null,
     scaled_key: Rect = Rect.empty,
     scaled_pic: Rect = Rect.empty,
+    /// The same for the images of a scene with 2 or more: one entry per
+    /// placed image id.
+    scaled_many: std.ArrayList(ScaledImage) = .empty,
     scene: ?Canvas = null,
     frame: ?Canvas = null,
     /// false: `frame` is a borrowed buffer (e.g. X11 shared memory).
@@ -232,6 +239,8 @@ pub const Compositor = struct {
         if (self.scene) |*cv| cv.deinit(self.gpa);
         if (self.owns_frame) if (self.frame) |*cv| cv.deinit(self.gpa);
         self.painted.deinit(self.gpa);
+        for (self.scaled_many.items) |*e| e.canvas.deinit(self.gpa);
+        self.scaled_many.deinit(self.gpa);
         self.scaled = null;
         self.scene = null;
         self.frame = null;
@@ -271,8 +280,15 @@ pub const Compositor = struct {
             fillBackground(cv, b, ox, oy);
             paintBackdrop(cv, b, s.canvas_dst);
         }
-        for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
-        try self.paintImage(cv, s, r);
+        if (s.doc.scene.count() > 1) {
+            // Gaps between the images show the canvas background.
+            const q = r.intersect(s.canvas_dst);
+            if (!q.isEmpty()) cv.fillRect(q, s.bg);
+            for (s.doc.scene.images.items) |p| try self.paintPlaced(cv, s, r, p);
+        } else {
+            for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
+            try self.paintImage(cv, s, r);
+        }
         for (s.doc.items.items[0..n], 0..) |a, i| {
             if (!draw.bounds(s.ctx, a, s.xf, .{}).intersects(r)) continue; // e.g. no text mask to render
             const clip = s.itemClip(i);
@@ -298,6 +314,41 @@ pub const Compositor = struct {
             }
         }
         return r.intersect(s.view.screen());
+    }
+
+    /// The kept part of one image of a scene with 2 or more, in `r`.
+    fn paintPlaced(self: *Compositor, cv: *Canvas, s: *const Scene, r: Rect, p: scene_mod.Placed) !void {
+        const src = p.canvas orelse return;
+        const pic = s.doc.kept().intersect(p.rect());
+        if (pic.isEmpty()) return;
+        const pd = s.view.rect(pic);
+        const q = r.intersect(pd);
+        if (q.isEmpty()) return;
+        // Source px of `pic` in the image.
+        const sp = pic.offset(-p.x, -p.y);
+        if (pd.width() == pic.width() and pd.height() == pic.height()) {
+            cv.blitRect(src, q.offset(sp.x0 - pd.x0, sp.y0 - pd.y0), q.x0, q.y0);
+        } else if (pd.width() > pic.width() or pd.height() > pic.height()) {
+            resample.nearestInto(cv, q, src, sp, pd);
+        } else {
+            const key = Rect.fromSize(0, 0, pd.width(), pd.height());
+            const e = for (self.scaled_many.items) |*e| {
+                if (e.id == p.id) break e;
+            } else blk: {
+                try self.scaled_many.append(self.gpa, .{ .id = p.id, .key = Rect.empty, .pic = Rect.empty, .canvas = undefined });
+                const last = &self.scaled_many.items[self.scaled_many.items.len - 1];
+                last.canvas = try Canvas.init(self.gpa, 1, 1);
+                break :blk last;
+            };
+            if (!std.meta.eql(e.key, key) or !std.meta.eql(e.pic, sp)) {
+                const fresh = try resample.downscaleRect(self.gpa, src, sp, @intCast(pd.width()), @intCast(pd.height()));
+                e.canvas.deinit(self.gpa);
+                e.canvas = fresh;
+                e.key = key;
+                e.pic = sp;
+            }
+            cv.blitRect(&e.canvas, q.offset(-pd.x0, -pd.y0), q.x0, q.y0);
+        }
     }
 
     /// The kept part of the image, in `r` of its screen rectangle.
@@ -337,7 +388,7 @@ pub const Compositor = struct {
 
     /// Bring `frame` up to date; returns the screen rectangles that changed.
     pub fn render(self: *Compositor, ctx: draw.Ctx, doc: *const Document, ed: *const Editor) !Damage {
-        const image = doc.scene.images.items[0].canvas.?;
+        const image = if (doc.scene.count() > 0) doc.scene.images.items[0].canvas orelse return error.NoImage else return error.NoImage;
         var dmg = Damage{};
         const v = ed.view;
         const w = v.screen_w;
@@ -398,7 +449,9 @@ pub const Compositor = struct {
             if (!std.meta.eql(s.bg, self.scene_bg)) {
                 // The canvas background changed: repaint the canvas outside
                 // the image (bands around it), with what is drawn there.
-                for (s.canvas_dst.minus(s.pic_dst)) |b| fix.add(b.intersect(full_rect));
+                if (doc.scene.count() > 1) {
+                    fix.add(s.canvas_dst.intersect(full_rect));
+                } else for (s.canvas_dst.minus(s.pic_dst)) |b| fix.add(b.intersect(full_rect));
             }
             if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
                 const old_dst = v.rect(self.scene_canvas);

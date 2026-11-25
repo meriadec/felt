@@ -1,0 +1,6 @@
+# Three images on one canvas: A (first, 240x160), B on its right, C below B (a side is of the image placed last).
+# Annotations stay on their image; the export is one composite of the scene.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
