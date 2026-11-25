@@ -121,7 +121,9 @@ fn checkOffChrome(app: *App, ev: core.input.Event) !void {
 
 /// Handle one event, render if asked; true on quit.
 fn feed(app: *App, ev: core.input.Event) !bool {
-    const r = try app.handle(ev);
+    var r = try app.handle(ev);
+    // No clock in a replay: an animation ends at once, so frames are deterministic.
+    if (app.editor.finishAnimation()) r.redraw = true;
     if (r.redraw) _ = try app.render();
     return r.quit;
 }

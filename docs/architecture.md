@@ -36,6 +36,7 @@ image files. Build: `coreModule` in build.zig.
 | `raster.zig` | Tile-culled anti-aliased fill of any SDF shape |
 | `resample.zig` | Area-average downscale (screen copy of the image) |
 | `view.zig` | Image-to-screen transform: fit the canvas to the screen (never above 1:1, centered) |
+| `viewanim.zig` | `ViewAnim`: 220 ms ease-out between two transforms, clock injected (`step`); `follow` = the target view that keeps an image at the same screen place |
 | `font.zig`, `text.zig` | stb_truetype glyph cache; text layout, coverage masks |
 | `image_io.zig` | Decode and encode image files: `png.zig` first, stb_image for the rest |
 | `png.zig` | Fast PNG codec for 8-bit RGB/RGBA on libdeflate |
@@ -180,11 +181,22 @@ drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
   release the nearest free slot to the pointer wins (`magnet.nearest`) and
   `Document.moveImage` records ONE step that carries the annotations; no
   slot, or the image already there: nothing. Esc, `q` or a right click
-  cancel (no history). View: when the drag becomes active and a slot would
-  fall off the screen, the view zooms out one step to the fit of the scene
-  and all slots plus 8% margin (`makeRoomForSlots`); it is not restored on
-  release or cancel (simple; `0` refits, and a drop that changes the scene
-  bounds refits). No auto-pan.
+  cancel (no history). View: when the drag becomes active it remembers the
+  view (scale, offset) and the image position (`ImageDrag.orig_*`); if a slot
+  would fall off the screen, the view zooms out to the fit of the scene and
+  all slots plus 8% margin (`makeRoomForSlots`). On drop or cancel the view
+  animates back (`backToView`, `viewanim.ViewAnim`, 220 ms ease-out): the
+  original scale, the offset shifted by `scale * (old - new)` so the dragged
+  image shows where it showed before the drag (cancel: exactly the original
+  view). The drop does not refit, even when the scene bounds change. No
+  auto-pan.
+- View animation (`viewanim.zig`, `Editor.anim`): pure and time-injected. The
+  backend calls `Editor.tick(now_ns)` while `Editor.animating()` and redraws
+  when it returns true. The X11 loop then waits with `poll` (8 ms) instead of
+  blocking, so an idle window costs no CPU. Any key, mouse press, wheel or
+  resize ends the animation and keeps the view as it is (a mouse move does
+  not). The headless replay calls `finishAnimation()` after each event: the
+  animation ends at once and goldens show the final view.
 - Move and crops: an annotation made before a crop stays under that crop.
   Its clip stays cut by the crop, it never grows the canvas, and the pointer
   grabs it only where it shows. A move position that would hide its body

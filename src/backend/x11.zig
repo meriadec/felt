@@ -147,9 +147,17 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     // Double click: a second left press within 400 ms and 6 px of the first.
     var last_press: struct { t: c_ulong = 0, x: f32 = -100, y: f32 = -100, clicks: u8 = 0 } = .{};
     while (true) {
-        _ = c.XNextEvent(dpy, &ev);
+        // A view animation runs: wake every ~8 ms to step it; else block.
+        var have_event = true;
+        if (app.editor.animating() and c.XPending(dpy) == 0) {
+            var pfd = [1]std.posix.pollfd{.{ .fd = c.ConnectionNumber(dpy), .events = std.posix.POLL.IN, .revents = 0 }};
+            _ = std.posix.poll(&pfd, 8) catch 0;
+            have_event = c.XPending(dpy) > 0;
+            if (!have_event and app.editor.tick(start.read())) need_render = true;
+        }
+        if (have_event) _ = c.XNextEvent(dpy, &ev);
         var quit = false;
-        while (true) {
+        while (have_event) {
             switch (ev.type) {
                 c.Expose => if (ev.xexpose.count == 0) {
                     exposed = true;

@@ -1,0 +1,10 @@
+# Move tool: drag image B toward the slots, then Esc. The view (zoomed out during the drag) animates back: the final frame is the original view.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key m
+down 600 150
+move 560 200
+move 300 330
+key esc
