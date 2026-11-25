@@ -699,11 +699,12 @@ pub const Editor = struct {
         return switch (d.tool) {
             .rect => .{ .rect = .{ .a = d.start, .b = d.cur, .width = self.strokeImg(), .color = c } },
             .pixelate => .{ .pixelate = .{ .a = d.start, .b = d.cur, .block = self.toImg(style.pixelate_block) } },
-            // A drag is an arrow (a callout with no text); a click stays a box.
+            // A drag is an arrow (a callout with no text). Before the pointer
+            // leaves the click slop there is nothing to show: no empty box.
             .callout => if (d.cur_screen.dist(d.start_screen) >= click_slop)
                 self.routed(.{ .arrow = .{ .tail = d.start, .head = d.cur, .width = self.strokeImg(), .color = c, .style = self.arrow_style } })
             else
-                self.routed(.{ .callout = .{ .target = d.cur, .anchor = d.start, .text = "", .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
+                null,
             .text, .number, .move, .crop => null,
         };
     }
@@ -1652,6 +1653,20 @@ test "startup: the callout tool with a straight pointer; a drag with no key draw
     const c = t.doc.items.items[0].callout;
     try std.testing.expectEqualStrings("x", c.text);
     try std.testing.expectEqual(ann.ArrowStyle.straight, c.style);
+}
+
+test "callout press: no box before the pointer moves; a drag previews the arrow only" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 80, .y = 60 } });
+    try std.testing.expectEqual(@as(?Annotation, null), t.ed.preview());
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 82, .y = 61 } });
+    try std.testing.expectEqual(@as(?Annotation, null), t.ed.preview());
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 20, .y = 10 } });
+    try std.testing.expect(t.ed.preview().? == .arrow);
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 20, .y = 10 } });
+    try std.testing.expect(t.ed.preview().? == .arrow); // typing starts, still no box
 }
 
 test "callout drag then type" {

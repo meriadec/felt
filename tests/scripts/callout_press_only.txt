@@ -1,0 +1,4 @@
+# With the callout tool a press alone shows nothing: no empty text box and
+# no caret. The button is still down at the end.
+size 900 500
+down 300 250

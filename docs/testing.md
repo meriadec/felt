@@ -39,6 +39,10 @@ each time (an image viewer may cache a reused path), and `+repage`:
 convert test-out/shots/arrow.export.png -crop 140x120+740+380 +repage -filter point -resize 400% test-out/zoom-arrow-1.png
 ```
 
+To look at a UI font (the file is not in the repo), set `FELT_UI_FONT=/path/font.otf` and
+`FELT_UI_FONT_SIZE=10` for a `--headless` run or `zig build shot`: only `main.zig` reads them. Goldens and
+`zig build check` use the embedded font: unset them (the golden tests never read them).
+
 Ad hoc, without a script file:
 
 ```sh
@@ -107,7 +111,7 @@ loop. A raw left press (`click`, `down`, `drag`) on the dock, its style
 switch or the top bar fails the replay: click chrome with `ui`, so a
 layout change never turns a drawing press into a button click. A script that ends mid-drag or mid-typing shows the preview in the frame.
 
-Arrows in scripts: there is no arrow tool. With the callout tool a `drag` starts the text (an arrow while it is empty): follow it with `key enter` to commit the arrow, or with `type TEXT` for a callout. The next press commits too, but a key such as a color changes the shape in progress first. `key a` and `key c` with the callout tool active toggle the style (tests/scripts/stairs.txt, callout_arrow.txt).
+Arrows in scripts: there is no arrow tool. With the callout tool a `drag` starts the text (an arrow while it is empty): follow it with `key enter` to commit the arrow, or with `type TEXT` for a callout. The next press commits too, but a key such as a color changes the shape in progress first. `key a` and `key c` with the callout tool active toggle the style (tests/scripts/stairs.txt, callout_arrow.txt). A press or a drag in progress shows no box and no caret, only the arrow preview: `down` alone and `down` + `move` end the script mid-drag (callout_press_only.txt, callout_press.txt).
 
 File browser scripts (tests/scripts/browser_*.txt): `browser_open` (the list: mixed by date, thumbnails, no hidden or text file), `browser_nav` and `browser_trips` (enter a folder, up, scroll), `browser_drag_mid` (ghost + slots), `browser_drop` and `browser_drop_undo` (one undo step), `browser_drag_cancel` (Esc, release over the panel). Unit tests: `dirlist.zig` (filter, sort, dates, paths; a real temp folder), `thumbs.zig` (fit, LRU cache), `loader.zig` (sync and threaded, wake pipe, dropped jobs), `browsergeo.zig` (geometry, hit test, scroll clamp), `browser.zig` (listing, enter, up, errors, worker thread), `editor.zig` (keys, wheel, the drag state machine, cancel) and `browser_draw.zig` (ellipsis).
 

@@ -1,0 +1,7 @@
+# With the callout tool a drag in progress (button down) shows only the
+# arrow preview: no text box, no caret. See callout_press_only.txt.
+size 900 500
+down 300 250
+move 301 251
+move 420 180
+move 520 150
