@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
-# Keep ~/.local/bin/felt in step with every commit. Never fails a commit.
-exec "$(git rev-parse --show-toplevel)/scripts/install-local.sh" || true
+# Keep ~/.local/bin/felt in step with every commit, in the background (a
+# ReleaseFast build takes ~20 s: do not block the commit). Log: .zig-cache/post-commit.log.
+# Never fails a commit. `zig build local` installs in the foreground.
+root="$(git rev-parse --show-toplevel)"
+mkdir -p "$root/.zig-cache"
+nohup "$root/scripts/install-local.sh" >"$root/.zig-cache/post-commit.log" 2>&1 </dev/null &
+exit 0

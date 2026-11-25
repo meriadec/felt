@@ -296,3 +296,18 @@ pipe only while the loader is busy.
   frame / chrome split of the move drags (`compositor.Prof`); finer splits
   (per annotation kind) still need temporary timers.
 - PNG row conversion (RGBA -> pixels, 3-4 ms at 4K) could run on threads.
+
+## Dev harness timings (24 cores)
+
+| Step | Before | After |
+|---|---|---|
+| `zig build check`, warm (tests always re-run) | 21 s | 3.7 s |
+| `zig build test`, warm | 21 s | 4.5 s (3 s of it golden replays) |
+| `zig build check` after a source edit | 22 s | ~5 s + compile |
+| `zig build check`, cold cache | 26 s | ~8 s |
+| post-commit hook (ReleaseFast install) | blocks the commit ~20 s | background, log in `.zig-cache/post-commit.log` |
+| `zig build local`, no change | 0.1 s | 0.1 s |
+
+Cause: the golden test replayed 78 scripts one after the other in Debug.
+It now replays them on all cores (`src/golden.zig`). Not done: ReleaseSafe
+tests (warm 2.5 s but cold compile 37 s), so Debug stays.
