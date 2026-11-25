@@ -168,6 +168,49 @@ fn captureGolden(gpa: std.mem.Allocator, name: []const u8) !?usize {
     return failed;
 }
 
+fn worker(gpa: std.mem.Allocator, names: []const []const u8, next: *std.atomic.Value(usize), failed: *std.atomic.Value(usize)) void {
+    while (true) {
+        const i = next.fetchAdd(1, .monotonic);
+        if (i >= names.len) return;
+        const bad = goldenOne(gpa, names[i]) catch |e| blk: {
+            std.debug.print("golden {s}: {s}\n", .{ names[i], @errorName(e) });
+            break :blk 1;
+        };
+        if (bad > 0) _ = failed.fetchAdd(bad, .monotonic);
+    }
+}
+
+/// One script: capture golden, or replay + damage check + frame and export goldens. Returns the failure count.
+fn goldenOne(gpa: std.mem.Allocator, name: []const u8) !usize {
+    var failed: usize = 0;
+    if (try captureGolden(gpa, name)) |bad| return bad;
+    const app = try replayScript(gpa, name);
+    defer app.destroy();
+
+    // Damage tracking must give the same pixels as a full repaint.
+    var fresh = core.compositor.Compositor{ .gpa = gpa };
+    defer fresh.deinit();
+    _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
+    const d = compare(app.frame(), &fresh.frame.?, null);
+    if (d.bad > 0) {
+        std.debug.print("golden {s}: incremental frame differs from a full repaint in {d} pixels (damage tracking bug). See {s}/{s}.damage.*.png\n", .{ name, d.bad, out_dir, name });
+        writeOut(gpa, app.frame(), name, "damage.incremental");
+        writeOut(gpa, &fresh.frame.?, name, "damage.full");
+        failed += 1;
+    }
+
+    const frame_name = try std.fmt.allocPrint(gpa, "{s}.frame", .{name});
+    defer gpa.free(frame_name);
+    if (!try check(gpa, frame_name, app.frame())) failed += 1;
+
+    var exp = try app.exportImage();
+    defer exp.deinit(gpa);
+    const export_name = try std.fmt.allocPrint(gpa, "{s}.export", .{name});
+    defer gpa.free(export_name);
+    if (!try check(gpa, export_name, &exp)) failed += 1;
+    return failed;
+}
+
 test "golden replays" {
     const gpa = std.testing.allocator;
     std.fs.cwd().deleteTree(out_dir) catch {};
@@ -177,40 +220,23 @@ test "golden replays" {
         gpa.free(names);
     }
     try std.testing.expect(names.len > 0);
-    var failed: usize = 0;
-    for (names) |name| {
-        if (try captureGolden(gpa, name)) |bad| {
-            failed += bad;
-            continue;
-        }
-        const app = try replayScript(gpa, name);
-        defer app.destroy();
-
-        // Damage tracking must give the same pixels as a full repaint.
-        var fresh = core.compositor.Compositor{ .gpa = gpa };
-        defer fresh.deinit();
-        _ = try fresh.render(app.ctx(), &app.doc, &app.editor);
-        const d = compare(app.frame(), &fresh.frame.?, null);
-        if (d.bad > 0) {
-            std.debug.print("golden {s}: incremental frame differs from a full repaint in {d} pixels (damage tracking bug). See {s}/{s}.damage.*.png\n", .{ name, d.bad, out_dir, name });
-            writeOut(gpa, app.frame(), name, "damage.incremental");
-            writeOut(gpa, &fresh.frame.?, name, "damage.full");
-            failed += 1;
-        }
-
-        const frame_name = try std.fmt.allocPrint(gpa, "{s}.frame", .{name});
-        defer gpa.free(frame_name);
-        if (!try check(gpa, frame_name, app.frame())) failed += 1;
-
-        var exp = try app.exportImage();
-        defer exp.deinit(gpa);
-        const export_name = try std.fmt.allocPrint(gpa, "{s}.export", .{name});
-        defer gpa.free(export_name);
-        if (!try check(gpa, export_name, &exp)) failed += 1;
+    // Scripts are independent: replay them on all cores (Debug replays are slow).
+    var failed = std.atomic.Value(usize).init(0);
+    var next = std.atomic.Value(usize).init(0);
+    const n_threads = @min(names.len, std.Thread.getCpuCount() catch 1);
+    const threads = try gpa.alloc(std.Thread, n_threads);
+    defer gpa.free(threads);
+    var spawned: usize = 0;
+    defer for (threads[0..spawned]) |t| t.join();
+    for (threads) |*t| {
+        t.* = try std.Thread.spawn(.{}, worker, .{ gpa, names, &next, &failed });
+        spawned += 1;
     }
+    for (threads[0..spawned]) |t| t.join();
+    spawned = 0;
     if (updating()) std.debug.print("checked {d} scripts; goldens with new pixels were rewritten in {s}/\n", .{ names.len, golden_dir });
-    if (failed > 0) {
-        std.debug.print("{d} golden check(s) failed. Look at the PNGs in {s}/. If the change is intended: zig build test -Dupdate-goldens=true\n", .{ failed, out_dir });
+    if (failed.load(.monotonic) > 0) {
+        std.debug.print("{d} golden check(s) failed. Look at the PNGs in {s}/. If the change is intended: zig build test -Dupdate-goldens=true\n", .{ failed.load(.monotonic), out_dir });
         return error.GoldenMismatch;
     }
 }
