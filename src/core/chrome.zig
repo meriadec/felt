@@ -42,7 +42,7 @@ pub const State = struct {
     arrow_style: ArrowStyle = .straight,
     text_style: TextStyle = .plain,
     help_visible: bool,
-    /// The dock and the top bar (Space hides both).
+    /// The dock and the top bar (`h` hides both).
     dock_visible: bool = true,
     toast: ?[]const u8,
     can_undo: bool = false,

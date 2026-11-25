@@ -83,7 +83,7 @@ The editor then opens on the capture in its normal window. Ctrl+S writes
 
 The image fits the screen and is never upscaled. A dock at the bottom center
 shows the tools (each with its key), the colors and the size. Click it or use
-the keys. `Space` hides the panels, `?` or F1 shows every shortcut. The full
+the keys. `h` hides the panels, `Space` is the hand (drag with the left button to pan), `?` or F1 shows every shortcut. The full
 list is in [docs/keymap.md](docs/keymap.md).
 
 - **Callouts and arrows.** The callout tool is active at startup: drag from the

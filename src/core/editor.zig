@@ -111,6 +111,8 @@ pub const Editor = struct {
     fitted: bool = true,
     /// Middle-button pan in progress: last pointer position.
     panning: ?Vec2 = null,
+    /// Hand mode (Space): a left drag pans the canvas, like the middle button.
+    hand: bool = false,
     tool: Tool = default_tool,
     /// Tool to go back to after a crop.
     tool_before_crop: Tool = default_tool,
@@ -266,16 +268,25 @@ pub const Editor = struct {
     /// while it moves: the shape itself shows where it goes, and a frame
     /// then pays for one raster less (docs/perf.md).
     pub fn outlined(self: *const Editor) ?Grab {
-        if (self.tool != .move or self.mode != .idle or self.help_visible) return null;
+        if (self.tool != .move or self.mode != .idle or self.help_visible or self.hand) return null;
         const n = self.doc.items.items.len;
         if (self.hover) |g| if (g.index < n) return g;
         if (self.selected) |i| if (i < n) return .{ .index = i, .part = .whole };
         return null;
     }
 
+    /// The pointer shape the backend shows.
+    pub const Cursor = enum { crosshair, move, grab, grabbing };
+
+    pub fn cursor(self: *const Editor) Cursor {
+        if (self.hand) return if (self.panning != null) .grabbing else .grab;
+        if (self.panning != null) return .grabbing; // a middle drag
+        return if (self.tool == .move) .move else .crosshair;
+    }
+
     fn updateHover(self: *Editor) bool {
         const before = self.hover;
-        self.hover = if (self.tool == .move and self.mode == .idle and self.pointer != null) self.grabAt(self.pointer.?) else null;
+        self.hover = if (self.tool == .move and !self.hand and self.mode == .idle and self.pointer != null) self.grabAt(self.pointer.?) else null;
         return !std.meta.eql(before, self.hover);
     }
 
@@ -606,9 +617,9 @@ pub const Editor = struct {
                 return eff;
             },
             .mouse_up => |m| {
-                if (m.button == .middle) {
+                if (m.button == .middle or (m.button == .left and self.hand)) {
                     self.panning = null;
-                    return .{};
+                    return .{ .redraw = self.hand };
                 }
                 return self.onUp(m.x, m.y, m.button);
             },
@@ -712,6 +723,10 @@ pub const Editor = struct {
             return .{};
         }
         if (button != .left) return .{};
+        if (self.hand) { // the hand: pan, whatever the tool
+            self.panning = .{ .x = x, .y = y };
+            return .{ .redraw = true };
+        }
         if (self.mode == .typing) try self.commitTyping();
         if (self.mode == .drag) self.mode = .idle; // lost release: start over
         if (self.mode == .moving) try self.finishMove(); // lost release: keep the move
@@ -948,6 +963,7 @@ pub const Editor = struct {
         try self.commitTyping();
         self.cancel();
         self.selected = null;
+        self.hand = false;
         if (t == .crop and self.tool != .crop) self.tool_before_crop = self.tool;
         self.tool = t;
     }
@@ -1053,6 +1069,8 @@ pub const Editor = struct {
                     self.cancel();
                 } else if (self.help_visible) {
                     self.help_visible = false;
+                } else if (self.hand) {
+                    self.hand = false;
                 } else if (self.selected != null) {
                     self.selected = null;
                 } else {
@@ -1063,6 +1081,11 @@ pub const Editor = struct {
             },
             .toggle_help => self.help_visible = !self.help_visible,
             .toggle_dock => self.dock_visible = !self.dock_visible,
+            .toggle_hand => {
+                self.cancel();
+                self.hand = !self.hand;
+                self.selected = null;
+            },
             .zoom_in, .zoom_out => self.zoom(if (action == .zoom_in) 1 else -1, .{
                 .x = @floatFromInt(self.view.screen_w / 2),
                 .y = @floatFromInt(self.view.screen_h / 2),
@@ -1255,7 +1278,7 @@ test "dock clicks pick tools and colors and never draw; help closes on click and
     try std.testing.expect(!t.ed.help_visible);
     try std.testing.expect(t.ed.mode == .idle);
     // Hidden dock: a click there draws.
-    _ = try t.key("space");
+    _ = try t.key("h");
     try t.drag(d.panel.min.x + 2, d.panel.min.y + 2, d.panel.max.x - 2, d.panel.max.y - 2);
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
 }
@@ -1825,6 +1848,35 @@ test "text mode: caret, Shift+arrows select, typing overwrites the selection, Ct
     _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'k' } } });
     _ = try t.key("enter");
     try std.testing.expectEqualStrings("ok", t.doc.items.items[0].text.text);
+}
+
+test "hand mode (Space): a left drag pans, no drawing; Space again, Esc and a tool key leave it; cursors" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    try std.testing.expectEqual(Editor.Cursor.crosshair, t.ed.cursor());
+    _ = try t.key("m");
+    try std.testing.expectEqual(Editor.Cursor.move, t.ed.cursor());
+    _ = try t.key("space");
+    try std.testing.expect(t.ed.hand);
+    try std.testing.expectEqual(Editor.Cursor.grab, t.ed.cursor());
+    const off = t.ed.view.xf.offset;
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 100, .y = 50 } });
+    try std.testing.expectEqual(Editor.Cursor.grabbing, t.ed.cursor());
+    _ = try t.ed.handle(.{ .mouse_move = .{ .x = 130, .y = 60 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 130, .y = 60 } });
+    try std.testing.expectEqual(Editor.Cursor.grab, t.ed.cursor());
+    try std.testing.expectEqual(off.x + 30, t.ed.view.xf.offset.x);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
+    try std.testing.expectEqual(@as(usize, 0), t.doc.history.items.len);
+    _ = try t.key("space");
+    try std.testing.expect(!t.ed.hand);
+    _ = try t.key("space");
+    _ = try t.key("esc"); // leaves the hand, does not quit
+    try std.testing.expect(!t.ed.hand);
+    _ = try t.key("space");
+    _ = try t.key("a");
+    try std.testing.expect(!t.ed.hand);
 }
 
 test "move/select: a double click edits the text in place; one undo step; blank or unchanged keeps it" {

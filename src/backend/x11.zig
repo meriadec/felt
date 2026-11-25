@@ -4,6 +4,7 @@
 //! The image decodes on a thread while the window comes up.
 const std = @import("std");
 const core = @import("core");
+const Cursors = @import("x11_cursor.zig").Cursors;
 const app_mod = @import("../app.zig");
 const config = @import("../config.zig");
 
@@ -98,7 +99,10 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const net_state = c.XInternAtom(dpy, "_NET_WM_STATE", c.False);
     const net_fullscreen = c.XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", c.False);
     _ = c.XChangeProperty(dpy, win, net_state, xa_atom, 32, c.PropModeReplace, @ptrCast(&net_fullscreen), 1);
-    _ = c.XDefineCursor(dpy, win, c.XCreateFontCursor(dpy, xc_crosshair));
+    var cursors = Cursors.init(dpy);
+    defer cursors.deinit();
+    var shown_cursor: core.editor.Editor.Cursor = .crosshair;
+    _ = c.XDefineCursor(dpy, win, cursors.get(shown_cursor));
     const gc = c.XCreateGC(dpy, win, 0, null);
     defer _ = c.XFreeGC(dpy, gc);
     _ = c.XMapWindow(dpy, win);
@@ -196,6 +200,10 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
             _ = c.XNextEvent(dpy, &ev);
         }
         if (quit) break;
+        if (app.editor.cursor() != shown_cursor) {
+            shown_cursor = app.editor.cursor();
+            _ = c.XDefineCursor(dpy, win, cursors.get(shown_cursor));
+        }
         if (need_render and exposed) {
             var t = try std.time.Timer.start();
             const dmg = try app.render();

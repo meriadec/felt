@@ -45,7 +45,8 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 | `q` | quit |
 | `?` | help |
 | `F1` | help |
-| `Space` | hide / show the panels |
+| `h` | hide / show the panels |
+| `Space` | hand: drag the canvas with the left button (again or Esc: back) |
 | `b` | canvas: light / dark grey |
 | `.` | canvas padding: more |
 | `,` | canvas padding: less |
