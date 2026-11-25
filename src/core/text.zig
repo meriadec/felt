@@ -43,6 +43,40 @@ pub fn measure(font: *Font, text: []const u8, px: u16) Layout {
     return lay;
 }
 
+/// A selected stretch of one line: [x0, x1) from the block's left edge.
+pub const Span = struct { line: u32, x0: f32, x1: f32 };
+
+/// Where byte `at` of `text` sits: its line and its x from the block's left edge.
+pub fn caretAt(font: *Font, text: []const u8, px: u16, at: usize) struct { line: u32, x: f32 } {
+    const a = @min(at, text.len);
+    const line: u32 = @intCast(std.mem.count(u8, text[0..a], "\n"));
+    const ls = if (std.mem.lastIndexOfScalar(u8, text[0..a], '\n')) |i| i + 1 else 0;
+    return .{ .line = line, .x = lineWidth(font, text[ls..a], px) };
+}
+
+/// The stretches of each line covered by the selection bytes [a, b): a
+/// selected line break shows as one space more. At most `out.len` spans.
+pub fn selectionSpans(font: *Font, text: []const u8, px: u16, a: usize, b: usize, out: []Span) []Span {
+    var n: usize = 0;
+    var ls: usize = 0;
+    var line: u32 = 0;
+    while (ls <= text.len and n < out.len) : (line += 1) {
+        const le = std.mem.indexOfScalarPos(u8, text, ls, '\n') orelse text.len;
+        const lo = @max(a, ls);
+        const hi = @min(b, le);
+        const breaks = b > le and a <= le and le < text.len; // the line break is selected
+        if (lo < hi or breaks) {
+            const x0 = lineWidth(font, text[ls..@min(lo, le)], px);
+            const x1 = lineWidth(font, text[ls..@max(hi, @min(lo, le))], px) + if (breaks) font.advance(' ', px) else 0;
+            out[n] = .{ .line = line, .x0 = x0, .x1 = x1 };
+            n += 1;
+        }
+        if (le >= text.len) break;
+        ls = le + 1;
+    }
+    return out[0..n];
+}
+
 pub const Mask = struct {
     w: u32,
     h: u32,
@@ -74,10 +108,10 @@ pub const Mask = struct {
 
 /// Render `text` at `px` into a new mask. The text block top-left is at
 /// (pad + frac_x, pad) in mask pixels, frac_x in [0, 1) for subpixel placement.
-/// With `caret`, a bar is drawn after the last character.
-pub fn render(gpa: std.mem.Allocator, font: *Font, text: []const u8, px: u16, pad: u32, frac_x: f32, caret: bool) !Mask {
+/// With `caret` (a byte offset), a bar is drawn there.
+pub fn render(gpa: std.mem.Allocator, font: *Font, text: []const u8, px: u16, pad: u32, frac_x: f32, caret: ?usize) !Mask {
     const lay = measure(font, text, px);
-    const caret_w: f32 = if (caret) @max(2, @as(f32, @floatFromInt(px)) * 0.08) + 2 else 0;
+    const caret_w: f32 = if (caret != null) @max(2, @as(f32, @floatFromInt(px)) * 0.08) + 2 else 0;
     const w: u32 = @as(u32, @intFromFloat(@ceil(lay.width + caret_w + frac_x))) + 2 * pad + 2;
     const h: u32 = @as(u32, @intFromFloat(@ceil(lay.height))) + 2 * pad;
     const data = try gpa.alloc(u8, @as(usize, w) * h);
@@ -103,10 +137,11 @@ pub fn render(gpa: std.mem.Allocator, font: *Font, text: []const u8, px: u16, pa
             prev = cp;
         }
     }
-    if (caret) {
+    if (caret) |at| {
+        const cp = caretAt(font, text, px, at);
         const cw: u32 = @intFromFloat(@max(2, @as(f32, @floatFromInt(px)) * 0.08));
-        const cx: u32 = @intFromFloat(@round(padf + frac_x + lay.last_line_w + 1));
-        const top: u32 = @intFromFloat(@round(padf + lay.line_h * @as(f32, @floatFromInt(lay.lines - 1))));
+        const cx: u32 = @min(w - 1, @as(u32, @intFromFloat(@round(padf + frac_x + cp.x + 1))));
+        const top: u32 = @intFromFloat(@round(padf + lay.line_h * @as(f32, @floatFromInt(cp.line))));
         const bot: u32 = @min(h, top + @as(u32, @intFromFloat(@round(lay.line_h))));
         for (top..bot) |y| @memset(data[y * w + cx ..][0..@min(cw, w - cx)], 255);
     }
@@ -130,7 +165,7 @@ test "render" {
     const gpa = std.testing.allocator;
     var f = try Font.init(gpa, @embedFile("font_ttf"));
     defer f.deinit();
-    var m = try render(gpa, &f, "Hi\nthere", 20, 3, 0, true);
+    var m = try render(gpa, &f, "Hi\nthere", 20, 3, 0, 4);
     defer m.deinit(gpa);
     try std.testing.expectEqual(@as(u32, 2), m.layout.lines);
     var sum: u64 = 0;

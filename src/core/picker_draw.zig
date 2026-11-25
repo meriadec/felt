@@ -125,7 +125,7 @@ fn drawPill(ctx: Ctx, cv: *Canvas, clip: Rect, p: Pill, s: f32) !void {
     raster.fill(cv, clip, rrect(b, radius), .{ .solid = if (p.flat) nord.n1 else nord.n1 }, .{});
     if (!p.flat) raster.fill(cv, clip, sdf.ring(rrect(b.expand(-0.5), radius - 0.5), 1), .{ .solid = nord.n2 }, .{});
     if (p.dot) |c| raster.fill(cv, clip, sdf.Disc{ .c = c, .r = 4 * s }, .{ .solid = if (p.dot_on) nord.n14 else nord.n3 }, .{});
-    var mask = try text.render(ctx.gpa, ctx.font, p.s, p.px, 0, 0, false);
+    var mask = try text.render(ctx.gpa, ctx.font, p.s, p.px, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     const ph: f32 = @floatFromInt(p.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(p.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(p.px)) * 0.6));

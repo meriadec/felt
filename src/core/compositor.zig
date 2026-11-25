@@ -509,7 +509,7 @@ pub const Compositor = struct {
             try chrome.draw(ctx, frame, r, &lay);
             self.prof.chrome_ns += chrome_clock.read();
             // The shape in progress goes over the chrome: what you type stays visible.
-            if (preview) |p| try draw.annotation(ctx, frame, r.intersect(preview_clip), p, v.xf, .{ .preview = true, .area = preview_clip });
+            if (preview) |p| try draw.annotation(ctx, frame, r.intersect(preview_clip), p, v.xf, .{ .preview = true, .caret = ed.textCaret(), .area = preview_clip });
         }
         self.prof.frame_ns += clock.read();
         return dmg;

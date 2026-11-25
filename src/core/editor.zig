@@ -141,6 +141,10 @@ pub const Editor = struct {
     selected: ?usize = null,
     mode: Mode = .idle,
     draft: std.ArrayList(u8) = .empty,
+    /// The text caret and the other end of the selection in `draft` (byte
+    /// offsets on a character boundary; equal: no selection).
+    caret: usize = 0,
+    sel_anchor: usize = 0,
     quit_armed: bool = false,
     saved_revision: u64 = 0,
     /// Canvas background of the last save (or of the start).
@@ -528,8 +532,10 @@ pub const Editor = struct {
             .callout => |c| c.text,
             else => return false,
         };
-        self.draft.clearRetainingCapacity();
+        self.clearDraft();
         try self.draft.appendSlice(self.gpa, old);
+        self.caret = old.len;
+        self.sel_anchor = old.len;
         self.doc.setLive(g.index, blankText(a));
         self.selected = g.index;
         self.mode = .{ .typing = switch (a) {
@@ -564,7 +570,7 @@ pub const Editor = struct {
         var changed: [route.max_settle]route.Rerouted = undefined;
         const n = self.settle(e.index, e.before, &changed);
         self.mode = .idle;
-        self.draft.clearRetainingCapacity();
+        self.clearDraft();
         const step = try self.doc.commitMove(self.gpa, e.index, e.before);
         try self.commitRerouted(changed[0..n], e.index, step);
     }
@@ -774,8 +780,53 @@ pub const Editor = struct {
         self.setToast("Too far from the image. The canvas grows only so far.", .{});
     }
 
-    fn startTyping(self: *Editor, t: Typing) void {
+    fn clearDraft(self: *Editor) void {
         self.draft.clearRetainingCapacity();
+        self.caret = 0;
+        self.sel_anchor = 0;
+    }
+
+    /// The caret and selection of the text in progress, for the renderer.
+    pub fn textCaret(self: *const Editor) ?draw.Caret {
+        if (self.mode != .typing) return null;
+        return .{ .pos = self.caret, .anchor = self.sel_anchor };
+    }
+
+    /// Replace the selection (or nothing at the caret) by `bytes`.
+    fn insertDraft(self: *Editor, bytes: []const u8) !void {
+        const lo = @min(self.caret, self.sel_anchor);
+        const hi = @max(self.caret, self.sel_anchor);
+        try self.draft.replaceRange(self.gpa, lo, hi - lo, bytes);
+        self.caret = lo + bytes.len;
+        self.sel_anchor = self.caret;
+    }
+
+    /// Byte offset of the character boundary before / after `at`.
+    fn prevBoundary(self: *const Editor, at: usize) usize {
+        var i = at;
+        while (i > 0) {
+            i -= 1;
+            if (self.draft.items[i] & 0xc0 != 0x80) break;
+        }
+        return i;
+    }
+
+    fn nextBoundary(self: *const Editor, at: usize) usize {
+        var i = at;
+        const n = self.draft.items.len;
+        if (i < n) i += 1;
+        while (i < n and self.draft.items[i] & 0xc0 == 0x80) i += 1;
+        return i;
+    }
+
+    /// Move the caret to `to`; with `extend` the selection grows, else it ends.
+    fn moveCaret(self: *Editor, to: usize, extend: bool) void {
+        self.caret = to;
+        if (!extend) self.sel_anchor = to;
+    }
+
+    fn startTyping(self: *Editor, t: Typing) void {
+        self.clearDraft();
         self.mode = .{ .typing = t };
     }
 
@@ -783,7 +834,7 @@ pub const Editor = struct {
     pub fn cancel(self: *Editor) void {
         if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
         if (self.mode == .typing) if (self.mode.typing.edit) |e| self.doc.setLive(e.index, e.before);
-        self.draft.clearRetainingCapacity();
+        self.clearDraft();
         self.mode = .idle;
     }
 
@@ -808,32 +859,53 @@ pub const Editor = struct {
     }
 
     fn onKey(self: *Editor, k: input.KeyEvent, was_armed: bool) !Effect {
+        if (self.mode == .typing and k.mods.ctrl and !k.mods.alt and k.key == .char and std.ascii.toLower(@intCast(@min(k.key.char, 127))) == 'a') {
+            self.sel_anchor = 0; // Ctrl+A: select everything
+            self.caret = self.draft.items.len;
+            return .{ .redraw = true };
+        }
         if (self.mode == .typing and !k.mods.ctrl and !k.mods.alt) {
             switch (k.key) {
                 .char => |cp| {
                     var buf: [4]u8 = undefined;
                     const n = std.unicode.utf8Encode(cp, &buf) catch return .{};
-                    try self.draft.appendSlice(self.gpa, buf[0..n]);
+                    try self.insertDraft(buf[0..n]); // over the selection
                     return .{ .redraw = true };
                 },
                 .named => |n| switch (n) {
                     .tab => {}, // not text: falls through to the key map (finish, next tool)
                     .enter => {
-                        if (k.mods.shift) try self.draft.append(self.gpa, '\n') else try self.commitTyping();
+                        if (k.mods.shift) try self.insertDraft("\n") else try self.commitTyping();
                         return .{ .redraw = true };
                     },
                     .escape => {
                         try self.commitTyping();
                         return .{ .redraw = true };
                     },
-                    .backspace => {
-                        const s = self.draft.items;
-                        var i = s.len;
-                        while (i > 0) {
-                            i -= 1;
-                            if (s[i] & 0xc0 != 0x80) break; // start of a UTF-8 sequence
+                    .backspace, .delete => {
+                        if (self.caret == self.sel_anchor) {
+                            // Nothing selected: select the character before (Backspace) or after (Delete).
+                            self.sel_anchor = if (n == .backspace) self.prevBoundary(self.caret) else self.nextBoundary(self.caret);
                         }
-                        self.draft.shrinkRetainingCapacity(i);
+                        try self.insertDraft("");
+                        return .{ .redraw = true };
+                    },
+                    .left, .right => {
+                        const sel = self.caret != self.sel_anchor;
+                        const lo = @min(self.caret, self.sel_anchor);
+                        const hi = @max(self.caret, self.sel_anchor);
+                        // Without Shift a selection ends at its near edge; else one character.
+                        const to = if (sel and !k.mods.shift) (if (n == .left) lo else hi) else if (n == .left) self.prevBoundary(self.caret) else self.nextBoundary(self.caret);
+                        self.moveCaret(to, k.mods.shift);
+                        return .{ .redraw = true };
+                    },
+                    .home, .end => {
+                        const s = self.draft.items;
+                        const to = if (n == .home)
+                            (if (std.mem.lastIndexOfScalar(u8, s[0..self.caret], '\n')) |i| i + 1 else 0)
+                        else
+                            (std.mem.indexOfScalarPos(u8, s, self.caret, '\n') orelse s.len);
+                        self.moveCaret(to, k.mods.shift);
                         return .{ .redraw = true };
                     },
                     else => return .{},
@@ -1673,6 +1745,46 @@ test "text style: plain at start, `t` again and the switch change it for new tex
     _ = try t.key("enter");
     try std.testing.expectEqual(ann.TextStyle.boxed, t.doc.items.items[1].text.style);
     try std.testing.expectEqual(ann.TextStyle.plain, t.doc.items.items[0].text.style);
+}
+
+test "text mode: caret, Shift+arrows select, typing overwrites the selection, Ctrl+A selects all" {
+    var t = T{};
+    t.init();
+    defer t.deinit();
+    t.ed.tool = .text;
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 20, .y = 20 } });
+    _ = try t.ed.handle(.{ .mouse_up = .{ .x = 20, .y = 20 } });
+    for ("hello") |ch| _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    try std.testing.expectEqualStrings("hello", t.ed.draft.items);
+    // Shift+Left twice selects "lo"; typing replaces it.
+    _ = try t.key("shift+left");
+    _ = try t.key("shift+left");
+    try std.testing.expectEqual(@as(usize, 3), t.ed.caret);
+    try std.testing.expectEqual(@as(usize, 5), t.ed.sel_anchor);
+    _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'p' } } });
+    try std.testing.expectEqualStrings("help", t.ed.draft.items);
+    // Left moves the caret; typing inserts there; Backspace and Delete cut around it.
+    _ = try t.key("left");
+    _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'X' } } });
+    try std.testing.expectEqualStrings("helXp", t.ed.draft.items);
+    _ = try t.key("backspace");
+    _ = try t.key("delete");
+    try std.testing.expectEqualStrings("hel", t.ed.draft.items);
+    // Left with a selection ends it at its left edge; Home and End; Shift+Home selects to the start.
+    _ = try t.key("shift+left");
+    _ = try t.key("left");
+    try std.testing.expectEqual(@as(usize, 2), t.ed.caret);
+    try std.testing.expectEqual(@as(usize, 2), t.ed.sel_anchor);
+    _ = try t.key("end");
+    _ = try t.key("shift+home");
+    try std.testing.expectEqual(@as(usize, 0), t.ed.caret);
+    try std.testing.expectEqual(@as(usize, 3), t.ed.sel_anchor);
+    // Ctrl+A then a key overwrites everything; the text is committed whole.
+    _ = try t.key("ctrl+a");
+    _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'o' } } });
+    _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'k' } } });
+    _ = try t.key("enter");
+    try std.testing.expectEqualStrings("ok", t.doc.items.items[0].text.text);
 }
 
 test "move/select: a double click edits the text in place; one undo step; blank or unchanged keeps it" {

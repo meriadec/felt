@@ -542,12 +542,12 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, l: *const Layout) !void {
         .undo => |u| icons.drawUndo(cv, clip, u.redo, u.c, u.size, u.color),
         .canvas_bg => |i| icons.drawCanvasBg(cv, clip, i.c, i.size, i.color),
         .text => |t| {
-            var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, false);
+            var mask = try text.render(ctx.gpa, ctx.font, t.s, t.px, 0, 0, null);
             defer mask.deinit(ctx.gpa);
             cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(t.pos.x), @intFromFloat(t.pos.y), t.color, clip);
         },
         .glyph => |g| {
-            var mask = try text.render(ctx.gpa, ctx.font, g.s, g.px, 1, 0, false);
+            var mask = try text.render(ctx.gpa, ctx.font, g.s, g.px, 1, 0, null);
             defer mask.deinit(ctx.gpa);
             const ink = mask.inkBounds();
             const ix = @as(f32, @floatFromInt(ink[0] + ink[2])) * 0.5;

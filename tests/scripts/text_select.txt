@@ -1,0 +1,8 @@
+# Text mode: a caret that moves, Shift+arrows and Ctrl+A select (highlight);
+# typing over a selection overwrites it. The frame shows a selection in the middle.
+size 900 500
+ui tool text
+click 200 200
+type Hello selected world
+key left left left left left left
+key shift+left shift+left shift+left shift+left shift+left shift+left shift+left shift+left

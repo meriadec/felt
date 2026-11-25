@@ -28,9 +28,18 @@ pub const Ctx = struct {
     pad: i32 = 0,
 };
 
+/// The caret of a text in progress: byte offsets; the selection lies
+/// between `anchor` and `pos`.
+pub const Caret = struct { pos: usize, anchor: usize };
+
+const selection_color = Color{ .r = 0x88, .g = 0xC0, .b = 0xD0, .a = 120 };
+
 pub const Options = struct {
     /// The shape is in progress: draw the text caret and the pixelate frame.
     preview: bool = false,
+    /// With `preview`, on a text: the caret and the selection (null: the
+    /// caret after the last character).
+    caret: ?Caret = null,
     /// Image area in target px (null: the whole canvas). Pixelate averages
     /// only pixels inside, so the screen background never bleeds in.
     area: ?Rect = null,
@@ -68,9 +77,9 @@ pub fn annotation(ctx: Ctx, cv: *Canvas, clip: Rect, ann: Annotation, xf: Xform,
             cv.pixelate(r, block, opts.area orelse cv.bounds(), clip);
             if (opts.preview) raster.fill(cv, clip, sdf.RectStroke{ .min = r.toBounds().min, .max = r.toBounds().max, .w = 1 }, .{ .solid = preview_frame }, .{});
         },
-        .text => |t| try drawText(ctx, cv, clip, t, xf, opts.preview),
+        .text => |t| try drawText(ctx, cv, clip, t, xf, caretOf(opts, t.text)),
         .number => |n| try drawNumber(ctx, cv, clip, n, xf),
-        .callout => |c| try drawCallout(ctx, cv, clip, c, xf, opts.preview),
+        .callout => |c| try drawCallout(ctx, cv, clip, c, xf, caretOf(opts, c.text)),
     }
 }
 
@@ -434,11 +443,27 @@ const LabelMetrics = struct {
     }
 };
 
+fn caretOf(opts: Options, s: []const u8) ?Caret {
+    if (!opts.preview) return null;
+    return opts.caret orelse .{ .pos = s.len, .anchor = s.len };
+}
+
 /// Blend a text block whose top-left is at `o` (target px).
-fn blendText(ctx: Ctx, cv: *Canvas, clip: Rect, s: []const u8, px: u16, o: Vec2, fill_c: Color, caret: bool) !void {
+fn blendText(ctx: Ctx, cv: *Canvas, clip: Rect, s: []const u8, px: u16, o: Vec2, fill_c: Color, caret: ?Caret) !void {
     const fx = @floor(o.x);
-    var mask = try text.render(ctx.gpa, ctx.font, s, px, 0, o.x - fx, caret);
+    var mask = try text.render(ctx.gpa, ctx.font, s, px, 0, o.x - fx, if (caret) |c| c.pos else null);
     defer mask.deinit(ctx.gpa);
+    if (caret) |c| if (c.pos != c.anchor) {
+        var buf: [64]text.Span = undefined;
+        const lh = mask.layout.line_h;
+        for (text.selectionSpans(ctx.font, s, px, @min(c.pos, c.anchor), @max(c.pos, c.anchor), &buf)) |sp| {
+            const y0: i32 = @intFromFloat(@round(o.y + lh * @as(f32, @floatFromInt(sp.line))));
+            const x0: i32 = @intFromFloat(@round(o.x + sp.x0));
+            const x1: i32 = @intFromFloat(@round(o.x + sp.x1));
+            const line_box = Rect{ .x0 = x0, .y0 = y0, .x1 = x1, .y1 = y0 + @as(i32, @intFromFloat(@round(lh))) };
+            cv.blendRect(line_box.intersect(clip), selection_color);
+        }
+    };
     cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(fx), @intFromFloat(@round(o.y)), fill_c, clip);
 }
 
@@ -459,7 +484,7 @@ fn drawLabelBody(cv: *Canvas, clip: Rect, shape: anytype, c: Color, m: LabelMetr
     raster.fill(cv, clip, sdf.ring(shape, @max(1, m.pxf * 0.05)), .{ .solid = edge }, .{});
 }
 
-fn drawText(ctx: Ctx, cv: *Canvas, clip: Rect, t: ann_mod.Text, xf: Xform, caret: bool) !void {
+fn drawText(ctx: Ctx, cv: *Canvas, clip: Rect, t: ann_mod.Text, xf: Xform, caret: ?Caret) !void {
     const g = textGeom(ctx, t, xf);
     switch (t.style) {
         .boxed => {
@@ -492,7 +517,7 @@ fn drawNumber(ctx: Ctx, cv: *Canvas, clip: Rect, n: ann_mod.Number, xf: Xform) !
     var buf: [12]u8 = undefined;
     const digits = std.fmt.bufPrint(&buf, "{d}", .{n.value}) catch unreachable;
     const px = text.pxOf(n.size * xf.scale * (if (digits.len > 2) @as(f32, 0.7) else 0.95));
-    var mask = try text.render(ctx.gpa, ctx.font, digits, px, 1, 0, false);
+    var mask = try text.render(ctx.gpa, ctx.font, digits, px, 1, 0, null);
     defer mask.deinit(ctx.gpa);
     const ink = mask.inkBounds();
     const cx = @as(f32, @floatFromInt(ink[0] + ink[2])) * 0.5;
@@ -575,7 +600,7 @@ fn calloutGeom(ctx: Ctx, c: ann_mod.Callout, xf: Xform) CalloutGeom {
 
 /// The pointer first (an arrow with its shadow), then the box over its
 /// start: the join is the clean box edge.
-fn drawCallout(ctx: Ctx, cv: *Canvas, clip: Rect, c: ann_mod.Callout, xf: Xform, caret: bool) !void {
+fn drawCallout(ctx: Ctx, cv: *Canvas, clip: Rect, c: ann_mod.Callout, xf: Xform, caret: ?Caret) !void {
     const g = calloutGeom(ctx, c, xf);
     if (g.pointer) |p| switch (p) {
         inline else => |s| drawWithShadow(cv, clip, s, c.color, Shadow.of(c.width * xf.scale)),

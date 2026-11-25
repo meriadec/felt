@@ -8,7 +8,7 @@ Generated from `src/core/keymap.zig` by `zig build docs`. Do not edit by hand.
 |---|---|---|
 | `c` | callout | The tool at startup. Drag from the point of interest to where the box goes, release, type, Enter. The pointer is an arrow from the box to the point: stairs (at startup) or straight, the arrow style (`c` again or the switch above the dock changes it, for arrows too). A plain click makes a label without a pointer. |
 | `a` | arrow | Drag from the head (the point) to the tail, like a callout. Style: stairs (an elbow with round corners, the start style) or straight; `a` again or the switch above the dock changes it for new arrows and callout pointers, for the rest of the session. A stairs path turns where it crosses and crowds no other path, if it can (the paths around it move aside too). |
-| `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace erases. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session. |
+| `t` | text | Click, type. Enter or Esc finishes, Shift+Enter adds a line, Backspace and Delete erase, the arrows, Home and End move the caret, Shift with them selects, Ctrl+A selects all, and typing over a selection replaces it. Style: plain letters in the color (the start style) or on a filled box; `t` again or the switch above the dock changes it for new texts, for the rest of the session. |
 | `r` | rect | Drag from corner to corner. |
 | `n` | number | Click to drop the next number (1, 2, 3...). Undo takes the number back. |
 | `p` | pixelate | Drag over a secret to pixelate it. |
