@@ -37,6 +37,11 @@ bright. Min of 2 runs, ReleaseFast:
 | drag frame (100 motion events, 20% to 80%) | avg 0.20 ms, p95 0.71 | avg 1.09 ms, p95 2.99 |
 | crop of a 60% rectangle | 1.1 ms | 2.6 ms |
 
+The ruler guides are round-capped anti-aliased dashes (one `raster.fill`
+each) and boxed labels: 1080p drag frame avg 0.15 -> 0.21 ms, 2560x1440 avg
+0.35 ms (`bench --size 3840x2160` stops at an unrelated arrow check, see
+docs/friction.md; the 4K frame stays far under the 4 ms budget).
+
 A frame repaints the old and the new highlight (and the pills): 13% of the
 screen on average in that drag. Real display (4K, `felt --capture --timing`,
 shared memory): root grab 13-16 ms; window up and first picker frame on

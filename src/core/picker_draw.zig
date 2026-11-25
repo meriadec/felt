@@ -1,8 +1,8 @@
 //! Drawing of the capture picker (picker.zig) in the Nord chrome style: the
 //! frozen screen dimmed, the highlighted rectangle bright with a thin frost
-//! border, the ruler marks (ruler.zig: dimension lines with the size, dashed
-//! hairlines to the screen edges with their distances), and a delay pill at
-//! the top center, shown only while a delay is on. `Scene.render` repaints
+//! border, the ruler marks (ruler.zig: bold blue dashed guides to the screen
+//! edges with their distances in boxed labels, the size in a boxed label),
+//! and a delay pill at the top center, shown only while a delay is on. `Scene.render` repaints
 //! only what changed (the old and new highlight and marks) and returns that
 //! damage for the backend to present.
 const std = @import("std");
@@ -29,8 +29,11 @@ const border_color = nord.n10;
 /// Ruler lines: snow white, faint for the distance hairlines.
 const hatch_color = nord.n10.withAlpha(80);
 const veil_color = nord.n6.withAlpha(40);
-const line_soft = nord.n6.withAlpha(120);
-const line_strong = nord.n6.withAlpha(210);
+/// Ruler: an Excalidraw-like blue guide, white boxed labels, grey end caps.
+const guide_color = color.Color.rgb(0x1971C2);
+const guide_thin = color.Color.rgb(0x1971C2).withAlpha(150);
+const cap_color = color.Color.rgb(0xCED4DA);
+const label_fill = color.Color.rgb(0xFFFFFF);
 
 const Pill = struct {
     rect: Rect = .empty,
@@ -126,12 +129,14 @@ fn drawPill(ctx: Ctx, cv: *Canvas, clip: Rect, p: Pill, s: f32) !void {
 fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
     if (!l.rect.intersects(clip)) return;
     const b = l.rect.toBounds();
-    raster.fill(cv, clip, rrect(b, 3 * s), .{ .solid = if (l.strong) nord.n1 else nord.n0.withAlpha(230) }, .{});
+    const lw = @max(2.0, 2 * s);
+    raster.fill(cv, clip, rrect(b, 3 * s), .{ .solid = guide_color }, .{});
+    raster.fill(cv, clip, rrect(b.expand(-lw), @max(0.5, 3 * s - lw)), .{ .solid = label_fill }, .{});
     var mask = try text.render(ctx.gpa, ctx.font, l.str(), l.px, 0, 0, null);
     defer mask.deinit(ctx.gpa);
     const ph: f32 = @floatFromInt(l.rect.height());
     const y: i32 = @intFromFloat(@round(@as(f32, @floatFromInt(l.rect.y0)) + ph / 2 - @as(f32, @floatFromInt(l.px)) * 0.6));
-    cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, if (l.strong) nord.n6 else nord.n4, clip);
+    cv.blendMask(mask.data, mask.w, mask.h, @intFromFloat(l.text_x), y, guide_color, clip);
 }
 
 /// The padding square around the pointer: the same hatching, rounded corners.
@@ -178,19 +183,44 @@ fn hatch(cv: *Canvas, clip: Rect, hi: Rect, band: i32, s: f32) void {
     }
 }
 
+/// A guide: round-capped dashes along the longer side of `l.r`, as thick as
+/// its shorter side. The caps stay inside `l.r` (damage covers them).
 fn drawLine(cv: *Canvas, clip: Rect, l: ruler.Line, s: f32) void {
-    const c = if (l.strong) line_strong else line_soft;
-    if (!l.dashed) return cv.blendRect(l.r.intersect(clip), c);
-    // Dashes along the longer side.
-    const dash: i32 = @intFromFloat(@round(4 * s));
-    const gap: i32 = @intFromFloat(@round(4 * s));
+    if (l.cap) return cv.blendRect(l.r.intersect(clip), cap_color);
+    if (!l.r.intersects(clip)) return;
     const horiz = l.r.width() >= l.r.height();
-    var p = if (horiz) l.r.x0 else l.r.y0;
-    const end = if (horiz) l.r.x1 else l.r.y1;
-    while (p < end) : (p += dash + gap) {
+    const th: f32 = @floatFromInt(if (horiz) l.r.height() else l.r.width());
+    const dash = (if (l.thin) @as(f32, 4) else 14) * s;
+    const gap = (if (l.thin) @as(f32, 4) else 10) * s;
+    const c = if (l.thin) guide_thin else guide_color;
+    const r = th / 2;
+    const fx0: f32 = @floatFromInt(l.r.x0);
+    const fy0: f32 = @floatFromInt(l.r.y0);
+    const end: f32 = @floatFromInt(if (horiz) l.r.x1 else l.r.y1);
+    const lo: f32 = @floatFromInt(if (horiz) clip.x0 else clip.y0);
+    const hi: f32 = @floatFromInt(if (horiz) clip.x1 else clip.y1);
+    const step = dash + gap;
+    var p: f32 = if (horiz) fx0 else fy0;
+    // Skip the dashes left of the clip without painting them.
+    if (lo - p > step) p += @floor((lo - p) / step - 1) * step;
+    while (p < end and p < hi + 1) : (p += step) {
         const q = @min(p + dash, end);
-        const seg: Rect = if (horiz) .{ .x0 = p, .y0 = l.r.y0, .x1 = q, .y1 = l.r.y1 } else .{ .x0 = l.r.x0, .y0 = p, .x1 = l.r.x1, .y1 = q };
-        cv.blendRect(seg.intersect(clip), c);
+        if (l.thin) {
+            // Thin extensions: plain rectangles, 1 px (cheap, no round cap to see).
+            const a: i32 = @intFromFloat(p);
+            const e: i32 = @intFromFloat(q);
+            const seg: Rect = if (horiz) .{ .x0 = a, .y0 = l.r.y0, .x1 = e, .y1 = l.r.y1 } else .{ .x0 = l.r.x0, .y0 = a, .x1 = l.r.x1, .y1 = e };
+            cv.blendRect(seg.intersect(clip), c);
+            continue;
+        }
+        // Centers of the end caps; a stub shorter than the thickness is a dot.
+        const a = p + r;
+        const e = @max(a, q - r);
+        const seg = if (horiz)
+            sdf.Capsule{ .a = .{ .x = a, .y = fy0 + r }, .b = .{ .x = e, .y = fy0 + r }, .r = r }
+        else
+            sdf.Capsule{ .a = .{ .x = fx0 + r, .y = a }, .b = .{ .x = fx0 + r, .y = e }, .r = r };
+        raster.fill(cv, clip, seg, .{ .solid = c }, .{});
     }
 }
 
