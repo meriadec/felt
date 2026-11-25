@@ -13,18 +13,14 @@ const LoadFn = *const fn (*c.Display, [*:0]const u8) callconv(.c) c.Cursor;
 
 pub const Cursors = struct {
     dpy: *c.Display,
-    lib: ?std.DynLib,
     load: ?LoadFn,
     cache: [4]c.Cursor = .{ 0, 0, 0, 0 },
 
     pub fn init(dpy: *c.Display) Cursors {
         var lib = std.DynLib.open("libXcursor.so.1") catch null;
         const load: ?LoadFn = if (lib) |*l| l.lookup(LoadFn, "XcursorLibraryLoadCursor") else null;
-        return .{ .dpy = dpy, .lib = lib, .load = load };
-    }
-
-    pub fn deinit(self: *Cursors) void {
-        if (self.lib) |*l| l.close();
+        // The library stays loaded: libX11 calls back into it from XCloseDisplay.
+        return .{ .dpy = dpy, .load = load };
     }
 
     /// The cursor for `kind`, made on first use.

@@ -106,7 +106,6 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const net_fullscreen = c.XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", c.False);
     _ = c.XChangeProperty(dpy, win, net_state, xa_atom, 32, c.PropModeReplace, @ptrCast(&net_fullscreen), 1);
     var cursors = Cursors.init(dpy);
-    defer cursors.deinit();
     var shown_cursor: core.editor.Editor.Cursor = .crosshair;
     _ = c.XDefineCursor(dpy, win, cursors.get(shown_cursor));
     const gc = c.XCreateGC(dpy, win, 0, null);
