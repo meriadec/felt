@@ -20,7 +20,7 @@ pub const Line = struct {
     strong: bool = false,
 };
 
-/// A number on a line, in a small flat plate.
+/// A number on a line, in a small flat plate: one small size for every label.
 pub const Label = struct {
     rect: Rect,
     buf: [12]u8 = undefined,
@@ -102,7 +102,7 @@ pub const Marks = struct {
         var l = Label{ .rect = .empty, .strong = strong };
         const s = std.fmt.bufPrint(&l.buf, "{s}", .{str}) catch return null;
         l.len = @intCast(s.len);
-        l.px = text.pxOf((if (strong) @as(f32, 13.0) else @as(f32, 11.5)) * m.s);
+        l.px = text.pxOf(@as(f32, 11.0) * m.s);
         const tw = text.measure(ctx.uiFont(), s, l.px).width;
         const pad = 4 * m.s;
         const lw = tw + 2 * pad;
