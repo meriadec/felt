@@ -79,6 +79,24 @@ p95 8 to 10 ms. A step changes every clip, the canvas and the fit, so the
 scene repaints in full (like a crop refit, 2.8 ms, plus the larger canvas);
 it runs once per gesture step, never per drag frame of a shape.
 
+## Montage (2026-11)
+
+A scene of 2 or more images paints a shadow and a border per image, then the
+images (`benchMontage`: 4 images of 960x540, 1920x1080 screen, min of 3 runs,
+ReleaseFast). The one-image path is the old one: the cases that existed stay
+within noise (first frame 5.3-5.8 ms, drag arrow avg 0.18-0.19 ms, startup
+12.3-13.8 ms); the only added work is one rectangle compare per image per frame.
+
+| Metric | 1080p |
+|---|---|
+| frame, 4 images placed (full scene repaint, shadows, 4 blits) | 7.2-8.5 ms |
+| frame, drop slots when the nearest slot changes | avg 0.05 ms, p95 0.09 |
+| frame, drop slots when the pointer stays in a slot | 0 (no damage) |
+
+The shadow is a per-pixel loop over the bands around each image (like the
+canvas shadow), so it costs with the screen area they cover. Moving an image
+repaints the scene in full.
+
 ## Auto-routing (2026-11)
 
 Min of 3 runs each, before (commit "test: a callout grows the canvas to

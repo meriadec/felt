@@ -578,8 +578,51 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     };
     if (app.editor.settings.padding != 0) return error.BenchPaddingNotZero;
     try padding.report(w, "frame: padding step");
+    try benchMontage(gpa, w, opts);
     try benchCapture(gpa, w, opts);
     try w.flush();
+}
+
+/// A scene of 4 images (each W/2 x H/2, placed by the magnet: right, bottom,
+/// left) on its own App: the first frame (shadows, 4 blits), then the drop-slot
+/// overlay with the pointer moving across the slots (one frame per move).
+fn benchMontage(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void {
+    const W = opts.size[0];
+    const H = opts.size[1];
+    const iw: u32 = W / 2;
+    const ih: u32 = H / 2;
+    var extra = try synthetic(gpa, iw, ih);
+    defer extra.deinit(gpa);
+    const app = try App.create(gpa, try synthetic(gpa, iw, ih), W, H, .{ .output_path = null });
+    defer app.destroy();
+    _ = try app.render();
+    var t = try std.time.Timer.start();
+    var rect = core.geom.Rect.fromSize(0, 0, @intCast(iw), @intCast(ih));
+    for ([_]core.magnet.Side{ .right, .bottom, .left }) |side| {
+        rect = core.magnet.slotRect(rect, side, @intCast(iw), @intCast(ih));
+        _ = try app.doc.addImage(gpa, iw, ih, rect.x0, rect.y0, &extra, false);
+    }
+    _ = app.editor.syncView();
+    t.reset();
+    _ = try app.render();
+    try w.print("{s:<26} {d:.3} ms\n", .{ "frame: 4 images placed", ms(t.read()) });
+    // Zoom out: the slots lie around the canvas, which fits the screen.
+    for (0..3) |_| _ = try app.handle(.{ .key = .{ .key = .{ .char = '-' } } });
+    _ = try app.render();
+    var st = Stats{};
+    defer st.deinit(gpa);
+    const n_drop = 60;
+    for (0..n_drop) |i| {
+        const f = @as(f32, @floatFromInt(i)) / n_drop;
+        app.editor.setMontageDrop(@intCast(iw / 2), @intCast(ih / 2), core.geom.Vec2.init(@as(f32, @floatFromInt(W)) * f, @as(f32, @floatFromInt(H)) * (1 - f)));
+        t.reset();
+        const d = try app.render();
+        // A move inside a slot damages nothing; time the frames that repaint.
+        if (d.len > 0) try st.add(gpa, t.read());
+    }
+    try st.report(w, "frame: drop slot changes");
+    app.editor.clearMontageDrop();
+    _ = try app.render();
 }
 
 /// The capture picker on a frozen screen of the screen size: first frame, a
