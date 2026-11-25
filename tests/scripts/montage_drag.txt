@@ -1,0 +1,10 @@
+# Move tool: a rect on image B, then drag B below A (the nearest free slot). One undo step; the rect follows B.
+# The view zooms out on the first move so the slots are in reach.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key r
+drag 520 160 560 220
+key m
+drag 600 250 300 330

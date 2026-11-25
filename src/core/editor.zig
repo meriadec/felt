@@ -12,6 +12,7 @@ const ann = @import("annotation.zig");
 const extent = @import("extent.zig");
 const draw = @import("draw.zig");
 const dropzone = @import("dropzone.zig");
+const magnet = @import("magnet.zig");
 const route = @import("route.zig");
 const Document = @import("document.zig").Document;
 const View = @import("view.zig").View;
@@ -83,11 +84,24 @@ const Moving = struct {
     start: Vec2,
 };
 
+/// An image drag (move tool, press on an image with no annotation under it,
+/// 2+ images). It starts once the pointer leaves `click_slop`; before that a
+/// release is a plain click. The image stays in place meanwhile: a ghost
+/// outline follows the pointer and the drop slots show (`montage_drop`).
+const ImageDrag = struct {
+    id: u32,
+    start_screen: Vec2,
+    /// The grab point in scene px, from the top-left corner of the image.
+    grab: Vec2,
+    active: bool = false,
+};
+
 pub const Mode = union(enum) {
     idle,
     drag: Drag,
     typing: Typing,
     moving: Moving,
+    image_drag: ImageDrag,
 };
 
 /// Screen distance (px at 1080p) within which the pointer grabs a shape.
@@ -230,7 +244,7 @@ pub const Editor = struct {
     /// The dock or top bar item under the pointer (none during a drag).
     pub fn chromeHover(self: *const Editor) Hover {
         const p = self.pointer orelse return .{};
-        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.panning != null) return .{};
+        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.mode == .image_drag or self.panning != null) return .{};
         const w = self.view.screen_w;
         const h = self.view.screen_h;
         return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p) };
@@ -291,7 +305,7 @@ pub const Editor = struct {
 
     pub fn cursor(self: *const Editor) Cursor {
         if (self.hand) return if (self.panning != null) .grabbing else .grab;
-        if (self.panning != null) return .grabbing; // a middle drag
+        if (self.panning != null or (self.mode == .image_drag and self.mode.image_drag.active)) return .grabbing; // a middle drag, an image drag
         return if (self.tool == .move) .move else .crosshair;
     }
 
@@ -526,7 +540,7 @@ pub const Editor = struct {
     pub fn preview(self: *const Editor) ?Annotation {
         const c = self.currentColor();
         return switch (self.mode) {
-            .idle, .moving => null,
+            .idle, .moving, .image_drag => null,
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| if (t.edit) |e| self.editedPreview(e) else switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .style = self.text_style } },
@@ -668,6 +682,10 @@ pub const Editor = struct {
                     self.moveTo(self.view.toImage(.{ .x = m.x, .y = m.y }));
                     return .{ .redraw = true };
                 }
+                if (self.mode == .image_drag) {
+                    try self.dragImageTo(Vec2.init(m.x, m.y));
+                    return .{ .redraw = true };
+                }
                 return .{ .redraw = self.chromeHover().key() != hover_before };
             },
             .wheel => |wh| {
@@ -692,7 +710,7 @@ pub const Editor = struct {
     }
 
     fn pointerOnSlider(self: *const Editor, x: f32, y: f32) bool {
-        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving) return false;
+        if (!self.dock_visible or self.help_visible or self.mode == .drag or self.mode == .moving or self.mode == .image_drag) return false;
         return PadBar.of(self.view.screen_w, self.view.screen_h).contains(.{ .x = x, .y = y });
     }
 
@@ -708,7 +726,7 @@ pub const Editor = struct {
         }
         const p = Vec2.init(x, y);
         self.pointer = p;
-        if (self.mode != .drag and self.mode != .moving and self.onChrome(p)) {
+        if (self.mode != .drag and self.mode != .moving and self.mode != .image_drag and self.onChrome(p)) {
             if (builtin.is_test and !self.chrome_press_ok) std.debug.panic("a test pressed at {d} {d} on the chrome (dock, top bar or padding widget): hide it (dock_visible = false), press elsewhere, or T.showChrome()", .{ x, y });
             if (button == .left) {
                 if (Dock.of(self.view.screen_w, self.view.screen_h, self.tool).hit(p)) |h| switch (h) {
@@ -739,7 +757,7 @@ pub const Editor = struct {
             return .{ .redraw = true };
         }
         if (button == .middle) {
-            if (self.mode != .drag and self.mode != .moving) self.panning = .{ .x = x, .y = y };
+            if (self.mode != .drag and self.mode != .moving and self.mode != .image_drag) self.panning = .{ .x = x, .y = y };
             return .{};
         }
         if (button != .left) return .{};
@@ -750,13 +768,19 @@ pub const Editor = struct {
         if (self.mode == .typing) try self.commitTyping();
         if (self.mode == .drag) self.mode = .idle; // lost release: start over
         if (self.mode == .moving) try self.finishMove(); // lost release: keep the move
+        if (self.mode == .image_drag) self.cancel(); // lost release: start over
         const sp = Vec2.init(x, y);
         const ip = self.view.toImage(sp);
         if (self.tool == .move) {
             const grab = self.grabAt(sp);
             if (clicks >= 2 and button == .left) if (grab) |g| if (g.part == .whole and try self.startEdit(g)) return .{ .redraw = true };
             self.selected = if (grab) |g| g.index else null;
-            if (grab) |g| self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
+            if (grab) |g| {
+                self.mode = .{ .moving = .{ .grab = g, .before = self.doc.items.items[g.index], .start = ip } };
+            } else if (self.doc.scene.count() >= 2) if (self.doc.scene.imageAt(ip)) |i| {
+                const im = self.doc.scene.images.items[i];
+                self.mode = .{ .image_drag = .{ .id = im.id, .start_screen = sp, .grab = ip.sub(Vec2.init(@floatFromInt(im.x), @floatFromInt(im.y))) } };
+            };
             return .{ .redraw = true };
         }
         if (!extent.reachable(extent.keptPad(self.ctx(), self.doc), ip)) {
@@ -784,6 +808,10 @@ pub const Editor = struct {
             try self.finishMove();
             return .{ .redraw = true };
         }
+        if (button == .left and self.mode == .image_drag) {
+            try self.finishImageDrag(Vec2.init(x, y));
+            return .{ .redraw = true };
+        }
         if (button != .left or self.mode != .drag) return .{};
         const d = self.mode.drag;
         const sp = Vec2.init(x, y);
@@ -809,6 +837,62 @@ pub const Editor = struct {
             if (extent.fits(self.ctx(), extent.keptPad(self.ctx(), self.doc), a)) try self.addSettled(a) else self.tooFar();
         }
         return .{ .redraw = true };
+    }
+
+    /// Margin (fraction of the extent) kept around scene and slots when a
+    /// drag zooms out to show them.
+    const drag_margin = 0.08;
+
+    /// The pointer moved with an image grabbed. Past the click slop the drag
+    /// becomes active: the view makes room for the slots, then the overlay
+    /// follows the pointer on every move.
+    fn dragImageTo(self: *Editor, p: Vec2) !void {
+        const d = &self.mode.image_drag;
+        if (!d.active) {
+            if (p.dist(d.start_screen) < click_slop) return;
+            d.active = true;
+            try self.makeRoomForSlots(d.id);
+        }
+        const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
+        self.montage_drop = .{ .w = im.w, .h = im.h, .pointer = p, .exclude = d.id, .grab = d.grab };
+    }
+
+    /// Zoom out (one step, to the fit of the scene and all slots plus a
+    /// margin) when a slot would fall outside the screen; else do nothing.
+    /// The zoom stays after the drop (it is only the view): after a move
+    /// that changes the scene bounds, the view refits anyway.
+    fn makeRoomForSlots(self: *Editor, id: u32) !void {
+        const im = self.doc.scene.images.items[self.doc.scene.indexOf(id).?];
+        const list = try dropzone.slotList(self.gpa, self.doc, id, im.w, im.h);
+        defer self.gpa.free(list);
+        var all = self.doc.scene.bounds();
+        var inside = true;
+        const scr = self.view.screen();
+        for (list) |s| {
+            all = all.unite(s.rect);
+            const r = self.view.rect(s.rect);
+            inside = inside and std.meta.eql(r.intersect(scr), r);
+        }
+        if (inside) return;
+        const mx: i32 = @intFromFloat(@ceil(@as(f32, @floatFromInt(all.width())) * drag_margin));
+        const my: i32 = @intFromFloat(@ceil(@as(f32, @floatFromInt(all.height())) * drag_margin));
+        const grown = geom.Rect{ .x0 = all.x0 - mx, .y0 = all.y0 - my, .x1 = all.x1 + mx, .y1 = all.y1 + my };
+        self.view = View.fit(grown, self.view.screen_w, self.view.screen_h);
+        self.fitted = false;
+    }
+
+    /// Release: drop at the nearest free slot, one undo step that carries
+    /// the annotations. No slot, or never past the click slop: nothing.
+    fn finishImageDrag(self: *Editor, p: Vec2) !void {
+        const d = self.mode.image_drag;
+        self.mode = .idle;
+        self.montage_drop = null;
+        if (!d.active) return;
+        const im = self.doc.scene.images.items[self.doc.scene.indexOf(d.id).?];
+        const list = try dropzone.slotList(self.gpa, self.doc, d.id, im.w, im.h);
+        defer self.gpa.free(list);
+        const best = magnet.nearest(list, self.view.toImage(p)) orelse return;
+        _ = try self.doc.moveImage(self.gpa, d.id, best.rect.x0, best.rect.y0);
     }
 
     fn tooFar(self: *Editor) void {
@@ -890,6 +974,7 @@ pub const Editor = struct {
     /// Drop any shape or text in progress; put a moving annotation back.
     pub fn cancel(self: *Editor) void {
         if (self.mode == .moving) self.doc.setLive(self.mode.moving.grab.index, self.mode.moving.before);
+        if (self.mode == .image_drag) self.montage_drop = null;
         if (self.mode == .typing) if (self.mode.typing.edit) |e| self.doc.setLive(e.index, e.before);
         self.clearDraft();
         self.mode = .idle;
@@ -1085,7 +1170,7 @@ pub const Editor = struct {
             // Esc and q: cancel the shape in progress, else close the help,
             // else quit (a second press when there are unsaved changes).
             .quit => {
-                if (self.mode == .drag or self.mode == .moving) {
+                if (self.mode == .drag or self.mode == .moving or self.mode == .image_drag) {
                     self.cancel();
                 } else if (self.help_visible) {
                     self.help_visible = false;
@@ -2007,4 +2092,102 @@ test "move/select: a press selects, Delete deletes as one undo step, undo restor
     try std.testing.expectEqual(@as(?usize, null), t.ed.selected);
     _ = try t.key("delete");
     try std.testing.expectEqual(@as(usize, 1), t.doc.items.items.len);
+}
+
+/// Two 400x200 images (a at 0,0, b at 464,0) on a 400x200 screen, move tool.
+fn montageT(t: *T) !void {
+    t.initSize(400, 200);
+    _ = try t.doc.addImage(std.testing.allocator, 400, 200, 464, 0, null, false);
+    _ = t.ed.syncView();
+    t.ed.tool = .move;
+}
+
+fn mouse(t: *T, x: f32, y: f32, what: enum { down, move, up }) !void {
+    switch (what) {
+        .down => _ = try t.ed.handle(.{ .mouse_down = .{ .x = x, .y = y } }),
+        .move => _ = try t.ed.handle(.{ .mouse_move = .{ .x = x, .y = y } }),
+        .up => _ = try t.ed.handle(.{ .mouse_up = .{ .x = x, .y = y } }),
+    }
+}
+
+test "image drag: drops at the nearest free slot as one undo step, with its annotations" {
+    var t = T{};
+    try montageT(&t);
+    defer t.deinit();
+    const b = t.doc.scene.images.items[1];
+    try t.doc.add(std.testing.allocator, .{ .rect = .{ .a = Vec2.init(500, 20), .b = Vec2.init(600, 80), .color = t.ed.currentColor(), .width = 4 } });
+    const h = t.doc.history.items.len;
+    const v = t.ed.view;
+    const press = v.toScreen(Vec2.init(700, 150));
+    try mouse(&t, press.x, press.y, .down);
+    try std.testing.expect(t.ed.mode == .image_drag);
+    try std.testing.expect(t.ed.montage_drop == null); // not before the slop
+    try std.testing.expectEqual(Editor.Cursor.move, t.ed.cursor());
+    // Under image a (scene 200,264): the bottom slot of a.
+    const to = v.toScreen(Vec2.init(200, 330));
+    try mouse(&t, to.x, to.y, .move);
+    try std.testing.expectEqual(Editor.Cursor.grabbing, t.ed.cursor());
+    try std.testing.expect(t.ed.montage_drop != null);
+    try std.testing.expectEqual(b.id, t.ed.montage_drop.?.exclude.?);
+    try std.testing.expectEqual(h, t.doc.history.items.len); // nothing recorded while dragging
+    try std.testing.expect(t.ed.view.xf.scale < v.xf.scale); // zoomed out: the slots were off screen
+    try mouse(&t, to.x, to.y, .up);
+    try std.testing.expect(t.ed.mode == .idle);
+    try std.testing.expect(t.ed.montage_drop == null);
+    const nb = t.doc.scene.images.items[1];
+    try std.testing.expectEqual(@as(i32, 0), nb.x);
+    try std.testing.expectEqual(@as(i32, 264), nb.y);
+    try std.testing.expectEqual(h + 1, t.doc.history.items.len);
+    try std.testing.expectEqual(@as(f32, 36), t.doc.items.items[0].rect.a.x); // moved by -464
+    try std.testing.expectEqual(@as(f32, 284), t.doc.items.items[0].rect.a.y); // and by 264
+    _ = try t.key("ctrl+z");
+    try std.testing.expectEqual(@as(i32, 464), t.doc.scene.images.items[1].x);
+    try std.testing.expectEqual(@as(f32, 500), t.doc.items.items[0].rect.a.x);
+}
+
+test "image drag: the slots hang on the other images; a drag into nothing, a click, Esc and right click change nothing" {
+    var t = T{};
+    try montageT(&t);
+    defer t.deinit();
+    const h = t.doc.history.items.len;
+    const v = t.ed.view;
+    const press = v.toScreen(Vec2.init(700, 150));
+    // A click.
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x + 1, press.y, .move);
+    try mouse(&t, press.x + 1, press.y, .up);
+    try std.testing.expect(t.ed.montage_drop == null);
+    try std.testing.expectEqual(h, t.doc.history.items.len);
+    // Esc.
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x - 40, press.y + 20, .move);
+    try std.testing.expect(t.ed.montage_drop != null);
+    _ = try t.key("esc");
+    try std.testing.expect(t.ed.mode == .idle);
+    try std.testing.expect(t.ed.montage_drop == null);
+    // Right click.
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x - 40, press.y + 20, .move);
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 10, .y = 10, .button = .right } });
+    try std.testing.expect(t.ed.mode == .idle and t.ed.montage_drop == null);
+    // Back at its own slot: the release is a no-op, not a step.
+    try mouse(&t, press.x, press.y, .down);
+    try mouse(&t, press.x - 40, press.y, .move);
+    try mouse(&t, press.x - 40, press.y, .up);
+    try std.testing.expectEqual(h, t.doc.history.items.len);
+    try std.testing.expectEqual(@as(i32, 464), t.doc.scene.images.items[1].x);
+}
+
+test "image drag: an annotation under the press keeps priority; one image has no drag" {
+    var t = T{};
+    try montageT(&t);
+    defer t.deinit();
+    try t.doc.add(std.testing.allocator, .{ .rect = .{ .a = Vec2.init(500, 20), .b = Vec2.init(600, 80), .color = t.ed.currentColor(), .width = 4 } });
+    const on = t.ed.view.toScreen(Vec2.init(500, 50));
+    try mouse(&t, on.x, on.y, .down);
+    try std.testing.expect(t.ed.mode == .moving);
+    try mouse(&t, on.x, on.y, .up);
+    _ = try t.doc.removeImage(std.testing.allocator, t.doc.scene.images.items[1].id);
+    try mouse(&t, 100, 100, .down);
+    try std.testing.expect(t.ed.mode == .idle);
 }

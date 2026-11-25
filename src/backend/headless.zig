@@ -112,7 +112,7 @@ pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *con
 fn checkOffChrome(app: *App, ev: core.input.Event) !void {
     if (ev != .mouse_down or ev.mouse_down.button != .left) return;
     const ed = &app.editor;
-    if (ed.help_visible or ed.mode == .drag or ed.mode == .moving) return;
+    if (ed.help_visible or ed.mode == .drag or ed.mode == .moving or ed.mode == .image_drag) return;
     const p = core.geom.Vec2.init(ev.mouse_down.x, ev.mouse_down.y);
     if (!ed.onChrome(p)) return;
     std.log.err("script: a press at {d} {d} lands on the dock, its style switch or the top bar: click chrome with `ui ...`, or draw elsewhere", .{ p.x, p.y });

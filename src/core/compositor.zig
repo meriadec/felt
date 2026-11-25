@@ -579,12 +579,19 @@ pub const Compositor = struct {
         if (ed.montage_drop) |d| drop = try dropzone.Overlay.build(self.gpa, doc, v, d);
         const same_drop = if (drop) |a| (if (self.prev_drop) |b| a.eql(b) else false) else self.prev_drop == null;
         if (!same_drop) {
-            if (self.prev_drop) |o| for (o.rects) |r| dmg.add(r.intersect(full_rect));
-            if (drop) |o| for (o.rects) |r| dmg.add(r.intersect(full_rect));
+            const slots_same = if (drop) |a| (if (self.prev_drop) |b| a.sameSlots(b) else false) else false;
+            if (self.prev_drop) |o| {
+                if (!slots_same) for (o.rects) |r| dmg.add(r.intersect(full_rect));
+                if (o.ghost) |g| dmg.add(g.intersect(full_rect));
+            }
+            if (drop) |o| {
+                if (!slots_same) for (o.rects) |r| dmg.add(r.intersect(full_rect));
+                if (o.ghost) |g| dmg.add(g.intersect(full_rect));
+            }
             if (self.prev_drop) |*o| o.deinit(self.gpa);
             self.prev_drop = null;
             if (drop) |o| {
-                self.prev_drop = .{ .rects = try self.gpa.dupe(Rect, o.rects), .hot = o.hot, .screen_h = o.screen_h };
+                self.prev_drop = .{ .rects = try self.gpa.dupe(Rect, o.rects), .hot = o.hot, .screen_h = o.screen_h, .ghost = o.ghost };
             }
         }
 

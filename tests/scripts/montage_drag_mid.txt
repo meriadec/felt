@@ -1,0 +1,9 @@
+# Move tool: drag image B toward the slot below A. The script ends mid-drag: ghost outline, free slots (none on B), hot slot.
+image tests/fixtures/tile_a.png
+size 900 500
+addimage tests/fixtures/tile_b.png right
+addimage tests/fixtures/tile_c.png bottom
+key m
+down 600 150
+move 560 200
+move 300 330

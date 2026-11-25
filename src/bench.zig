@@ -623,6 +623,23 @@ fn benchMontage(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
     try st.report(w, "frame: drop slot changes");
     app.editor.clearMontageDrop();
     _ = try app.render();
+    // A real image drag (move tool): the ghost follows the pointer; frames that repaint.
+    app.editor.tool = .move;
+    const im = app.doc.scene.images.items[1].rect().toBounds();
+    const p0 = app.editor.view.toScreen(core.geom.Vec2.init((im.min.x + im.max.x) / 2, (im.min.y + im.max.y) / 2));
+    _ = try app.handle(.{ .mouse_down = .{ .x = p0.x, .y = p0.y } });
+    var gt = Stats{};
+    defer gt.deinit(gpa);
+    for (0..n_drop) |i| {
+        const f = @as(f32, @floatFromInt(i)) / n_drop;
+        _ = try app.handle(.{ .mouse_move = .{ .x = p0.x - 300 * f, .y = p0.y + 200 * f } });
+        t.reset();
+        const d = try app.render();
+        if (d.len > 0) try gt.add(gpa, t.read());
+    }
+    try gt.report(w, "frame: image drag (ghost)");
+    _ = try app.handle(.{ .key = .{ .key = .{ .named = .escape } } });
+    _ = try app.render();
 }
 
 /// The capture picker on a frozen screen of the screen size: first frame, a

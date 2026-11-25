@@ -92,6 +92,11 @@ within noise (first frame 5.3-5.8 ms, drag arrow avg 0.18-0.19 ms, startup
 | frame, 4 images placed (full scene repaint, shadows, 4 blits) | 7.2-8.5 ms |
 | frame, drop slots when the nearest slot changes | avg 0.05 ms, p95 0.09 |
 | frame, drop slots when the pointer stays in a slot | 0 (no damage) |
+| frame, image drag with the ghost (move tool, every motion event) | avg 0.15 ms, p95 0.24 |
+
+A moving ghost damages only its old and new rectangles; the slots are damaged
+only when they or the hot slot change (`Overlay.sameSlots`). A drag never
+repaints the scene: the dragged image stays in place until the drop.
 
 The shadow is a per-pixel loop over the bands around each image (like the
 canvas shadow), so it costs with the screen area they cover. Moving an image
