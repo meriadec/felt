@@ -406,3 +406,28 @@ test "parse ui padding" {
     try std.testing.expectEqual(UiTarget{ .padding = 96 }, s.events.pop().?.ui);
     try std.testing.expectError(error.BadScript, parse(gpa, "ui padding wide", &err));
 }
+
+test "parse browser commands and touch" {
+    const gpa = std.testing.allocator;
+    var err: ParseError = undefined;
+    var s = try parse(gpa,
+        \\touch tests/fixtures/browser/a.png 1700000000
+        \\browser home tests/fixtures/browser
+        \\ui browser
+        \\browser cd trips
+        \\browser up
+        \\browser scroll -2
+        \\browser drag sunset.png 700 250 hold
+    , &err);
+    defer s.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 7), s.events.items.len);
+    try std.testing.expectEqual(@as(i64, 1700000000), s.events.items[0].touch.secs);
+    try std.testing.expectEqualStrings("tests/fixtures/browser", s.events.items[1].browser.home);
+    try std.testing.expect(s.events.items[2].ui == .browser);
+    try std.testing.expectEqualStrings("trips", s.events.items[3].browser.cd);
+    try std.testing.expect(s.events.items[4].browser == .up);
+    try std.testing.expectEqual(@as(i32, -2), s.events.items[5].browser.scroll);
+    const d = s.events.items[6].browser.drag;
+    try std.testing.expect(d.hold and d.x == 700 and d.y == 250);
+    try std.testing.expectError(error.BadScript, parse(gpa, "browser fly", &err));
+}

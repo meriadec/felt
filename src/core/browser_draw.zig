@@ -239,3 +239,25 @@ fn drawThumb(cv: *Canvas, clip: Rect, b: *const Browser, e: anytype, box: Bounds
     }
     rr(cv, clip, box, 3 * s, nord.n2); // not ready yet
 }
+
+test "long names and paths are cut with an ellipsis, short ones stay whole" {
+    const gpa = std.testing.allocator;
+    var font = try @import("font.zig").Font.init(gpa, @import("root.zig").font_ttf);
+    defer font.deinit();
+    const ctx = Ctx{ .gpa = gpa, .font = &font };
+    const name = "a-very-long-screenshot-name-2025-03-14.png";
+    const whole = textW(ctx, name, 13);
+    const a = fitStart(ctx, name, 13, whole + 1);
+    try std.testing.expect(!a.cut and a.n == name.len);
+    const b = fitStart(ctx, name, 13, whole / 2);
+    try std.testing.expect(b.cut and b.n > 3 and b.n < name.len);
+    try std.testing.expect(textW(ctx, name[0..b.n], 13) + textW(ctx, ellipsis, 13) <= whole / 2);
+    const c = fitEnd(ctx, name, 13, whole / 2);
+    try std.testing.expect(c.cut and c.from > 3 and c.from < name.len);
+    try std.testing.expect(textW(ctx, name[c.from..], 13) + textW(ctx, ellipsis, 13) <= whole / 2);
+    try std.testing.expectEqualStrings(".png", name[c.from..][name[c.from..].len - 4 ..]); // the tail stays
+    // Multi-byte names are cut on a character start.
+    const u = "caf\u{e9}-\u{e9}t\u{e9}-photo.png";
+    const d = fitStart(ctx, u, 13, textW(ctx, u, 13) / 2);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(u[0..d.n]));
+}
