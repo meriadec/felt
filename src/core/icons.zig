@@ -63,12 +63,7 @@ pub fn draw(cv: *Canvas, clip: Rect, tool: Tool, c: Vec2, size: f32, color: Colo
             pen.line(0.04, -0.4, 0.04, 0.42);
             pen.line(-0.22, -0.2, 0.04, -0.4);
         },
-        .callout => {
-            const bubble = sdf.unite(pen.box(-0.8, -0.72, 0.8, 0.38, 0.28), pen.tri(.{ -0.42, 0.3 }, .{ 0.02, 0.3 }, .{ -0.5, 0.8 }));
-            pen.fill(sdf.ring(bubble, pen.w), 1);
-            pen.line(-0.42, -0.3, 0.42, -0.3);
-            pen.line(-0.42, 0.0, 0.15, 0.0);
-        },
+        .callout => straightArrow(pen),
         .pixelate => {
             const cell = 0.5;
             const gap = 0.08;

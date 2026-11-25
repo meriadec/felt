@@ -16,7 +16,7 @@ key n
 click 650 110
 key p
 drag 300 200 420 260
-key c
+key a
 drag 680 320 560 250
 type Box
 key enter
