@@ -22,6 +22,7 @@ pub const scene = @import("scene.zig");
 pub const magnet = @import("magnet.zig");
 pub const dashed = @import("dashed.zig");
 pub const dropzone = @import("dropzone.zig");
+pub const dirlist = @import("dirlist.zig");
 pub const document = @import("document.zig");
 pub const input = @import("input.zig");
 pub const keymap = @import("keymap.zig");
