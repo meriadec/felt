@@ -156,7 +156,14 @@ pub const Xform = struct {
     pub const identity = Xform{};
 
     pub fn apply(t: Xform, p: Vec2) Vec2 {
-        return p.scale(t.scale).add(t.offset);
+        // Snap the scaled point to 1/2048 px: the sum with the whole pixel
+        // offset is then exact, so a pan (a scroll of the scene) and a full
+        // repaint rasterize the same shapes to the same pixels.
+        const q = p.scale(t.scale);
+        return .{ .x = snap(q.x) + t.offset.x, .y = snap(q.y) + t.offset.y };
+    }
+    fn snap(v: f32) f32 {
+        return @round(v * 2048) / 2048;
     }
     pub fn invert(t: Xform, p: Vec2) Vec2 {
         return p.sub(t.offset).scale(1.0 / t.scale);
@@ -191,4 +198,17 @@ test "xform round trip" {
     const q = t.invert(t.apply(p));
     try std.testing.expectApproxEqAbs(p.x, q.x, 1e-4);
     try std.testing.expectApproxEqAbs(p.y, q.y, 1e-4);
+}
+
+test "xform: a whole pixel pan moves every point by exactly that much" {
+    // A pan scrolls the scene; a full repaint must give the same pixels.
+    const s: f32 = 0.4444444;
+    var i: i32 = 0;
+    while (i < 500) : (i += 1) {
+        const p = Vec2.init(@as(f32, @floatFromInt(i)) * 1.37 + 0.31, @as(f32, @floatFromInt(i)) * 0.83);
+        const a = (Xform{ .scale = s, .offset = .{ .x = 37, .y = -12 } }).apply(p);
+        const b = (Xform{ .scale = s, .offset = .{ .x = 37 + 51, .y = -12 + 33 } }).apply(p);
+        try std.testing.expectEqual(a.x + 51, b.x);
+        try std.testing.expectEqual(a.y + 33, b.y);
+    }
 }

@@ -13,4 +13,3 @@ manual step, a missing doc.
 
 ## Open
 
-- 2026-11-25: `zig build test -Dexact-goldens=true` fails on `zoom_out` (1 pixel: the incremental frame differs from a full repaint); it did before the montage work too (68609f4). Zero tolerance finds it; find the 1-pixel rounding in the zoom damage.
