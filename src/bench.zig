@@ -78,6 +78,30 @@ fn reportProf(w: *std.Io.Writer, p: core.compositor.Prof, n: u64) !void {
     });
 }
 
+/// A screen point in the box of tail `a` and head `b` that hits item `idx` (an
+/// arrow) by its body, not by an end, and no item above it (null: none).
+fn findOnlyOn(app: *App, idx: usize, a: core.geom.Vec2, b: core.geom.Vec2) ?core.geom.Vec2 {
+    const n = 120;
+    const items = app.doc.items.items;
+    for (0..n + 1) |iy| {
+        for (0..n + 1) |ix| {
+            const p = core.geom.Vec2{
+                .x = a.x + (b.x - a.x) * @as(f32, @floatFromInt(ix)) / n,
+                .y = a.y + (b.y - a.y) * @as(f32, @floatFromInt(iy)) / n,
+            };
+            const xf = app.editor.view.xf;
+            if (core.draw.hitDist(app.ctx(), items[idx], xf, p) > 0) continue;
+            if (p.dist(a) < 60 or p.dist(b) < 60) continue;
+            var other = false;
+            for (items, 0..) |it, i| {
+                if (i > idx and core.draw.hitDist(app.ctx(), it, xf, p) < 12) other = true; // above it: picked first
+            }
+            if (!other) return p;
+        }
+    }
+    return null;
+}
+
 /// Auto-routing (route.zig) among dense paths: a fan of stairs arrows
 /// across the row of numbers (each commit re-routes the ones around it),
 /// a stairs arrow dragged through them (routed each frame) and committed,
@@ -137,7 +161,12 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
     defer ev.deinit(gpa);
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'm' } } });
     _ = try app.render();
-    _ = try app.handle(.{ .mouse_down = .{ .x = W * 0.13, .y = H * 0.39 } });
+    // A point on the body of fan arrow 3, under no later item: where the
+    // routed path runs depends on the screen size.
+    const grab = findOnlyOn(app, 31 + 3, .{ .x = W * 0.1, .y = H * 0.39 }, .{ .x = W * 0.64, .y = H * 0.69 }) orelse {
+        return error.BenchMoveMissedTheFanArrow;
+    };
+    _ = try app.handle(.{ .mouse_down = .{ .x = grab.x, .y = grab.y } });
     if (app.editor.mode != .moving or app.editor.mode.moving.grab.part != .whole or app.editor.mode.moving.grab.index != 31 + 3) return error.BenchMoveMissedTheFanArrow;
     app.comp.prof = .{};
     for (0..n_moves) |i| {
