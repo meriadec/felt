@@ -819,6 +819,28 @@ pub const Editor = struct {
         return i;
     }
 
+    fn isWordByte(c: u8) bool {
+        return std.ascii.isAlphanumeric(c) or c == '_' or c >= 0x80;
+    }
+
+    /// Start of the word before `at` (skips what is not a word first).
+    fn prevWord(self: *const Editor, at: usize) usize {
+        const s = self.draft.items;
+        var i = at;
+        while (i > 0 and !isWordByte(s[i - 1])) i -= 1;
+        while (i > 0 and isWordByte(s[i - 1])) i -= 1;
+        return i;
+    }
+
+    /// End of the word after `at` (skips what is not a word first).
+    fn nextWord(self: *const Editor, at: usize) usize {
+        const s = self.draft.items;
+        var i = at;
+        while (i < s.len and !isWordByte(s[i])) i += 1;
+        while (i < s.len and isWordByte(s[i])) i += 1;
+        return i;
+    }
+
     /// Move the caret to `to`; with `extend` the selection grows, else it ends.
     fn moveCaret(self: *Editor, to: usize, extend: bool) void {
         self.caret = to;
@@ -862,6 +884,11 @@ pub const Editor = struct {
         if (self.mode == .typing and k.mods.ctrl and !k.mods.alt and k.key == .char and std.ascii.toLower(@intCast(@min(k.key.char, 127))) == 'a') {
             self.sel_anchor = 0; // Ctrl+A: select everything
             self.caret = self.draft.items.len;
+            return .{ .redraw = true };
+        }
+        if (self.mode == .typing and k.mods.ctrl and !k.mods.alt and k.key == .named and (k.key.named == .left or k.key.named == .right)) {
+            // Ctrl+Left / Ctrl+Right: one word; with Shift the selection grows by a word.
+            self.moveCaret(if (k.key.named == .left) self.prevWord(self.caret) else self.nextWord(self.caret), k.mods.shift);
             return .{ .redraw = true };
         }
         if (self.mode == .typing and !k.mods.ctrl and !k.mods.alt) {
@@ -1779,6 +1806,19 @@ test "text mode: caret, Shift+arrows select, typing overwrites the selection, Ct
     _ = try t.key("shift+home");
     try std.testing.expectEqual(@as(usize, 0), t.ed.caret);
     try std.testing.expectEqual(@as(usize, 3), t.ed.sel_anchor);
+    // Ctrl+Left / Ctrl+Shift+Left go by words.
+    _ = try t.key("ctrl+a");
+    for (" big old") |ch| _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = ch } } });
+    try std.testing.expectEqualStrings(" big old", t.ed.draft.items);
+    _ = try t.key("ctrl+left");
+    try std.testing.expectEqual(@as(usize, 5), t.ed.caret);
+    _ = try t.key("ctrl+shift+left");
+    try std.testing.expectEqual(@as(usize, 1), t.ed.caret);
+    try std.testing.expectEqual(@as(usize, 5), t.ed.sel_anchor);
+    _ = try t.key("ctrl+shift+right");
+    _ = try t.key("ctrl+shift+right");
+    try std.testing.expectEqual(@as(usize, 8), t.ed.caret);
+    try std.testing.expectEqual(@as(usize, 5), t.ed.sel_anchor);
     // Ctrl+A then a key overwrites everything; the text is committed whole.
     _ = try t.key("ctrl+a");
     _ = try t.ed.handle(.{ .key = .{ .key = .{ .char = 'o' } } });
