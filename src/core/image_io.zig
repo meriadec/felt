@@ -35,6 +35,17 @@ pub fn load(gpa: std.mem.Allocator, path: []const u8) !Canvas {
     return decode(gpa, bytes);
 }
 
+/// Width and height of an image file, read from its header (no decode).
+pub fn info(gpa: std.mem.Allocator, path: []const u8) !struct { w: u32, h: u32 } {
+    const z = try gpa.dupeZ(u8, path);
+    defer gpa.free(z);
+    var w: c_int = 0;
+    var h: c_int = 0;
+    var n: c_int = 0;
+    if (c.stbi_info(z.ptr, &w, &h, &n) == 0 or w <= 0 or h <= 0) return error.DecodeFailed;
+    return .{ .w = @intCast(w), .h = @intCast(h) };
+}
+
 /// RGBA bytes in memory (little-endian u32 = 0xAABBGGRR) to an opaque pixel.
 inline fn rgbaToPixel(v: u32) u32 {
     const a = v >> 24;
@@ -122,4 +133,22 @@ test "png round trip" {
     var fast_of_stb = try png.decode(gpa, stb_bytes);
     defer fast_of_stb.deinit(gpa);
     try std.testing.expectEqualSlices(u32, cv.pixels, fast_of_stb.pixels);
+}
+
+test "info reads the header of a file" {
+    const gpa = std.testing.allocator;
+    var cv = try Canvas.init(gpa, 7, 3);
+    defer cv.deinit(gpa);
+    @memset(cv.pixels, 0xff102030);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(dir);
+    const path = try std.fs.path.join(gpa, &.{ dir, "a.png" });
+    defer gpa.free(path);
+    try savePng(gpa, &cv, path);
+    const i = try info(gpa, path);
+    try std.testing.expectEqual(@as(u32, 7), i.w);
+    try std.testing.expectEqual(@as(u32, 3), i.h);
+    try std.testing.expectError(error.DecodeFailed, info(gpa, "/nonexistent.png"));
 }
