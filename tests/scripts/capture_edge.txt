@@ -1,5 +1,5 @@
 # Capture picker: a selection flush with the top left screen corner has no
-# distance there. The press and the pointer snap to the 8 px grid.
+# distance there.
 capture
 down 0 0
 move 523 331

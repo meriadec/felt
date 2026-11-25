@@ -14,16 +14,6 @@ const Vec2 = geom.Vec2;
 
 /// A press that moves less than this (px, each axis) is a click.
 pub const drag_threshold = 4;
-/// A drag snaps to this grid (px), and to the screen edges within half of it.
-pub const grid = 8;
-
-/// `v` on the magnetic grid, inside 0..max.
-pub fn snap(v: f32, max: u32) f32 {
-    const m: f32 = @floatFromInt(max);
-    if (@abs(v - m) < grid / 2) return m;
-    const g: f32 = grid;
-    return std.math.clamp(@round(v / g) * g, 0, m);
-}
 /// The delay Tab switches on when `--delay` gave none.
 pub const default_delay_ms = 1000;
 
@@ -75,17 +65,12 @@ pub const Picker = struct {
         return Rect.fromSize(0, 0, @intCast(self.w), @intCast(self.h));
     }
 
-    /// The rectangle of the drag, from the press to the pointer, both snapped
-    /// to the grid, inside the screen.
+    /// The rectangle of the drag, from the press to the pointer, inside the screen.
     pub fn dragRect(self: *const Picker) Rect {
-        const px0 = snap(self.press.x, self.w);
-        const py0 = snap(self.press.y, self.h);
-        const px1 = snap(self.pointer.x, self.w);
-        const py1 = snap(self.pointer.y, self.h);
-        const x0: i32 = @intFromFloat(@min(px0, px1));
-        const y0: i32 = @intFromFloat(@min(py0, py1));
-        const x1: i32 = @intFromFloat(@max(px0, px1));
-        const y1: i32 = @intFromFloat(@max(py0, py1));
+        const x0: i32 = @intFromFloat(@floor(@min(self.press.x, self.pointer.x)));
+        const y0: i32 = @intFromFloat(@floor(@min(self.press.y, self.pointer.y)));
+        const x1: i32 = @intFromFloat(@floor(@max(self.press.x, self.pointer.x)));
+        const y1: i32 = @intFromFloat(@floor(@max(self.press.y, self.pointer.y)));
         return (Rect{ .x0 = x0, .y0 = y0, .x1 = x1, .y1 = y1 }).intersect(self.screen());
     }
 
@@ -209,22 +194,14 @@ test "a drag confirms on release, normalized and clipped" {
     _ = p.handle(mev("mouse_move", 152, 91));
     try std.testing.expect(!p.moved); // under the threshold
     _ = p.handle(mev("mouse_move", 50, 400));
-    try std.testing.expectEqual(Rect{ .x0 = 48, .y0 = 88, .x1 = 152, .y1 = 300 }, p.highlight().?);
+    try std.testing.expectEqual(Rect{ .x0 = 50, .y0 = 90, .x1 = 150, .y1 = 300 }, p.highlight().?);
     _ = p.handle(mev("mouse_up", 50, 400));
     try std.testing.expectEqual(Phase.confirmed, p.phase);
-    try std.testing.expectEqual(Rect{ .x0 = 48, .y0 = 88, .x1 = 152, .y1 = 300 }, p.result.?);
+    try std.testing.expectEqual(Rect{ .x0 = 50, .y0 = 90, .x1 = 150, .y1 = 300 }, p.result.?);
     try std.testing.expect(p.finished());
     // Finished: later events change nothing.
     _ = p.handle(.{ .key = .{ .key = .{ .named = .escape } } });
     try std.testing.expectEqual(Phase.confirmed, p.phase);
-}
-
-test "a drag snaps to the 8 px grid and to the screen edges" {
-    try std.testing.expectEqual(@as(f32, 304), snap(300, 1920));
-    try std.testing.expectEqual(@as(f32, 296), snap(299, 1920));
-    try std.testing.expectEqual(@as(f32, 1920), snap(1917, 1920));
-    try std.testing.expectEqual(@as(f32, 0), snap(-5, 1920));
-    try std.testing.expectEqual(@as(f32, 1000), snap(998, 1000));
 }
 
 test "hover follows the topmost window; a click selects it" {
