@@ -22,12 +22,44 @@ const Editor = @import("editor.zig").Editor;
 const Rect = geom.Rect;
 const View = @import("view.zig").View;
 
-pub const background = color.Color.rgb(0x20242D);
+pub const background = color.Color.rgb(0x15181E);
 /// Grid lines on the screen background: a faint step above the background, so the
 /// canvas stays distinct from it, whatever the canvas color.
-pub const grid_color = color.Color.rgb(0x282D38);
+pub const grid_color = color.Color.rgb(0x1B1F26);
 /// Distance between grid lines (screen px).
 pub const grid_step: i32 = 32;
+
+/// The canvas casts a soft shadow (down, `shadow_dy` px, fading over
+/// `shadow_blur` px) and has a 1 px translucent light border, both outside it.
+const shadow_blur: i32 = 20;
+const shadow_dy: i32 = 6;
+const shadow_alpha: f32 = 110;
+const border_color = color.Color{ .r = 255, .g = 255, .b = 255, .a = 34 };
+/// How far from the canvas the shadow reaches (px).
+const shadow_reach: i32 = shadow_blur + shadow_dy + 1;
+
+/// Paint the shadow and the border of canvas `c` in `r` (outside `c`: the
+/// caller has painted the background there).
+fn paintBackdrop(cv: *Canvas, r_in: Rect, c: Rect) void {
+    const r = r_in.intersect(c.expand(shadow_reach)).intersect(cv.bounds());
+    if (r.isEmpty() or c.isEmpty()) return;
+    const blur: f32 = @floatFromInt(shadow_blur);
+    var y = r.y0;
+    while (y < r.y1) : (y += 1) {
+        var x = r.x0;
+        while (x < r.x1) : (x += 1) {
+            const dx = @max(c.x0 - x, 0, x - (c.x1 - 1));
+            const dy = @max(c.y0 - y, 0, y - (c.y1 - 1));
+            if (dx == 0 and dy == 0) continue;
+            const px: Rect = .{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 };
+            const sdx: f32 = @floatFromInt(@max(c.x0 - x, 0, x - (c.x1 - 1)));
+            const sdy: f32 = @floatFromInt(@max(c.y0 + shadow_dy - y, 0, y - (c.y1 - 1 + shadow_dy)));
+            const t = 1 - @sqrt(sdx * sdx + sdy * sdy) / blur;
+            if (t > 0) cv.blendRect(px, .{ .r = 0, .g = 0, .b = 0, .a = @intFromFloat(shadow_alpha * t * t) });
+            if (@max(dx, dy) == 1) cv.blendRect(px, border_color);
+        }
+    }
+}
 
 /// Fill `r` with the screen background and its grid. The lines hang on the
 /// image origin of the view, so a pan (an integer scroll of the scene) keeps
@@ -235,7 +267,10 @@ pub const Compositor = struct {
         if (r.isEmpty()) return;
         const ox: i32 = @intFromFloat(@round(s.xf.offset.x));
         const oy: i32 = @intFromFloat(@round(s.xf.offset.y));
-        for (r.minus(s.canvas_dst)) |b| fillBackground(cv, b, ox, oy);
+        for (r.minus(s.canvas_dst)) |b| {
+            fillBackground(cv, b, ox, oy);
+            paintBackdrop(cv, b, s.canvas_dst);
+        }
         for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
         try self.paintImage(cv, s, r);
         for (s.doc.items.items[0..n], 0..) |a, i| {
@@ -366,8 +401,9 @@ pub const Compositor = struct {
             }
             if (!std.meta.eql(ed.canvas, self.scene_canvas)) {
                 const old_dst = v.rect(self.scene_canvas);
-                for (s.canvas_dst.minus(old_dst)) |b| fix.add(b.intersect(full_rect));
-                for (old_dst.minus(s.canvas_dst)) |b| fix.add(b.intersect(full_rect));
+                // The shadow reaches past the canvas: repaint that too.
+                for (s.canvas_dst.minus(old_dst)) |b| fix.add(b.expand(shadow_reach).intersect(full_rect));
+                for (old_dst.minus(s.canvas_dst)) |b| fix.add(b.expand(shadow_reach).intersect(full_rect));
             }
             for (self.painted.items[0..self.scene_count], items[0..self.scene_count]) |*old, cur| {
                 if (std.meta.eql(old.*, cur)) continue;

@@ -132,7 +132,7 @@ highlight tool"):
 | export render / PNG encode | 3.6 ms / 10.8 ms |
 | frame, drag crop (outside dimmed) | avg 0.32 ms, p95 0.35 ms |
 | crop release (refit + scene rebuild) | 2.8 ms |
-| zoom out (`-`), scene rebuild at 2/3 | 4.9 ms |
+| zoom out (`-`), scene rebuild at 2/3 | 6.4 ms (4.9 before the canvas shadow: it is a per-pixel band around the canvas) |
 | frame, drag that grows the canvas | avg 0.15 ms, p95 0.28 ms |
 | frame, pan (middle drag, 31 annotations) | avg 0.60 ms, p95 0.82 ms (was 0.56: the arrow style switch is drawn in each full frame) |
 | Ctrl+wheel zoom (downscale + rebuild) | avg 2.6 ms, p95 3.3 ms |

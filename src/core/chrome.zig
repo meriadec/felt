@@ -197,7 +197,7 @@ fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
 
 fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const s = d.s;
-    l.panel(.dock, d.panel, 12 * s);
+    l.panel(.dock, d.panel, 4 * s);
 
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
@@ -205,7 +205,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
         const hovered = if (st.hover.dock) |hd| hd == .tool and hd.tool == info.tool else false;
         if (active or hovered) {
             const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
-            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = if (active) accent else hover_bg } });
+            l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
         }
         l.push(.{ .icon = .{ .tool = info.tool, .c = c.sub(.{ .x = 2.5 * s, .y = 2.5 * s }), .size = 19 * s, .color = if (active) nord.n0 else nord.n4 } });
         const bc = b.max.sub(.{ .x = 8.5 * s, .y = 8.5 * s });
@@ -244,7 +244,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
     // Arrow style switch: the active style filled like the active tool.
     if (d.switch_panel) |sp| {
-        l.panel(.style_switch, sp, 10 * s);
+        l.panel(.style_switch, sp, 4 * s);
         for (d.styles, 0..) |b, i| {
             const text_tool = st.tool == .text;
             const active = if (text_tool) dock.text_styles[i] == st.text_style else dock.arrow_styles[i] == st.arrow_style;
@@ -255,7 +255,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
             } else false;
             if (active or hovered) {
                 const hb = Bounds{ .min = b.min.add(.{ .x = s, .y = s }), .max = b.max.sub(.{ .x = s, .y = s }) };
-                l.push(.{ .rrect = .{ .b = hb, .radius = 7 * s, .color = if (active) accent else hover_bg } });
+                l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
             }
             const col = if (active) nord.n0 else nord.n4;
             if (text_tool) {
@@ -271,7 +271,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
 fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     const s = b.s;
-    l.panel(.top_bar, b.panel, 12 * s);
+    l.panel(.top_bar, b.panel, 4 * s);
     for (b.slots, topbar.buttons) |r, btn| {
         const enabled = switch (btn) {
             .undo => st.can_undo,
@@ -281,7 +281,7 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         const hovered = st.hover.bar == btn;
         if (enabled and hovered) {
             const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-            l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
+            l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = hover_bg } });
         }
         const ink = if (!enabled) nord.n3 else if (hovered) nord.n6 else nord.n4;
         switch (btn) {
@@ -293,26 +293,17 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.sep - 0.5 * s, .y = cy - 12 * s }, .max = .{ .x = b.sep + 0.5 * s, .y = cy + 12 * s } }, .radius = 0, .color = nord.n3 } });
 }
 
-/// Slider labels, one per step ("pad 64"), static: an op borrows its text.
-const padLabels = blk: {
-    var a: [settings.padding_steps.len][]const u8 = undefined;
-    for (settings.padding_steps, 0..) |p, i| a[i] = std.fmt.comptimePrint("pad {d}", .{p});
-    break :blk a;
-};
-
-/// The padding slider: a label ("pad 64"), a flat track filled up to the
+/// The padding slider: a flat track filled up to the
 /// knob, one notch per step, the knob on the current step.
 fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
     const s = b.s;
     const hovered = st.hover.pad;
-    l.panel(.pad_bar, b.panel, 12 * s);
+    l.panel(.pad_bar, b.panel, 4 * s);
     const r = b.slot;
     if (hovered) {
         const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-        l.push(.{ .rrect = .{ .b = hb, .radius = 8 * s, .color = hover_bg } });
+        l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = hover_bg } });
     }
-    const label = padLabels[settings.paddingIndex(st.padding)];
-    l.push(.{ .text = .{ .pos = .{ .x = @round(b.notchX(0) - 4 * s), .y = @round(r.min.y + 3 * s) }, .s = label, .px = px(12 * s), .color = if (hovered) nord.n6 else nord.n4 } });
     const i = settings.paddingIndex(st.padding);
     const ty = b.trackY();
     const x0 = b.notchX(0);
@@ -457,7 +448,7 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
     }
     const x0 = @round((W - size.x) / 2);
     const y0 = @round(@max(0, (avail_h - size.y) / 2));
-    l.panel(.help, .{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 12 * m.s);
+    l.panel(.help, .{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + size.x, .y = y0 + size.y } }, 4 * m.s);
 
     var x = x0 + m.pad;
     const head_y = y0 + m.pad;
@@ -480,7 +471,7 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
                 for (r.caps[0..r.n_caps]) |c| {
                     const capw = m.capW(ctx, c);
                     const half = 11 * m.s;
-                    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = kx, .y = cy - half }, .max = .{ .x = kx + capw, .y = cy + half } }, .radius = 5 * m.s, .color = nord.n3 } });
+                    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = kx, .y = cy - half }, .max = .{ .x = kx + capw, .y = cy + half } }, .radius = 2 * m.s, .color = nord.n3 } });
                     l.push(.{ .text = .{ .pos = .{ .x = @round(kx + (capw - textW(ctx, c, m.px)) / 2), .y = ty }, .s = c, .px = m.px, .color = nord.n6 } });
                     kx += capw + m.cap_gap;
                 }
@@ -510,7 +501,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f
     const x0 = @round((W - pw) / 2);
     const y0 = @round(top orelse 12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-    l.panel(.toast, b, ph / 2);
+    l.panel(.toast, b, 4 * s);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
 }
 

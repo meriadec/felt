@@ -430,7 +430,7 @@ const LabelMetrics = struct {
     }
 
     fn box(m: LabelMetrics, min: Vec2) sdf.RoundRect {
-        return .{ .min = min, .max = min.add(m.size), .radius = m.pad * 0.7 };
+        return .{ .min = min, .max = min.add(m.size), .radius = m.pad * 0.35 };
     }
 };
 

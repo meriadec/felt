@@ -1,6 +1,6 @@
 //! Padding widget geometry: a small panel at the bottom right with the
-//! canvas padding slider (a label and a track with one notch per step of
-//! settings.padding_steps), in the dock style. Pure layout from the screen
+//! canvas padding slider (a track with one notch per step of
+//! settings.padding_steps, centered in a panel as tall as the dock), in the dock style. Pure layout from the screen
 //! size: chrome.zig draws it and the editor hit-tests clicks, drags, wheel
 //! and hover with the same numbers.
 const std = @import("std");
@@ -19,7 +19,7 @@ const margin = 14.0;
 /// distance from the top of the slot.
 const slider_w = 140.0;
 const track_inset = 10.0;
-const track_y = 29.0;
+const track_y = 20.0;
 
 pub const PadBar = struct {
     /// Px per 1080p px.
