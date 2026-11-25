@@ -111,7 +111,7 @@ pub const Editor = struct {
     fitted: bool = true,
     /// Middle-button pan in progress: last pointer position.
     panning: ?Vec2 = null,
-    /// Hand mode (Space): a left drag pans the canvas, like the middle button.
+    /// Hand mode (while Space is held): a left drag pans the canvas, like the middle button.
     hand: bool = false,
     tool: Tool = default_tool,
     /// Tool to go back to after a crop.
@@ -616,6 +616,15 @@ pub const Editor = struct {
                 eff.redraw = eff.redraw or had_toast or was_armed;
                 return eff;
             },
+            .key_up => |k| {
+                // Releasing Space ends the hand (and a drag with it).
+                if (k.key == .char and k.key.char == ' ' and self.hand) {
+                    self.hand = false;
+                    self.panning = null;
+                    return .{ .redraw = true };
+                }
+                return .{};
+            },
             .mouse_up => |m| {
                 if (m.button == .middle or (m.button == .left and self.hand)) {
                     self.panning = null;
@@ -1081,9 +1090,9 @@ pub const Editor = struct {
             },
             .toggle_help => self.help_visible = !self.help_visible,
             .toggle_dock => self.dock_visible = !self.dock_visible,
-            .toggle_hand => {
+            .toggle_hand => if (!self.hand) { // held: a repeat changes nothing
                 self.cancel();
-                self.hand = !self.hand;
+                self.hand = true;
                 self.selected = null;
             },
             .zoom_in, .zoom_out => self.zoom(if (action == .zoom_in) 1 else -1, .{
@@ -1850,14 +1859,16 @@ test "text mode: caret, Shift+arrows select, typing overwrites the selection, Ct
     try std.testing.expectEqualStrings("ok", t.doc.items.items[0].text.text);
 }
 
-test "hand mode (Space): a left drag pans, no drawing; Space again, Esc and a tool key leave it; cursors" {
+test "hand mode: on while Space is held, a left drag pans, no drawing; release, Esc and a tool key leave it; cursors" {
     var t = T{};
     t.init();
     defer t.deinit();
+    const up = input.Event{ .key_up = .{ .key = .{ .char = ' ' } } };
     try std.testing.expectEqual(Editor.Cursor.crosshair, t.ed.cursor());
     _ = try t.key("m");
     try std.testing.expectEqual(Editor.Cursor.move, t.ed.cursor());
     _ = try t.key("space");
+    _ = try t.key("space"); // a repeat keeps it on
     try std.testing.expect(t.ed.hand);
     try std.testing.expectEqual(Editor.Cursor.grab, t.ed.cursor());
     const off = t.ed.view.xf.offset;
@@ -1869,8 +1880,14 @@ test "hand mode (Space): a left drag pans, no drawing; Space again, Esc and a to
     try std.testing.expectEqual(off.x + 30, t.ed.view.xf.offset.x);
     try std.testing.expectEqual(@as(usize, 0), t.doc.items.items.len);
     try std.testing.expectEqual(@as(usize, 0), t.doc.history.items.len);
-    _ = try t.key("space");
+    // Released: back to the tool, even in the middle of a drag.
+    _ = try t.ed.handle(up);
     try std.testing.expect(!t.ed.hand);
+    try std.testing.expectEqual(Editor.Cursor.move, t.ed.cursor());
+    _ = try t.key("space");
+    _ = try t.ed.handle(.{ .mouse_down = .{ .x = 100, .y = 50 } });
+    _ = try t.ed.handle(up);
+    try std.testing.expect(t.ed.panning == null);
     _ = try t.key("space");
     _ = try t.key("esc"); // leaves the hand, does not quit
     try std.testing.expect(!t.ed.hand);

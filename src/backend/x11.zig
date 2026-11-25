@@ -83,7 +83,10 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const bg = core.compositor.background.toPixel() & 0xffffff;
     const win = c.XCreateSimpleWindow(dpy, root, 0, 0, sw, sh, 0, 0, bg);
     defer _ = c.XDestroyWindow(dpy, win);
-    _ = c.XSelectInput(dpy, win, c.KeyPressMask | c.ButtonPressMask | c.ButtonReleaseMask | c.PointerMotionMask | c.StructureNotifyMask | c.ExposureMask);
+    // A held key repeats as presses only, with no release in between.
+    var autorepeat_ok: c.Bool = c.False;
+    _ = c.XkbSetDetectableAutoRepeat(dpy, c.True, &autorepeat_ok);
+    _ = c.XSelectInput(dpy, win, c.KeyPressMask | c.KeyReleaseMask | c.FocusChangeMask | c.ButtonPressMask | c.ButtonReleaseMask | c.PointerMotionMask | c.StructureNotifyMask | c.ExposureMask);
 
     var class_hint = c.XClassHint{ .res_name = @constCast("felt"), .res_class = @constCast("felt") };
     _ = c.XSetClassHint(dpy, win, &class_hint);
@@ -164,6 +167,20 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
                         quit = quit or r.quit;
                         need_render = need_render or r.redraw;
                     }
+                },
+                c.KeyRelease => {
+                    var buf: [8]u8 = undefined;
+                    var ks: c.KeySym = 0;
+                    _ = c.XLookupString(&ev.xkey, &buf, buf.len, &ks, null);
+                    if (translateKey(ks)) |k| {
+                        const r = try app.handle(.{ .key_up = .{ .key = k, .mods = mods(ev.xkey.state) } });
+                        need_render = need_render or r.redraw;
+                    }
+                },
+                // The window lost the focus: a key released elsewhere would stay down.
+                c.FocusOut => {
+                    const r = try app.handle(.{ .key_up = .{ .key = .{ .char = ' ' } } });
+                    need_render = need_render or r.redraw;
                 },
                 c.ButtonPress, c.ButtonRelease => {
                     const b = ev.xbutton;

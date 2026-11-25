@@ -154,6 +154,11 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
             const k = input.parseChord(chord) catch return fail(err, "unknown key (examples: a, ctrl+z, ctrl+shift+z, enter, esc, backspace, f1, ?, space)");
             try ev.append(gpa, .{ .key = k });
         }
+    } else if (std.mem.eql(u8, cmd, "keyup")) { // a key released (`key space` presses it: the hand)
+        while (it.next()) |chord| {
+            const k = input.parseChord(chord) catch return fail(err, "unknown key");
+            try ev.append(gpa, .{ .key_up = k });
+        }
     } else if (std.mem.eql(u8, cmd, "type")) {
         // Everything after "type " is literal text; "\n" types Shift+Enter.
         const rest = std.mem.trimLeft(u8, trimmed["type".len..], " ");

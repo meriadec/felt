@@ -76,6 +76,7 @@ One command per line, screen coordinates, `#` starts a comment.
 | `image PATH` | Replay on this image (repo-relative), e.g. `tests/fixtures/strip.png` (480x57); wins over the CLI image |
 | `size W H` | Screen size (CLI `--size` wins; default 1280x720) |
 | `key CHORD...` | Key presses: `a`, `5`, `]`, `?`, `ctrl+z`, `ctrl+shift+z`, `enter`, `shift+enter`, `esc`, `backspace`, `f1`, `space` |
+| `keyup CHORD...` | Key released: `key space` holds the hand until `keyup space` |
 | `type TEXT` | Types the rest of the line literally; `\n` is Shift+Enter |
 | `click X Y [button]` | Press and release (`left`, `middle`, `right`; middle drag pans) |
 | `dblclick X Y` | Two clicks; the second one is a double click (the move tool edits a text or callout) |

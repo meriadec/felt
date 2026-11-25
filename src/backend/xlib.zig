@@ -8,6 +8,7 @@ pub const c = @cImport({
     @cInclude("X11/Xlib.h");
     @cInclude("X11/Xutil.h");
     @cInclude("X11/keysym.h");
+    @cInclude("X11/XKBlib.h");
     @cInclude("X11/extensions/XShm.h");
     @cInclude("sys/ipc.h");
     @cInclude("sys/shm.h");

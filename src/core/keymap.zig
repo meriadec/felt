@@ -122,7 +122,7 @@ pub const bindings: []const Binding = blk: {
         .{ .chord = .{ .key = ch('?') }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = .{ .named = .f1 } }, .action = .toggle_help, .label = "help" },
         .{ .chord = .{ .key = ch('h') }, .action = .toggle_dock, .label = "hide / show the panels" },
-        .{ .chord = .{ .key = ch(' ') }, .action = .toggle_hand, .label = "hand: drag the canvas with the left button (again or Esc: back)" },
+        .{ .chord = .{ .key = ch(' ') }, .action = .toggle_hand, .label = "hold: hand, drag the canvas with the left button" },
         .{ .chord = .{ .key = ch('b') }, .action = .canvas_bg, .label = "canvas: light / dark grey" },
         .{ .chord = .{ .key = ch('.') }, .action = .padding_up, .label = "canvas padding: more" },
         .{ .chord = .{ .key = ch(',') }, .action = .padding_down, .label = "canvas padding: less" },

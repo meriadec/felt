@@ -34,6 +34,8 @@ pub const Event = union(enum) {
     /// modifiers held.
     wheel: struct { delta: i32, x: f32 = 0, y: f32 = 0, mods: Mods = .{} },
     key: KeyEvent,
+    /// A key released (only Space matters: the hand is on while it is down).
+    key_up: KeyEvent,
     resize: struct { w: u32, h: u32 },
 };
 
