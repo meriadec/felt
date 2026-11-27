@@ -67,9 +67,11 @@ pub fn main(init: std.process.Init) !u8 {
                 default_out = try cli.captureOutput(gpa, core.sys.getenv("HOME"), core.sys.timestamp());
                 break :blk default_out.?;
             };
+            if (opts.output == null) montage_out = try cli.montageOutput(gpa, out);
             x11.run(gpa, .{
                 .image = image,
                 .output_path = out,
+                .montage_output = montage_out,
                 .timing = opts.timing,
                 .config_path = config_path,
                 .canvas_bg = opts.canvas_bg,

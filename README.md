@@ -105,6 +105,11 @@ list is in [docs/keymap.md](docs/keymap.md).
   a margin of 0, 64, 96, 128 or 192 px around the image. You can draw in it.
 - **View.** Zoom out with `-` or Ctrl+wheel to get room. `0` fits the image.
   Middle drag or the arrow keys pan.
+- **Capture another screenshot.** While Felt is running, press the global `Print`
+  key once to hide the editor, navigate to the window or tab you want, then press
+  `Print` again to open the capture picker. Confirm to append the screenshot to
+  the right of the montage and return to Felt; Esc cancels. Adding it is one undo
+  step. Felt's process must remain running for this hotkey to work.
 - **Quit** with Esc or `q`. With unsaved changes, press it twice. Ctrl+C counts
   as saved, because xclip keeps the image in the clipboard after felt exits.
 

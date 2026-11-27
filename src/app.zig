@@ -150,6 +150,31 @@ pub const App = struct {
         if (self.doc.scene.images.items.len == 2) self.editor.montageStarted();
     }
 
+    /// Take ownership of a captured screenshot and append it to the montage.
+    /// Failure also consumes and frees `image`.
+    pub fn addCapturedImage(self: *App, image: Canvas) !void {
+        const cv = self.gpa.create(Canvas) catch |err| {
+            var owned = image;
+            owned.deinit(self.gpa);
+            return err;
+        };
+        cv.* = image;
+        errdefer {
+            cv.deinit(self.gpa);
+            self.gpa.destroy(cv);
+        }
+        const w: i32 = @intCast(cv.width);
+        const h: i32 = @intCast(cv.height);
+        const imgs = self.doc.scene.images.items;
+        const r = core.magnet.slotRect(imgs[imgs.len - 1].rect(), .right, w, h);
+        _ = try self.doc.addImage(self.gpa, cv.width, cv.height, r.x0, r.y0, cv, true);
+        if (self.doc.scene.images.items.len == 2) self.editor.montageStarted();
+        if (self.cfg.montage_output) |m| self.cfg.output_path = m;
+        self.editor.imageAdded();
+        self.editor.fit();
+        self.editor.setToast("Screenshot added", .{});
+    }
+
     /// Full-resolution image with annotations. Caller owns it.
     pub fn exportImage(self: *App) !Canvas {
         return core.exporter.render(self.ctx(), &self.doc, self.editor.settings.canvas_bg.color());
@@ -300,6 +325,28 @@ fn montageApp(gpa: std.mem.Allocator) !*App {
 
 fn addTile(app: *App) !void {
     try app.addImageFile(.{ .path = "tests/fixtures/tile_a.png", .at = Placement{ .side = .right } });
+}
+
+test "captured screenshot appends to montage and becomes the save target" {
+    const gpa = std.testing.allocator;
+    const base = try Canvas.init(gpa, 40, 30);
+    const app = try App.create(gpa, base, 200, 150, .{
+        .output_path = "screen.png",
+        .montage_output = "screen.montage.png",
+        .clipboard = .none,
+    });
+    defer app.destroy();
+    const shot = try Canvas.init(gpa, 20, 10);
+
+    try app.addCapturedImage(shot);
+
+    try std.testing.expectEqual(@as(usize, 2), app.doc.scene.images.items.len);
+    try std.testing.expectEqual(@as(i32, 104), app.doc.scene.images.items[1].x);
+    try std.testing.expectEqual(@as(i32, 0), app.doc.scene.images.items[1].y);
+    try std.testing.expectEqualStrings("screen.montage.png", app.cfg.output_path.?);
+    try std.testing.expect(app.editor.fitted);
+    try std.testing.expect(app.editor.canUndo());
+    try std.testing.expectEqualStrings("Screenshot added", app.editor.toast().?);
 }
 
 test "montage start: an untouched padding becomes the 3rd entry (96 px), once, view unchanged" {

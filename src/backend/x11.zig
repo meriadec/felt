@@ -7,6 +7,7 @@ const core = @import("core");
 const Cursors = @import("x11_cursor.zig").Cursors;
 const app_mod = @import("../app.zig");
 const config = @import("../config.zig");
+const capture = @import("x11_capture.zig");
 
 const xlib = @import("xlib.zig");
 const c = xlib.c;
@@ -70,6 +71,94 @@ fn clickCount(last: anytype, time: c_ulong, x: f32, y: f32) u8 {
     return last.clicks;
 }
 
+var print_grab_error: c_int = 0;
+
+fn recordPrintGrabError(_: ?*c.Display, event: [*c]c.XErrorEvent) callconv(.c) c_int {
+    if (event != null) print_grab_error = event.*.error_code;
+    return 0;
+}
+
+/// Grab bare Print and the CapsLock/NumLock variants on the root window.
+fn grabPrint(dpy: *c.Display, root: c.Window, keycode: c.KeyCode) bool {
+    if (keycode == 0) {
+        std.debug.print("felt: cannot grab global Print key: no X11 keycode\n", .{});
+        return false;
+    }
+    _ = c.XSync(dpy, c.False);
+    const previous_handler = c.XSetErrorHandler(recordPrintGrabError);
+    const masks = [_]c_uint{ 0, c.LockMask, c.Mod2Mask, c.LockMask | c.Mod2Mask };
+    var bare_grabbed = false;
+    var last_error: c_int = 0;
+    for (masks) |mask| {
+        print_grab_error = 0;
+        _ = c.XGrabKey(dpy, keycode, mask, root, c.False, c.GrabModeAsync, c.GrabModeAsync);
+        _ = c.XSync(dpy, c.False);
+        if (print_grab_error == 0) {
+            if (mask == 0) bare_grabbed = true;
+        } else {
+            last_error = print_grab_error;
+        }
+    }
+    _ = c.XSetErrorHandler(previous_handler);
+    if (bare_grabbed) return true;
+    for (masks) |mask| _ = c.XUngrabKey(dpy, keycode, mask, root);
+    _ = c.XSync(dpy, c.False);
+    std.debug.print("felt: cannot grab global Print key (X11 error {d}); another client may own it\n", .{last_error});
+    return false;
+}
+
+/// Ask the window manager to bring the editor back after the picker closes.
+fn activateEditor(dpy: *c.Display, root: c.Window, win: c.Window, net_active: c.Atom) void {
+    _ = c.XMapRaised(dpy, win);
+    var event = std.mem.zeroes(c.XEvent);
+    event.xclient.type = c.ClientMessage;
+    event.xclient.send_event = c.True;
+    event.xclient.display = dpy;
+    event.xclient.window = win;
+    event.xclient.message_type = net_active;
+    event.xclient.format = 32;
+    event.xclient.data.l[0] = 1; // source: application
+    event.xclient.data.l[1] = c.CurrentTime;
+    _ = c.XSendEvent(dpy, root, c.False, c.SubstructureRedirectMask | c.SubstructureNotifyMask, &event);
+    _ = c.XFlush(dpy);
+}
+
+/// Hide the editor and let the window manager repaint the desktop before the
+/// capture backend freezes the root window.
+fn hideEditorForCapture(dpy: *c.Display, win: c.Window, screen: c_int) void {
+    _ = c.XIconifyWindow(dpy, win, screen);
+    _ = c.XSync(dpy, c.False);
+    core.sys.sleepNs(100 * std.time.ns_per_ms);
+    var attrs: c.XWindowAttributes = undefined;
+    if (c.XGetWindowAttributes(dpy, win, &attrs) != 0 and attrs.map_state == c.IsViewable) {
+        // If there is no cooperating window manager, at least remove Felt
+        // from the root image. activateEditor maps it again afterwards.
+        _ = c.XUnmapWindow(dpy, win);
+        _ = c.XSync(dpy, c.False);
+        core.sys.sleepNs(100 * std.time.ns_per_ms);
+    }
+}
+
+/// Run the existing picker from the global hotkey and add its result to this App.
+fn captureIntoApp(gpa: std.mem.Allocator, dpy: *c.Display, root: c.Window, win: c.Window, screen: c_int, net_active: c.Atom, app: *app_mod.App, config_path: ?[]const u8) void {
+    // Print's passive grab became active on this connection. Release it so the
+    // capture connection can take the keyboard for the picker.
+    _ = c.XUngrabKeyboard(dpy, c.CurrentTime);
+    _ = c.XSync(dpy, c.False);
+    hideEditorForCapture(dpy, win, screen);
+    const image = capture.run(gpa, .{ .config_path = config_path }) catch |err| {
+        std.debug.print("felt: global Print capture failed: {s}\n", .{@errorName(err)});
+        app.editor.setToast("Capture failed: {s}", .{@errorName(err)});
+        activateEditor(dpy, root, win, net_active);
+        return;
+    };
+    if (image) |shot| app.addCapturedImage(shot) catch |err| {
+        std.debug.print("felt: cannot add captured screenshot: {s}\n", .{@errorName(err)});
+        app.editor.setToast("Screenshot not added: {s}", .{@errorName(err)});
+    };
+    activateEditor(dpy, root, win, net_active);
+}
+
 pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void {
     var load = Load{};
     var loader: ?std.Thread = null;
@@ -100,6 +189,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void 
     var autorepeat_ok: c.Bool = c.False;
     _ = c.XkbSetDetectableAutoRepeat(dpy, c.True, &autorepeat_ok);
     _ = c.XSelectInput(dpy, win, c.KeyPressMask | c.KeyReleaseMask | c.FocusChangeMask | c.ButtonPressMask | c.ButtonReleaseMask | c.PointerMotionMask | c.StructureNotifyMask | c.ExposureMask);
+    _ = c.XSelectInput(dpy, root, c.KeyReleaseMask);
 
     var class_hint = c.XClassHint{ .res_name = @constCast("felt"), .res_class = @constCast("felt") };
     _ = c.XSetClassHint(dpy, win, &class_hint);
@@ -114,6 +204,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void 
     _ = c.XSetWMProtocols(dpy, win, &wm_delete, 1);
     const net_state = c.XInternAtom(dpy, "_NET_WM_STATE", c.False);
     const net_fullscreen = c.XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", c.False);
+    const net_active = c.XInternAtom(dpy, "_NET_ACTIVE_WINDOW", c.False);
     _ = c.XChangeProperty(dpy, win, net_state, xa_atom, 32, c.PropModeReplace, @ptrCast(&net_fullscreen), 1);
     var cursors = Cursors.init(dpy);
     var shown_cursor: core.editor.Editor.Cursor = .crosshair;
@@ -138,6 +229,9 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void 
 
     const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path, .montage_output = opts.montage_output });
     defer app.destroy();
+    const print_keycode = c.XKeysymToKeycode(dpy, c.XK_Print);
+    const print_grabbed = !opts.smoke and grabPrint(dpy, root, print_keycode);
+    if (!opts.smoke and !print_grabbed) app.editor.setToast("Global Print key unavailable.", .{});
     // The file browser: background work wakes the loop through a pipe.
     const wake = try core.sys.pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
     defer core.sys.close(wake[0]);
@@ -163,6 +257,8 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void 
     var exposed = false;
     var need_render = true;
     var frames: u64 = 0;
+    var print_armed = false;
+    var print_down = false;
     // Double click: a second left press within 400 ms and 6 px of the first.
     var last_press: struct { t: c_ulong = 0, x: f32 = -100, y: f32 = -100, clicks: u8 = 0 } = .{};
     while (true) {
@@ -208,22 +304,41 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void 
                     quit = true;
                 },
                 c.KeyPress => {
-                    var buf: [8]u8 = undefined;
-                    var ks: c.KeySym = 0;
-                    _ = c.XLookupString(&ev.xkey, &buf, buf.len, &ks, null);
-                    if (translateKey(ks)) |k| {
-                        const r = try app.handle(.{ .key = .{ .key = k, .mods = mods(ev.xkey.state) } });
-                        quit = quit or r.quit;
-                        need_render = need_render or r.redraw;
+                    if (print_grabbed and ev.xkey.keycode == print_keycode) {
+                        print_down = true; // wait for physical release; ignore key repeat
+                    } else {
+                        var buf: [8]u8 = undefined;
+                        var ks: c.KeySym = 0;
+                        _ = c.XLookupString(&ev.xkey, &buf, buf.len, &ks, null);
+                        if (translateKey(ks)) |k| {
+                            const r = try app.handle(.{ .key = .{ .key = k, .mods = mods(ev.xkey.state) } });
+                            quit = quit or r.quit;
+                            need_render = need_render or r.redraw;
+                        }
                     }
                 },
                 c.KeyRelease => {
-                    var buf: [8]u8 = undefined;
-                    var ks: c.KeySym = 0;
-                    _ = c.XLookupString(&ev.xkey, &buf, buf.len, &ks, null);
-                    if (translateKey(ks)) |k| {
-                        const r = try app.handle(.{ .key_up = .{ .key = k, .mods = mods(ev.xkey.state) } });
-                        need_render = need_render or r.redraw;
+                    if (print_grabbed and ev.xkey.keycode == print_keycode and print_down) {
+                        print_down = false;
+                        _ = c.XUngrabKeyboard(dpy, c.CurrentTime);
+                        _ = c.XSync(dpy, c.False);
+                        if (print_armed) {
+                            print_armed = false;
+                            captureIntoApp(gpa, dpy, root, win, scr, net_active, app, opts.config_path);
+                            need_render = true;
+                        } else {
+                            print_armed = true;
+                            hideEditorForCapture(dpy, win, scr);
+                            std.debug.print("felt: editor hidden; press Print again to capture\n", .{});
+                        }
+                    } else {
+                        var buf: [8]u8 = undefined;
+                        var ks: c.KeySym = 0;
+                        _ = c.XLookupString(&ev.xkey, &buf, buf.len, &ks, null);
+                        if (translateKey(ks)) |k| {
+                            const r = try app.handle(.{ .key_up = .{ .key = k, .mods = mods(ev.xkey.state) } });
+                            need_render = need_render or r.redraw;
+                        }
                     }
                 },
                 // The window lost the focus: a key released elsewhere would stay down.

@@ -82,7 +82,7 @@ image files. Build: `coreModule` in build.zig.
 | `config.zig` | Settings file `$XDG_CONFIG_HOME/felt/config`: path, load (bad file: defaults), atomic save, the `--canvas-bg` flag on top |
 | `clipboard.zig` | Pipe a PNG to xclip |
 | `backend/xlib.zig` | The one Xlib C import, the MIT-SHM `Surface`, key translation: shared by both X11 backends |
-| `backend/x11.zig` | Editor window: Xlib window, event translation, MIT-SHM present |
+| `backend/x11.zig` | Editor window: Xlib window, event translation, MIT-SHM present, global Print grab that runs the capture picker and adds its result to the live App |
 | `backend/x11_capture.zig` | Capture mode: root grab (XShmGetImage), full-screen override-redirect overlay, window list snapshot, picker events, live regrab after a delay |
 | `backend/headless.zig` | Replay a script, write frame/export PNGs |
 | `backend/script.zig` | Event script parser (format in docs/testing.md) |
@@ -105,6 +105,16 @@ The picker is pure; headless scripts with `capture` replay it on an image
 that stands for the screen (tests/scripts/capture_*.txt). The X11 part is
 checked by `zig build smoke-capture`. Frames cost: first frame 4 ms and a
 drag frame 1.1 ms avg (p95 3.0) at 4K (docs/perf.md).
+
+While the editor process runs, `x11.zig` passively grabs Print on the root
+window (including CapsLock/NumLock variants). The first Print press releases
+its keyboard grab, iconifies the editor and returns to the event loop so the user
+can navigate; the second press runs the picker. Before freezing the root window,
+the picker path ensures the desktop has repainted. On confirmation, the returned
+canvas transfers to `App.addCapturedImage`: one undoable image step to the right of the
+last scene image, followed by a fit and activation of the editor. Cancel leaves
+the document unchanged. A competing X11 key grab is reported on stderr and in
+the editor toast; the process stays usable without the feature.
 
 ## Invariants
 
