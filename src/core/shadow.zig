@@ -48,7 +48,7 @@ pub const tint_dark = color.Color{ .r = 0, .g = 0, .b = 0 };
 /// 1 px border outside the rectangle: nearly invisible on light, a faint
 /// light line on dark.
 pub const border_light = color.Color{ .r = 18, .g = 28, .b = 48, .a = 20 };
-pub const border_dark = color.Color{ .r = 255, .g = 255, .b = 255, .a = 56 };
+pub const border_dark = color.Color{ .r = 255, .g = 255, .b = 255, .a = 32 };
 
 /// The unit of the layer lengths (screen px) is `unit_per_side` times the
 /// shorter side of the rectangle, kept between `unit_min` and `unit_max`: the
