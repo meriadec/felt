@@ -136,32 +136,33 @@ fn drawLabel(ctx: Ctx, cv: *Canvas, clip: Rect, l: ruler.Label, s: f32) !void {
 }
 
 /// The padding square around the pointer: transparent, square corners, a
-/// dashed border with the same dashes as the guide lines.
+/// plain border.
 fn hatchSquare(cv: *Canvas, clip: Rect, sq: Rect, s: f32) void {
-    const dot: i32 = @intFromFloat(@round(4 * s));
     const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
-    const r = sq.intersect(clip);
-    var y = r.y0;
-    while (y < r.y1) : (y += 1) {
-        var x = r.x0;
-        while (x < r.x1) : (x += 1) {
-            const edge_y = y < sq.y0 + th or y >= sq.y1 - th;
-            const edge_x = x < sq.x0 + th or x >= sq.x1 - th;
-            if (!edge_x and !edge_y) continue;
-            const phase = if (edge_y) x - sq.x0 else y - sq.y0;
-            if (@mod(phase, 2 * dot) >= dot) continue;
-            cv.blendRect(.{ .x0 = x, .y0 = y, .x1 = x + 1, .y1 = y + 1 }, line_soft);
-        }
-    }
+    for (sq.minus(sq.expand(-th))) |part| cv.blendRect(part.intersect(clip), line_strong);
+}
+
+/// The four stripes that run from the padding square `sq` to the screen edges.
+fn cursorStrips(sq: Rect, w: i32, h: i32) [4]Rect {
+    return .{
+        .{ .x0 = 0, .y0 = sq.y0, .x1 = sq.x0, .y1 = sq.y1 },
+        .{ .x0 = sq.x1, .y0 = sq.y0, .x1 = w, .y1 = sq.y1 },
+        .{ .x0 = sq.x0, .y0 = 0, .x1 = sq.x1, .y1 = sq.y0 },
+        .{ .x0 = sq.x0, .y0 = sq.y1, .x1 = sq.x1, .y1 = h },
+    };
 }
 
 /// A faint diagonal hatching on the `band` px just inside `hi`: the margin
 /// to leave around the subject.
 fn hatch(cv: *Canvas, clip: Rect, hi: Rect, band: i32, s: f32) void {
     const inner = hi.expand(-band);
+    for (hi.minus(inner)) |part| hatchRect(cv, clip, part, s);
+}
+
+fn hatchRect(cv: *Canvas, clip: Rect, part: Rect, s: f32) void {
     const period: i32 = @intFromFloat(@round(7 * s));
     const th: i32 = @max(1, @as(i32, @intFromFloat(@round(s))));
-    for (hi.minus(inner)) |part| {
+    {
         const r = part.intersect(clip);
         var y = r.y0;
         while (y < r.y1) : (y += 1) {
@@ -204,6 +205,9 @@ fn paint(ctx: Ctx, it: *const Items, frozen: *const Canvas, frame: *Canvas, clip
         frame.copyRect(frozen, hi.intersect(clip));
     }
     if (it.hi) |hi| if (it.band > 0) hatch(frame, clip, hi, it.band, it.scale);
+    if (!it.cursor.isEmpty()) {
+        for (cursorStrips(it.cursor, @intCast(frame.width), @intCast(frame.height))) |r| hatchRect(frame, clip, r, it.scale);
+    }
     if (!it.cursor.isEmpty()) hatchSquare(frame, clip, it.cursor, it.scale);
     for (it.marks.lineSlice()) |l| drawLine(frame, clip, l, it.scale);
     for (it.marks.labelSlice()) |l| try drawLabel(ctx, frame, clip, l, it.scale);
@@ -237,6 +241,10 @@ pub const Scene = struct {
             // The highlight and every mark, old and new.
             dmg.add(self.prev_hi.expand(2));
             dmg.add(hi_now.expand(2));
+            const fw: i32 = @intCast(frame.width);
+            const fh: i32 = @intCast(frame.height);
+            if (!self.prev_cursor.isEmpty()) for (cursorStrips(self.prev_cursor, fw, fh)) |r| dmg.add(r.expand(2));
+            if (!it.cursor.isEmpty()) for (cursorStrips(it.cursor, fw, fh)) |r| dmg.add(r.expand(2));
             dmg.add(self.prev_cursor.expand(2));
             dmg.add(it.cursor.expand(2));
             for (self.prev[0..self.prev_n]) |r| dmg.add(r.expand(2));
