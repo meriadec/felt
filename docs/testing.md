@@ -6,9 +6,11 @@
 2. App tests: CLI, script parser, export mapping, keymap doc freshness.
 3. Golden replays (`src/golden.zig`): every `tests/scripts/*.txt` is replayed on
    `tests/fixtures/screenshot.png` (1200x750), or on the script's `image`.
-   For each script it compares the final UI frame and the export with
-   `tests/golden/<name>.frame.png` and `<name>.export.png`, and checks that
-   the damage-tracked frame equals a full repaint.
+   For each script it hashes the pixels of the final UI frame and of the
+   export (SHA-256) and compares them with `tests/golden/hashes.txt`, and
+   checks that the damage-tracked frame equals a full repaint. No golden PNG
+   is stored: a PNG cannot be delta-compressed, so every re-render would add a
+   full copy to the git history.
 
 Tests run with the repo root as working directory and always re-run (they read
 files from disk).
@@ -51,22 +53,20 @@ zig build run -- --headless --size 1920x1080 --script my.txt --frame-out /tmp/f.
 
 ## Golden failures
 
-A mismatch prints the pixel count and writes
-`test-out/golden/<name>.<frame|export>.{actual,expected,diff}.png` (diff: magenta
-pixels differ). A damage bug writes `<name>.damage.{incremental,full}.png`.
-If the new rendering is intended, look at the shots, then:
+The comparison is exact: one changed pixel changes the hash. A mismatch prints
+the two hashes and writes `test-out/golden/<name>.<frame|export>.actual.png`.
+A damage bug writes `<name>.damage.{incremental,full}.png`.
+There is no stored "expected" picture. To see the old rendering, check out the
+old commit and run `zig build shot -Dscript=<name>` there. If the new rendering
+is intended, look at the shots, then:
 
 ```sh
-zig build test -Dupdate-goldens=true
+zig build test -Dupdate-goldens=true   # rewrites tests/golden/hashes.txt
 ```
 
-Tolerance: a channel may differ by 8; at most 0.05% of the pixels may differ.
-To prove that a change keeps every golden pixel (a refactor, a new
-parameter whose default must look the same), run with no tolerance:
-
-```sh
-zig build test -Dexact-goldens=true
-```
+The diff of `hashes.txt` lists the images that changed: review it against the
+change you made. To prove that a refactor keeps every pixel, run
+`zig build test`: it must pass with no update.
 
 Note: when a test fails, the Zig test runner may name another test in the
 "while executing test" line. The `error:` line above it names the real one.
@@ -121,7 +121,7 @@ File browser scripts (tests/scripts/browser_*.txt): `browser_open` (the list: mi
 1. Write `tests/scripts/<name>.txt` with `size 900 500` (keeps PNGs small).
 2. `zig build shot -Dscript=<name>` and look at the frame.
 3. `zig build test -Dupdate-goldens=true`, then `zig build check`.
-4. Commit the script and both goldens together.
+4. Commit the script and the `tests/golden/hashes.txt` change together.
 
 ## Habits
 

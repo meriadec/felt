@@ -1,8 +1,10 @@
 //! Golden tests: replay every tests/scripts/*.txt on tests/fixtures/screenshot.png
-//! (or the script's `image`) and compare the UI frame and the export with tests/golden/<name>.{frame,export}.png.
-//! Mismatches write <name>.*.{actual,expected,diff}.png to test-out/golden/.
-//! Update goldens: `zig build test -Dupdate-goldens=true`. Prove a change
-//! keeps every pixel: `zig build test -Dexact-goldens=true` (no tolerance).
+//! (or the script's `image`) and compare the UI frame and the export with the
+//! SHA-256 of their pixels, recorded in tests/golden/hashes.txt (one line per
+//! image: `<name>.<frame|export> <W>x<H> <sha256>`). No PNG is stored: a PNG
+//! cannot be delta-compressed, so each re-render would add a full copy to the history.
+//! A mismatch writes <name>.*.actual.png to test-out/golden/.
+//! Update the hashes: `zig build test -Dupdate-goldens=true`.
 //! Also checks that incremental (damage-tracked) frames equal a full repaint.
 const std = @import("std");
 const core = @import("core");
@@ -10,31 +12,22 @@ const headless = @import("backend/headless.zig");
 const App = @import("app.zig").App;
 
 const Canvas = core.canvas.Canvas;
+const Sha256 = std.crypto.hash.sha2.Sha256;
 
 pub const fixture = "tests/fixtures/screenshot.png";
 pub const scripts_dir = "tests/scripts";
-pub const golden_dir = "tests/golden";
+pub const manifest_path = "tests/golden/hashes.txt";
 pub const out_dir = "test-out/golden";
-
-/// A pixel counts as different when a channel differs by more than this.
-const channel_tolerance = 8;
-/// A image fails when more than this fraction of pixels differ.
-const max_bad_fraction = 0.0005;
 
 fn updating() bool {
     return core.sys.hasEnv("FELT_UPDATE_GOLDENS");
 }
 
-/// No tolerance: any changed pixel fails.
-fn exact() bool {
-    return core.sys.hasEnv("FELT_EXACT_GOLDENS");
-}
-
 const Diff = struct { bad: usize, max_delta: u32 };
 
+/// Pixel difference of two canvases of the same size (exact: no tolerance).
 fn compare(a: *const Canvas, b: *const Canvas, diff_img: ?*Canvas) Diff {
     var d = Diff{ .bad = 0, .max_delta = 0 };
-    const tol: u32 = if (exact()) 0 else channel_tolerance;
     for (a.pixels, b.pixels, 0..) |pa, pb, i| {
         var m: u32 = 0;
         inline for (.{ 0, 8, 16 }) |sh| {
@@ -43,7 +36,7 @@ fn compare(a: *const Canvas, b: *const Canvas, diff_img: ?*Canvas) Diff {
             m = @max(m, @abs(x - y));
         }
         d.max_delta = @max(d.max_delta, m);
-        const bad = m > tol;
+        const bad = m > 0;
         if (bad) d.bad += 1;
         if (diff_img) |img| {
             const g = (((pb >> 16) & 0xff) + ((pb >> 8) & 0xff) + (pb & 0xff)) / 12; // dim gray
@@ -60,42 +53,85 @@ fn writeOut(gpa: std.mem.Allocator, cv: *const Canvas, name: []const u8, kind: [
     core.image_io.savePng(gpa, cv, p) catch {};
 }
 
-/// Compare `actual` to tests/golden/<name>.png. Returns false on mismatch.
-pub fn check(gpa: std.mem.Allocator, name: []const u8, actual: *const Canvas) !bool {
-    const path = try std.fmt.allocPrint(gpa, "{s}/{s}.png", .{ golden_dir, name });
-    defer gpa.free(path);
-    var expected = core.image_io.load(gpa, path) catch |err| {
-        if (updating()) {
-            try core.image_io.savePng(gpa, actual, path);
-            std.debug.print("golden {s}: created\n", .{name});
-            return true;
+/// `<W>x<H> <sha256 hex>` of the pixels of `cv`.
+fn fingerprint(buf: *[80]u8, cv: *const Canvas) []const u8 {
+    var digest: [Sha256.digest_length]u8 = undefined;
+    Sha256.hash(std.mem.sliceAsBytes(cv.pixels), &digest, .{});
+    return std.fmt.bufPrint(buf, "{d}x{d} {x}", .{ cv.width, cv.height, &digest }) catch unreachable;
+}
+
+/// The recorded fingerprints (`expected`, from the manifest) and, when
+/// updating, the new ones (`fresh`). Replays run on many threads.
+const Manifest = struct {
+    mutex: std.Io.Mutex = .init,
+    arena: std.heap.ArenaAllocator,
+    expected: std.StringHashMapUnmanaged([]const u8) = .empty,
+    fresh: std.StringArrayHashMapUnmanaged([]const u8) = .empty,
+
+    fn load(gpa: std.mem.Allocator) !Manifest {
+        var m = Manifest{ .arena = std.heap.ArenaAllocator.init(gpa) };
+        errdefer m.arena.deinit();
+        const a = m.arena.allocator();
+        const text = core.sys.readFileAlloc(a, manifest_path, 1 << 22) catch "";
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |line| {
+            const sp = std.mem.indexOfScalar(u8, line, ' ') orelse continue;
+            try m.expected.put(a, line[0..sp], line[sp + 1 ..]);
         }
-        std.debug.print("golden {s}: cannot load {s} ({s}). New script? Run: zig build test -Dupdate-goldens=true\n", .{ name, path, @errorName(err) });
+        return m;
+    }
+
+    fn deinit(m: *Manifest) void {
+        m.arena.deinit();
+    }
+
+    fn record(m: *Manifest, name: []const u8, fp: []const u8) !void {
+        core.sys.lock(&m.mutex);
+        defer core.sys.unlock(&m.mutex);
+        const a = m.arena.allocator();
+        try m.fresh.put(a, try a.dupe(u8, name), try a.dupe(u8, fp));
+    }
+
+    /// Write the fresh fingerprints, sorted by name. Gone scripts drop out.
+    fn save(m: *Manifest) !void {
+        const Ctx = struct {
+            keys: [][]const u8,
+            m: *Manifest,
+            fn w(c: @This(), out: *std.Io.Writer) !void {
+                for (c.keys) |k| try out.print("{s} {s}\n", .{ k, c.m.fresh.get(k).? });
+            }
+        };
+        const keys = try m.arena.allocator().dupe([]const u8, m.fresh.keys());
+        std.mem.sort([]const u8, keys, {}, struct {
+            fn lt(_: void, a: []const u8, b: []const u8) bool {
+                return std.mem.lessThan(u8, a, b);
+            }
+        }.lt);
+        try core.sys.atomicWrite(manifest_path, true, Ctx{ .keys = keys, .m = m }, Ctx.w);
+    }
+};
+
+var manifest: Manifest = undefined;
+
+/// Compare `actual` to the recorded fingerprint of `name`. Returns false on mismatch.
+pub fn check(gpa: std.mem.Allocator, name: []const u8, actual: *const Canvas) !bool {
+    var buf: [80]u8 = undefined;
+    const fp = fingerprint(&buf, actual);
+    if (updating()) {
+        try manifest.record(name, fp);
+        if (manifest.expected.get(name)) |old| {
+            if (!std.mem.eql(u8, old, fp)) std.debug.print("golden {s}: updated\n", .{name});
+        } else std.debug.print("golden {s}: created\n", .{name});
+        return true;
+    }
+    const old = manifest.expected.get(name) orelse {
+        std.debug.print("golden {s}: not in {s}. New script? Run: zig build test -Dupdate-goldens=true\n", .{ name, manifest_path });
         writeOut(gpa, actual, name, "actual");
         return false;
     };
-    defer expected.deinit(gpa);
-    if (updating()) {
-        // Rewrite only on a pixel change: no churn from encoder changes.
-        if (expected.width == actual.width and expected.height == actual.height and std.mem.eql(u32, expected.pixels, actual.pixels)) return true;
-        try core.image_io.savePng(gpa, actual, path);
-        std.debug.print("golden {s}: updated\n", .{name});
-        return true;
-    }
-    if (expected.width != actual.width or expected.height != actual.height) {
-        std.debug.print("golden {s}: size {d}x{d}, expected {d}x{d}\n", .{ name, actual.width, actual.height, expected.width, expected.height });
-        writeOut(gpa, actual, name, "actual");
-        return false;
-    }
-    var diff = try Canvas.init(gpa, actual.width, actual.height);
-    defer diff.deinit(gpa);
-    const d = compare(actual, &expected, &diff);
-    const limit: usize = if (exact()) 0 else @intFromFloat(@as(f64, @floatFromInt(actual.pixels.len)) * max_bad_fraction);
-    if (d.bad <= limit) return true;
-    std.debug.print("golden {s}: {d} pixels differ (limit {d}, max channel delta {d}). See {s}/{s}.{{actual,expected,diff}}.png\n", .{ name, d.bad, limit, d.max_delta, out_dir, name });
+    if (std.mem.eql(u8, old, fp)) return true;
+    std.debug.print("golden {s}: pixels changed (expected {s}, got {s}). See {s}/{s}.actual.png\n", .{ name, old, fp, out_dir, name });
     writeOut(gpa, actual, name, "actual");
-    writeOut(gpa, &expected, name, "expected");
-    writeOut(gpa, &diff, name, "diff");
     return false;
 }
 
@@ -214,6 +250,8 @@ fn goldenOne(gpa: std.mem.Allocator, name: []const u8) !usize {
 test "golden replays" {
     const gpa = std.testing.allocator;
     core.sys.cwd().deleteTree(core.sys.io(), out_dir) catch {};
+    manifest = try Manifest.load(gpa);
+    defer manifest.deinit();
     const names = try listScripts(gpa);
     defer {
         for (names) |n| gpa.free(n);
@@ -234,9 +272,12 @@ test "golden replays" {
     }
     for (threads[0..spawned]) |t| t.join();
     spawned = 0;
-    if (updating()) std.debug.print("checked {d} scripts; goldens with new pixels were rewritten in {s}/\n", .{ names.len, golden_dir });
+    if (updating()) {
+        try manifest.save();
+        std.debug.print("checked {d} scripts; hashes written to {s}\n", .{ names.len, manifest_path });
+    }
     if (failed.load(.monotonic) > 0) {
-        std.debug.print("{d} golden check(s) failed. Look at the PNGs in {s}/. If the change is intended: zig build test -Dupdate-goldens=true\n", .{ failed.load(.monotonic), out_dir });
+        std.debug.print("{d} golden check(s) failed. Look at the actual PNGs in {s}/. If the change is intended: zig build test -Dupdate-goldens=true\n", .{ failed.load(.monotonic), out_dir });
         return error.GoldenMismatch;
     }
 }
