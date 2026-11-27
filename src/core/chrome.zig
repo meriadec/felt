@@ -4,8 +4,8 @@
 //! bottom right (a slider; geometry in padbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
 //! top. Everything scales with style.uiScale. Crisp frost-glass look:
-//! translucent Nord surfaces, 1 px hairline borders and a top sheen, small
-//! corner radii, no glow, blur, shadow or gradient. Layout is
+//! translucent Nord surfaces, 1 px hairline borders and a top sheen, square
+//! corners, no glow, blur, shadow or gradient. Layout is
 //! computed into a list of draw ops, so `rects` (for damage) and `draw` share
 //! one code path.
 const std = @import("std");
@@ -204,7 +204,7 @@ pub const Layout = struct {
         } else if (hovered) {
             l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = if (down) press_bg else hover_bg } });
             _ = s;
-            l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = if (down) press_line else hover_line } });
+            l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = @max(0, radius - 0.5), .w = 1, .color = if (down) press_line else hover_line } });
         }
     }
 
@@ -226,7 +226,7 @@ pub const Layout = struct {
     fn panel(l: *Layout, kind: Panel, b: Bounds, radius: f32) void {
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
         // Centered half a pixel inside the edge: one crisp pixel wide.
-        l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = panel_border } });
+        l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = @max(0, radius - 0.5), .w = 1, .color = panel_border } });
         const inset = radius + 1;
         l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.min.x + inset, .y = b.min.y + 1 }, .max = .{ .x = b.max.x - inset, .y = b.min.y + 2 } }, .radius = 0, .color = panel_sheen } });
         l.panels[l.n_panels] = b.expand(2).toRect();
@@ -251,13 +251,13 @@ fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
 
 fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const s = d.s;
-    l.panel(.dock, d.panel, 2.5 * s);
+    l.panel(.dock, d.panel, 0);
 
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
         const c = center(b);
         const hovered = if (st.hover.dock) |hd| hd == .tool and hd.tool == info.tool else false;
-        l.button(st, b, 2 * s, s, active, hovered);
+        l.button(st, b, 0, s, active, hovered);
         l.push(.{ .icon = .{ .tool = info.tool, .c = c, .size = 20 * s, .color = if (active) nord.n0 else nord.n4 } });
         // The hotkey: a faint letter in the corner, no badge.
         const kc = b.max.sub(.{ .x = 7 * s, .y = 7 * s });
@@ -290,7 +290,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
     // Arrow style switch: the active style filled like the active tool.
     if (d.switch_panel) |sp| {
-        l.panel(.style_switch, sp, 2.5 * s);
+        l.panel(.style_switch, sp, 0);
         for (d.styles, 0..) |b, i| {
             const text_tool = st.tool == .text;
             const active = if (text_tool) dock.text_styles[i] == st.text_style else dock.arrow_styles[i] == st.arrow_style;
@@ -299,7 +299,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
                 .text_style => |h| text_tool and h == dock.text_styles[i],
                 else => false,
             } else false;
-            l.button(st, b, 2 * s, s, active, hovered);
+            l.button(st, b, 0, s, active, hovered);
             const col = if (active) nord.n0 else nord.n4;
             if (text_tool) {
                 l.push(.{ .text_style = .{ .style = dock.text_styles[i], .c = center(b), .size = 18 * s, .color = col } });
@@ -314,7 +314,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
 fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     const s = b.s;
-    l.panel(.top_bar, b.panel, 2.5 * s);
+    l.panel(.top_bar, b.panel, 0);
     for (b.slots, topbar.buttons) |r, btn| {
         const enabled = switch (btn) {
             .undo => st.can_undo,
@@ -323,7 +323,7 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
         };
         const hovered = st.hover.bar == btn;
         const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-        l.button(st, hb, 2 * s, s, false, enabled and hovered);
+        l.button(st, hb, 0, s, false, enabled and hovered);
         const ink = if (!enabled) nord.n3 else if (hovered) nord.n6 else nord.n4;
         switch (btn) {
             .undo, .redo => l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } }),
@@ -337,10 +337,10 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
 fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
     const s = b.s;
     const hovered = st.hover.pad;
-    l.panel(.pad_bar, b.panel, 2.5 * s);
+    l.panel(.pad_bar, b.panel, 0);
     const r = b.slot;
     const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-    l.button(st, hb, 2 * s, s, false, hovered);
+    l.button(st, hb, 0, s, false, hovered);
     const i = settings.paddingIndex(st.padding);
     const ty = b.trackY();
     const x0 = b.notchX(0);
@@ -362,14 +362,14 @@ fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
 /// panel with the ghost of a dragged image.
 fn layoutBrowser(l: *Layout, st: State, g: *const browsergeo.Geo) void {
     const s = g.s;
-    l.panel(.folder_btn, g.folder, 2.5 * s);
+    l.panel(.folder_btn, g.folder, 0);
     const open = st.browser != null;
     const r = Bounds{ .min = g.folder.min.add(.{ .x = 2 * s, .y = 2 * s }), .max = g.folder.max.sub(.{ .x = 2 * s, .y = 2 * s }) };
-    l.button(st, r, 2 * s, s, open, st.hover.folder);
+    l.button(st, r, 0, s, open, st.hover.folder);
     const ink = if (open) nord.n0 else if (st.hover.folder) nord.n6 else nord.n4;
     l.push(.{ .folder = .{ .c = center(r), .size = 22 * s, .color = ink } });
     if (st.browser) |b| {
-        l.panel(.browser, g.panel, 2.5 * s);
+        l.panel(.browser, g.panel, 0);
         l.push(.{ .browser = b });
         if (st.ghost) |gh| {
             l.region(.ghost, browser_draw.ghostRect(g.*, b, gh.row, gh.at).toBounds().expand(3));
@@ -530,7 +530,7 @@ fn layoutOverlay(ctx: Ctx, l: *Layout, d: *const Dock, w: u32, h: u32) void {
                 for (r.caps[0..r.n_caps]) |c| {
                     const capw = m.capW(ctx, c);
                     const half = 11 * m.s;
-                    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = kx, .y = cy - half }, .max = .{ .x = kx + capw, .y = cy + half } }, .radius = 2 * m.s, .color = nord.n3 } });
+                    l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = kx, .y = cy - half }, .max = .{ .x = kx + capw, .y = cy + half } }, .radius = 0, .color = nord.n3 } });
                     l.push(.{ .text = .{ .pos = .{ .x = @round(kx + (capw - textW(ctx, c, m.px)) / 2), .y = ty }, .s = c, .px = m.px, .color = nord.n6 } });
                     kx += capw + m.cap_gap;
                 }
@@ -560,7 +560,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f
     const x0 = @round((W - pw) / 2);
     const y0 = @round(top orelse 12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-    l.panel(.toast, b, 2.5 * s);
+    l.panel(.toast, b, 0);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
 }
 

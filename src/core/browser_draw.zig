@@ -141,7 +141,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, b: *const Browser) !void {
     // ---- header
     const has_parent = b.hasParent();
     const up_hover = if (b.hover) |h| h.eql(.up) else false;
-    if (has_parent and up_hover) rr(cv, panel_clip, g.up, 3 * s, nord.n2);
+    if (has_parent and up_hover) rr(cv, panel_clip, g.up, 0, nord.n2);
     icons.drawUp(cv, panel_clip, center(g.up), 18 * s, if (!has_parent) nord.n3 else if (up_hover) nord.n6 else nord.n4);
     {
         var tbuf: [std.fs.max_path_bytes]u8 = undefined;
@@ -170,7 +170,7 @@ pub fn draw(ctx: Ctx, cv: *Canvas, clip: Rect, b: *const Browser) !void {
         const r = g.row(i, b.scroll);
         if (r.max.y <= g.list.min.y or r.min.y >= g.list.max.y) continue;
         const hovered = if (b.hover) |h| h.eql(.{ .row = i }) else false;
-        if (hovered) rr(cv, list_clip, r, 3 * s, nord.n2);
+        if (hovered) rr(cv, list_clip, r, 0, nord.n2);
         const box = g.thumbBox(r);
         const tx = g.textX(r);
         const max_w = g.textRight() - tx;
@@ -232,12 +232,12 @@ fn drawThumb(cv: *Canvas, clip: Rect, b: *const Browser, e: anytype, box: Bounds
             return;
         }
         // failed: a dim box with a question mark
-        rr(cv, clip, box, 3 * s, nord.n0);
+        rr(cv, clip, box, 0, nord.n0);
         const qs = "?";
         try drawText(ctx, cv, clip, .{ .x = center(box).x - textW(ctx, qs, size) / 2, .y = center(box).y - @as(f32, @floatFromInt(size)) * 0.6 }, qs, size, nord.n3);
         return;
     }
-    rr(cv, clip, box, 3 * s, nord.n2); // not ready yet
+    rr(cv, clip, box, 0, nord.n2); // not ready yet
 }
 
 test "long names and paths are cut with an ellipsis, short ones stay whole" {
