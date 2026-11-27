@@ -38,6 +38,7 @@ pub const extent = @import("extent.zig");
 pub const route = @import("route.zig");
 pub const editor = @import("editor.zig");
 pub const icons = @import("icons.zig");
+pub const grid = @import("grid.zig");
 pub const dock = @import("dock.zig");
 pub const topbar = @import("topbar.zig");
 pub const padbar = @import("padbar.zig");

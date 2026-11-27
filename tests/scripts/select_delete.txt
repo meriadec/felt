@@ -15,6 +15,6 @@ click 190 130
 key backspace
 click 650 110
 key delete
-click 760 420
+click 760 395
 key delete
 move 760 440

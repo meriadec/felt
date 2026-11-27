@@ -9,6 +9,7 @@
 const std = @import("std");
 const geom = @import("geom.zig");
 const style = @import("style.zig");
+const grid = @import("grid.zig");
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -38,13 +39,17 @@ pub const TopBar = struct {
         const W: f32 = @floatFromInt(w);
         var s = style.uiScale(h);
         const nat = 2 * pad + n_buttons * slot + (n_buttons - 2) * slot_gap + sep_w;
-        if ((nat + 2 * margin) * s > W) s *= W / ((nat + 2 * margin) * s);
-        const pw = nat * s;
-        const ph = (slot + 2 * pad) * s;
-        const x0 = @round((W - pw) / 2);
-        const y0 = @round(margin * s);
-        var b: TopBar = .{ .s = s, .panel = .{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } }, .slots = undefined, .sep = 0 };
-        var x = x0 + pad * s;
+        const avail = 2 * grid.step(h) * @floor(W / (2 * grid.step(h)));
+        if (nat * s > avail) s = avail / nat;
+        const st = grid.step(h);
+        const pw = grid.evenCells(nat * s, st);
+        const ph = 2 * st;
+        const lx0 = grid.centerX(w) - pw / 2;
+        const ly0 = grid.atLeast(grid.centerY(h), st, margin * s);
+        var b: TopBar = .{ .s = s, .panel = grid.panel(lx0, ly0, lx0 + pw, ly0 + ph), .slots = undefined, .sep = 0 };
+        const x0 = lx0 + 0.5;
+        const y0 = ly0 + 0.5 + (ph - slot * s) / 2 - pad * s;
+        var x = x0 + (pw - nat * s) / 2 + pad * s;
         for (&b.slots, buttons) |*r, btn| {
             if (btn == .canvas_bg) { // after the separator, not a gap
                 x -= slot_gap * s;
@@ -80,13 +85,13 @@ fn center(b: Bounds) Vec2 {
 test "top bar is centered at the top and hit-tests its buttons" {
     const b = TopBar.of(1920, 1080);
     try std.testing.expectApproxEqAbs(1920 - b.panel.max.x, b.panel.min.x, 1);
-    try std.testing.expectEqual(@as(f32, 14), b.panel.min.y);
+    try std.testing.expectEqual(@as(f32, 28 - 1), b.panel.min.y);
     try std.testing.expectEqual(Button.undo, b.hit(center(b.slots[0])).?);
     try std.testing.expectEqual(Button.redo, b.hit(center(b.slots[1])).?);
     try std.testing.expectEqual(Button.canvas_bg, b.hit(center(b.slots[2])).?);
     try std.testing.expect(b.slots[1].max.x < b.sep and b.sep < b.slots[2].min.x);
     try std.testing.expectEqual(@as(?Button, null), b.hit(.{ .x = b.sep, .y = center(b.slots[2]).y }));
-    try std.testing.expectApproxEqAbs(b.panel.max.x - 2, b.slots[2].max.x, 0.01);
+    try std.testing.expect(b.slots[2].max.x < b.panel.max.x - 2);
     try std.testing.expectEqual(@as(?Button, null), b.hit(.{ .x = 10, .y = 10 }));
     try std.testing.expectEqual(@as(f32, 2), TopBar.of(3840, 2160).s);
 }

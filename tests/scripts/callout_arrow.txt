@@ -7,9 +7,9 @@
 size 900 500
 drag 200 300 400 150
 key enter
-drag 600 420 520 220
+drag 600 400 520 220
 key escape
-drag 300 430 250 330
+drag 600 395 560 330
 type Hi
 key enter
 drag 700 150 800 60

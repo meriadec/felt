@@ -10,7 +10,7 @@ key a
 drag 180 175 300 400
 key enter
 key x
-drag 70 55 485 285
+drag 70 100 485 285
 key 5 n
 click 600 250
 key ctrl+z ctrl+z ctrl+y

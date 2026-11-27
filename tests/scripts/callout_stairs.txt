@@ -31,7 +31,7 @@ type Near
 key enter
 ui pointer-style
 key 1
-drag 200 360 90 300
+drag 200 300 90 260
 type Straight
 key enter
 key ctrl+z ctrl+y

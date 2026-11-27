@@ -6,6 +6,7 @@
 const std = @import("std");
 const geom = @import("geom.zig");
 const style = @import("style.zig");
+const grid = @import("grid.zig");
 const settings = @import("settings.zig");
 
 const Vec2 = geom.Vec2;
@@ -32,12 +33,15 @@ pub const PadBar = struct {
         const W: f32 = @floatFromInt(w);
         const H: f32 = @floatFromInt(h);
         const s = style.uiScale(h);
-        const pw = (slider_w + 2 * pad) * s;
-        const ph = (slot_h + 2 * pad) * s;
-        const x1 = @round(W - margin * s);
-        const y1 = @round(H - margin * s);
-        const panel = Bounds{ .min = .{ .x = x1 - pw, .y = y1 - ph }, .max = .{ .x = x1, .y = y1 } };
-        const slot = Bounds{ .min = panel.min.add(.{ .x = pad * s, .y = pad * s }), .max = panel.max.sub(.{ .x = pad * s, .y = pad * s }) };
+        const st = grid.step(h);
+        const pw = grid.cells((slider_w + 2 * pad) * s, st);
+        const ph = 2 * st;
+        const x1 = grid.atMost(grid.centerX(w), st, W - margin * s);
+        const y1 = grid.atMost(grid.centerY(h), st, H - margin * s);
+        const panel = grid.panel(x1 - pw, y1 - ph, x1, y1);
+        // The slot: the panel inside its border, with an even gap around the slider.
+        const gap = (ph - slot_h * s) / 2;
+        const slot = Bounds{ .min = .{ .x = x1 - pw + 0.5 + gap, .y = y1 - ph + 0.5 + gap }, .max = .{ .x = x1 + 0.5 - gap, .y = y1 + 0.5 - gap } };
         return .{ .s = s, .panel = panel, .slot = slot };
     }
 
@@ -71,8 +75,8 @@ pub const PadBar = struct {
 
 test "pad bar sits at the bottom right" {
     const b = PadBar.of(1920, 1080);
-    try std.testing.expectEqual(@as(f32, 1920 - 14), b.panel.max.x);
-    try std.testing.expectEqual(@as(f32, 1080 - 14), b.panel.max.y);
+    try std.testing.expectEqual(@as(f32, 1888 + 2), b.panel.max.x);
+    try std.testing.expectEqual(@as(f32, 1052 + 2), b.panel.max.y);
     try std.testing.expect(b.contains(.{ .x = b.notchX(1), .y = b.trackY() }));
     try std.testing.expect(!b.contains(.{ .x = 10, .y = 10 }));
 }

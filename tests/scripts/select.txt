@@ -11,4 +11,4 @@ key n
 click 650 110
 key m
 drag 300 115 330 215
-move 760 420
+move 760 395

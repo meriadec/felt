@@ -10,6 +10,7 @@ const geom = @import("geom.zig");
 const keymap = @import("keymap.zig");
 const color = @import("color.zig");
 const style = @import("style.zig");
+const grid = @import("grid.zig");
 const ArrowStyle = @import("annotation.zig").ArrowStyle;
 const TextStyle = @import("annotation.zig").TextStyle;
 
@@ -42,10 +43,6 @@ const sep_w = 26.0;
 const swatch_pitch = 22.0;
 const help_w = 34.0;
 const margin = 14.0;
-// Arrow style switch.
-const sw_slot = 32.0;
-const sw_pad = 2.0;
-const sw_gap = 6.0;
 
 pub const Dock = struct {
     /// Px per 1080p px (the UI scale, shrunk if the screen is too narrow).
@@ -71,20 +68,25 @@ pub const Dock = struct {
         const W: f32 = @floatFromInt(w);
         const H: f32 = @floatFromInt(h);
         var s = style.uiScale(h);
-        const need = (naturalWidth() + 2 * margin) * s;
-        if (need > W) s *= W / need;
+        const avail = 2 * grid.step(h) * @floor(W / (2 * grid.step(h)));
+        if (naturalWidth() * s > avail) s = avail / naturalWidth();
 
         var d: Dock = undefined;
         d.s = s;
         d.tool = tool;
-        const pw = naturalWidth() * s;
-        const ph = (slot + 2 * pad) * s;
-        const x0 = @round((W - pw) / 2);
-        const y0 = @round(H - margin * s - ph);
-        d.panel = .{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-        const top = y0 + pad * s;
+        // The panel sits on the grid: two cells high, an even number wide,
+        // centered, its bottom edge on the last line above the margin.
+        const st = grid.step(h);
+        const pw = grid.evenCells(naturalWidth() * s, st);
+        const ph = 2 * st;
+        const lx0 = grid.centerX(w) - pw / 2;
+        const ly1 = grid.atMost(grid.centerY(h), st, H - margin * s);
+        d.panel = grid.panel(lx0, ly1 - ph, lx0 + pw, ly1);
+        const x0 = lx0 + 0.5;
+        const y0 = ly1 - ph + 0.5;
+        const top = y0 + (ph - slot * s) / 2;
         const cy = top + slot * s / 2;
-        var x = x0 + pad * s;
+        var x = x0 + (pw - naturalWidth() * s) / 2 + pad * s;
         for (&d.tools) |*b| {
             b.* = .{ .min = .{ .x = x, .y = top }, .max = .{ .x = x + slot * s, .y = top + slot * s } };
             x += (slot + slot_gap) * s;
@@ -102,17 +104,20 @@ pub const Dock = struct {
         d.help = .{ .min = .{ .x = x, .y = top + (slot - help_w) * s / 2 }, .max = .{ .x = x + help_w * s, .y = top + (slot + help_w) * s / 2 } };
 
         // Over the active tool's slot, centered, but not left of the dock.
+        // The switch: one two-cell square per style, on the grid, one cell
+        // above the dock.
         const sw_n: f32 = arrow_styles.len;
-        const sw_w = (2 * sw_pad + sw_n * sw_slot + (sw_n - 1) * slot_gap) * s;
+        const sw_w = sw_n * 2 * st;
         const ts = d.tools[toolIndex(tool)];
-        const sx0 = @max(x0, @round((ts.min.x + ts.max.x - sw_w) / 2));
-        const sy1 = y0 - sw_gap * s;
-        const sy0 = sy1 - (sw_slot + 2 * sw_pad) * s;
-        d.switch_panel = if (hasStyleSwitch(tool)) .{ .min = .{ .x = sx0, .y = sy0 }, .max = .{ .x = sx0 + sw_w, .y = sy1 } } else null;
-        var sx = sx0 + sw_pad * s;
+        const sx0 = @max(lx0, grid.atLeast(grid.centerX(w), st, @round((ts.min.x + ts.max.x - sw_w) / 2)));
+        const sly1 = ly1 - ph - st;
+        const sly0 = sly1 - 2 * st;
+        d.switch_panel = if (hasStyleSwitch(tool)) grid.panel(sx0, sly0, sx0 + sw_w, sly1) else null;
+        var sx = sx0 + 0.5 + (2 * st - slot * s) / 2;
         for (&d.styles) |*b| {
-            b.* = .{ .min = .{ .x = sx, .y = sy0 + sw_pad * s }, .max = .{ .x = sx + sw_slot * s, .y = sy1 - sw_pad * s } };
-            sx += (sw_slot + slot_gap) * s;
+            const sy = sly0 + 0.5 + (2 * st - slot * s) / 2;
+            b.* = .{ .min = .{ .x = sx, .y = sy }, .max = .{ .x = sx + slot * s, .y = sy + slot * s } };
+            sx += 2 * st;
         }
         return d;
     }

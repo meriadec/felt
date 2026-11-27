@@ -222,10 +222,12 @@ pub const Layout = struct {
     }
 
     /// A floating panel: flat nord1 fill and a 1 px nord2 border.
-    fn panel(l: *Layout, kind: Panel, b: Bounds, radius: f32) void {
+    fn panel(l: *Layout, kind: Panel, b_in: Bounds, radius: f32) void {
+        // Whole pixels, so the border is crisp.
+        const b = Bounds{ .min = .{ .x = @round(b_in.min.x), .y = @round(b_in.min.y) }, .max = .{ .x = @round(b_in.max.x), .y = @round(b_in.max.y) } };
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
         // Centered half a pixel inside the edge: one crisp pixel wide.
-        l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = @max(0, radius - 0.5), .w = 1, .color = panel_border } });
+        l.push(.{ .ring = .{ .b = b.expand(-1.5), .radius = 0, .w = 3, .color = panel_border } });
         l.panels[l.n_panels] = b.expand(2).toRect();
         l.kinds[l.n_panels] = kind;
         l.n_panels += 1;

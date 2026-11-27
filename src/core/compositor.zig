@@ -18,6 +18,7 @@ const scene_mod = @import("scene.zig");
 const dropzone = @import("dropzone.zig");
 const imgsel = @import("imgsel.zig");
 const shadow = @import("shadow.zig");
+const grid = @import("grid.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Document = @import("document.zig").Document;
 const Annotation = @import("annotation.zig").Annotation;
@@ -30,21 +31,21 @@ pub const background = color.Color.rgb(0x15181E);
 /// Grid lines on the screen background: a faint step above the background, so the
 /// canvas stays distinct from it, whatever the canvas color.
 pub const grid_color = color.Color.rgb(0x1B1F26);
-/// Distance between grid lines (screen px).
-pub const grid_step: i32 = 32;
 
 /// How far from the canvas its shadow reaches at most (px): damage grows by this.
 const shadow_reach: i32 = shadow.max_reach;
 
-/// Fill `r` with the screen background and its grid. The lines hang on the
-/// image origin of the view, so a pan (an integer scroll of the scene) keeps
-/// the pattern aligned with the strips it paints.
-fn fillBackground(cv: *Canvas, r: Rect, origin_x: i32, origin_y: i32) void {
+/// Fill `r` with the screen background and its grid (grid.zig). The lines
+/// are fixed to the screen: the panels sit on them, and a pan does not move them.
+fn fillBackground(cv: *Canvas, r: Rect) void {
     cv.fillRect(r, background);
-    var x = r.x0 + @mod(origin_x - r.x0, grid_step);
-    while (x < r.x1) : (x += grid_step) cv.fillRect(.{ .x0 = x, .y0 = r.y0, .x1 = x + 1, .y1 = r.y1 }, grid_color);
-    var y = r.y0 + @mod(origin_y - r.y0, grid_step);
-    while (y < r.y1) : (y += grid_step) cv.fillRect(.{ .x0 = r.x0, .y0 = y, .x1 = r.x1, .y1 = y + 1 }, grid_color);
+    const st: i32 = @intFromFloat(grid.step(cv.height));
+    const cx: i32 = @intFromFloat(grid.centerX(cv.width));
+    const cy: i32 = @intFromFloat(grid.centerY(cv.height));
+    var x = r.x0 + @mod(cx - r.x0, st);
+    while (x < r.x1) : (x += st) cv.fillRect(.{ .x0 = x, .y0 = r.y0, .x1 = x + 1, .y1 = r.y1 }, grid_color);
+    var y = r.y0 + @mod(cy - r.y0, st);
+    while (y < r.y1) : (y += st) cv.fillRect(.{ .x0 = r.x0, .y0 = y, .x1 = r.x1, .y1 = y + 1 }, grid_color);
 }
 
 /// A short list of screen rectangles to repaint and present.
@@ -259,7 +260,7 @@ pub const Compositor = struct {
         const ox: i32 = @intFromFloat(@round(s.xf.offset.x));
         const oy: i32 = @intFromFloat(@round(s.xf.offset.y));
         for (r.minus(s.canvas_dst)) |b| {
-            fillBackground(cv, b, ox, oy);
+            fillBackground(cv, b);
             shadow.paint(cv, b, s.canvas_dst, .dark, shadow.canvas_unit, .{ ox, oy }); // on the dark screen background
         }
         if (s.doc.scene.count() > 1) {

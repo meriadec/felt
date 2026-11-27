@@ -9,6 +9,6 @@ ui arrow-style straight
 drag 120 300 300 250
 key enter
 key 4
-down 760 420
+down 760 395
 move 600 300
 move 500 250

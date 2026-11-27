@@ -7,6 +7,7 @@
 const std = @import("std");
 const geom = @import("geom.zig");
 const style = @import("style.zig");
+const grid = @import("grid.zig");
 
 const Vec2 = geom.Vec2;
 const Bounds = geom.Bounds;
@@ -57,17 +58,20 @@ pub const Geo = struct {
         const W: f32 = @floatFromInt(w);
         const H: f32 = @floatFromInt(h);
         const s = style.uiScale(h);
-        const fx = @round(margin * s);
-        const fy = @round(margin * s);
-        const fs = (slot + 2 * pad) * s;
-        const px0 = fx;
-        const py0 = fy + fs + @round(gap * s);
-        const pw = @min(@round(panel_w * s), @round(W * 0.5));
-        const py1 = @max(py0 + header_h * s, @round(H - margin * s));
+        // Both panels sit on the grid: the button is a two-cell square at
+        // the top left, the browser one cell below it.
+        const st = grid.step(h);
+        const fx = grid.atLeast(grid.centerX(w), st, margin * s);
+        const fy = grid.atLeast(grid.centerY(h), st, margin * s);
+        const fs = 2 * st;
+        const px0 = fx + 0.5;
+        const py0 = fy + fs + st + 0.5;
+        const pw = @min(grid.cells(panel_w * s, st), st * @floor(W * 0.5 / st));
+        const py1 = @max(py0 + header_h * s, grid.atMost(grid.centerY(h), st, H - margin * s) + 0.5);
         var g: Geo = undefined;
         g.s = s;
-        g.folder = .{ .min = .{ .x = fx, .y = fy }, .max = .{ .x = fx + fs, .y = fy + fs } };
-        g.panel = .{ .min = .{ .x = px0, .y = py0 }, .max = .{ .x = px0 + pw, .y = py1 } };
+        g.folder = grid.panel(fx, fy, fx + fs, fy + fs);
+        g.panel = grid.panel(fx, fy + fs + st, fx + pw, py1 - 0.5);
         const ub = 32 * s;
         const ux = px0 + inner * s;
         const uy = py0 + (header_h * s - ub) / 2;
@@ -160,15 +164,16 @@ const testing = std.testing;
 
 test "panel sits left, below the button, full height minus margins" {
     const g = Geo.of(1920, 1080);
-    try testing.expectEqual(@as(f32, 14), g.folder.min.x);
-    try testing.expectEqual(@as(f32, 14), g.folder.min.y);
+    // Edges on grid lines (the 3 px border is centered on them).
+    try testing.expectEqual(@as(f32, 32 - 1), g.folder.min.x);
+    try testing.expectEqual(@as(f32, 28 - 1), g.folder.min.y);
     try testing.expect(g.panel.min.y > g.folder.max.y);
-    try testing.expectEqual(@as(f32, 1080 - 14), g.panel.max.y);
-    try testing.expectEqual(@as(f32, 340), g.panel.max.x - g.panel.min.x);
+    try testing.expectEqual(@as(f32, 1052 + 2), g.panel.max.y);
+    try testing.expectEqual(@as(f32, 352 + 3), g.panel.max.x - g.panel.min.x);
     const g4 = Geo.of(3840, 2160);
-    try testing.expectEqual(@as(f32, 680), g4.panel.max.x - g4.panel.min.x);
+    try testing.expectEqual(@as(f32, 704 + 3), g4.panel.max.x - g4.panel.min.x);
     // A narrow screen: half of it at most.
-    try testing.expectEqual(@as(f32, 200), Geo.of(400, 300).panel.max.x - Geo.of(400, 300).panel.min.x);
+    try testing.expectEqual(@as(f32, 192 + 3), Geo.of(400, 300).panel.max.x - Geo.of(400, 300).panel.min.x);
 }
 
 test "scroll clamps to the content; visible rows" {
