@@ -3,8 +3,9 @@
 //! redo, canvas background; geometry in topbar.zig), the padding widget at the
 //! bottom right (a slider; geometry in padbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
-//! top. Everything scales with style.uiScale. Flat look: solid Nord surfaces,
-//! a 1 px border at most, no glow, blur, shadow or gradient. Layout is
+//! top. Everything scales with style.uiScale. Crisp frost-glass look:
+//! translucent Nord surfaces, 1 px hairline borders and a top sheen, small
+//! corner radii, no glow, blur, shadow or gradient. Layout is
 //! computed into a list of draw ops, so `rects` (for damage) and `draw` share
 //! one code path.
 const std = @import("std");
@@ -86,21 +87,21 @@ pub const State = struct {
         switch (p) {
             .dock => {
                 h.update(&.{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible) });
-                h.update(std.mem.asBytes(&s.hover.dockKey()));
+                h.update(std.mem.asBytes(&(s.hover.dockKey() | @as(u32, @intFromBool(s.hover.down)) << 16)));
             },
             .style_switch => {
                 h.update(&.{ @intFromEnum(s.tool), @intFromEnum(s.arrow_style), @intFromEnum(s.text_style) });
-                h.update(std.mem.asBytes(&s.hover.dockKey()));
+                h.update(std.mem.asBytes(&(s.hover.dockKey() | @as(u32, @intFromBool(s.hover.down)) << 16)));
             },
             .top_bar => {
                 h.update(&.{ @intFromBool(s.can_undo), @intFromBool(s.can_redo) });
-                h.update(std.mem.asBytes(&s.hover.barKey()));
+                h.update(std.mem.asBytes(&(s.hover.barKey() | @as(u32, @intFromBool(s.hover.down)) << 16)));
             },
             .pad_bar => {
                 h.update(std.mem.asBytes(&s.padding));
-                h.update(&.{@intFromBool(s.hover.pad)});
+                h.update(&.{ @intFromBool(s.hover.pad), @intFromBool(s.hover.down) });
             },
-            .folder_btn => h.update(&.{ @intFromBool(s.dock_visible), @intFromBool(s.browser != null), @intFromBool(s.hover.folder) }),
+            .folder_btn => h.update(&.{ @intFromBool(s.dock_visible), @intFromBool(s.browser != null), @intFromBool(s.hover.folder), @intFromBool(s.hover.down) }),
             .browser => h.update(std.mem.asBytes(&@as(u64, if (s.browser) |b| b.sig() else 0))),
             .ghost => if (s.ghost) |g| h.update(std.mem.asBytes(&g.row)),
             .help => {}, // a fixed text, laid out from the screen size (its rect)
@@ -124,10 +125,12 @@ pub const Hover = struct {
     pad: bool = false,
     /// The pointer is on the folder button (top left).
     folder: bool = false,
+    /// The left button is down on the hovered item (pressed look).
+    down: bool = false,
 
     /// A small value that changes when the hovered item changes.
     pub fn key(h: Hover) u32 {
-        return h.dockKey() | h.barKey() << 16 | @as(u32, @intFromBool(h.pad)) << 24 | @as(u32, @intFromBool(h.folder)) << 25;
+        return h.dockKey() | h.barKey() << 16 | @as(u32, @intFromBool(h.pad)) << 24 | @as(u32, @intFromBool(h.folder)) << 25 | @as(u32, @intFromBool(h.down)) << 26;
     }
 
     fn dockKey(h: Hover) u32 {
@@ -146,9 +149,17 @@ pub const Hover = struct {
     }
 };
 
-const panel_bg = nord.n1;
-const hover_bg = nord.n2;
-const panel_border = nord.n2;
+/// Frost glass: a translucent dark fill (the image shows through a little),
+/// a fine light border and a 1 px sheen along the top edge.
+const panel_bg = nord.n0.withAlpha(240);
+const panel_border = nord.n4.withAlpha(52);
+const panel_sheen = nord.n6.withAlpha(34);
+/// Buttons: a faint wash on hover with a hairline, a stronger one while pressed.
+const hover_bg = nord.n6.withAlpha(24);
+const hover_line = nord.n4.withAlpha(56);
+const press_bg = nord.n6.withAlpha(50);
+const press_line = nord.n4.withAlpha(96);
+const accent_press = nord.n7;
 const accent = nord.n8;
 
 const Op = union(enum) {
@@ -184,6 +195,19 @@ pub const Layout = struct {
     kinds: [max_panels]Panel = undefined,
     n_panels: usize = 0,
 
+    /// The background of a button: the accent when `active`, else a wash on
+    /// hover (stronger while pressed) with a hairline around it.
+    fn button(l: *Layout, st: State, b: Bounds, radius: f32, s: f32, active: bool, hovered: bool) void {
+        const down = hovered and st.hover.down;
+        if (active) {
+            l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = if (down) accent_press else accent } });
+        } else if (hovered) {
+            l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = if (down) press_bg else hover_bg } });
+            _ = s;
+            l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = if (down) press_line else hover_line } });
+        }
+    }
+
     fn push(l: *Layout, op: Op) void {
         if (l.n < max_ops) {
             l.ops[l.n] = op;
@@ -203,6 +227,8 @@ pub const Layout = struct {
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
         // Centered half a pixel inside the edge: one crisp pixel wide.
         l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = radius - 0.5, .w = 1, .color = panel_border } });
+        const inset = radius + 1;
+        l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.min.x + inset, .y = b.min.y + 1 }, .max = .{ .x = b.max.x - inset, .y = b.min.y + 2 } }, .radius = 0, .color = panel_sheen } });
         l.panels[l.n_panels] = b.expand(2).toRect();
         l.kinds[l.n_panels] = kind;
         l.n_panels += 1;
@@ -225,16 +251,13 @@ fn textW(ctx: Ctx, s: []const u8, size: u16) f32 {
 
 fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
     const s = d.s;
-    l.panel(.dock, d.panel, 4 * s);
+    l.panel(.dock, d.panel, 2.5 * s);
 
     for (d.tools, keymap.tools) |b, info| {
         const active = info.tool == st.tool;
         const c = center(b);
         const hovered = if (st.hover.dock) |hd| hd == .tool and hd.tool == info.tool else false;
-        if (active or hovered) {
-            const hb = b;
-            l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
-        }
+        l.button(st, b, 2 * s, s, active, hovered);
         l.push(.{ .icon = .{ .tool = info.tool, .c = c, .size = 20 * s, .color = if (active) nord.n0 else nord.n4 } });
         // The hotkey: a faint letter in the corner, no badge.
         const kc = b.max.sub(.{ .x = 7 * s, .y = 7 * s });
@@ -267,7 +290,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
     // Arrow style switch: the active style filled like the active tool.
     if (d.switch_panel) |sp| {
-        l.panel(.style_switch, sp, 4 * s);
+        l.panel(.style_switch, sp, 2.5 * s);
         for (d.styles, 0..) |b, i| {
             const text_tool = st.tool == .text;
             const active = if (text_tool) dock.text_styles[i] == st.text_style else dock.arrow_styles[i] == st.arrow_style;
@@ -276,10 +299,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
                 .text_style => |h| text_tool and h == dock.text_styles[i],
                 else => false,
             } else false;
-            if (active or hovered) {
-                const hb = b;
-                l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = if (active) accent else hover_bg } });
-            }
+            l.button(st, b, 2 * s, s, active, hovered);
             const col = if (active) nord.n0 else nord.n4;
             if (text_tool) {
                 l.push(.{ .text_style = .{ .style = dock.text_styles[i], .c = center(b), .size = 18 * s, .color = col } });
@@ -294,7 +314,7 @@ fn layoutDock(l: *Layout, st: State, d: *const Dock) void {
 
 fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
     const s = b.s;
-    l.panel(.top_bar, b.panel, 4 * s);
+    l.panel(.top_bar, b.panel, 2.5 * s);
     for (b.slots, topbar.buttons) |r, btn| {
         const enabled = switch (btn) {
             .undo => st.can_undo,
@@ -302,10 +322,8 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
             .canvas_bg => true,
         };
         const hovered = st.hover.bar == btn;
-        if (enabled and hovered) {
-            const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-            l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = hover_bg } });
-        }
+        const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
+        l.button(st, hb, 2 * s, s, false, enabled and hovered);
         const ink = if (!enabled) nord.n3 else if (hovered) nord.n6 else nord.n4;
         switch (btn) {
             .undo, .redo => l.push(.{ .undo = .{ .redo = btn == .redo, .c = center(r), .size = 22 * s, .color = ink } }),
@@ -319,12 +337,10 @@ fn layoutTopBar(l: *Layout, st: State, b: *const TopBar) void {
 fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
     const s = b.s;
     const hovered = st.hover.pad;
-    l.panel(.pad_bar, b.panel, 4 * s);
+    l.panel(.pad_bar, b.panel, 2.5 * s);
     const r = b.slot;
-    if (hovered) {
-        const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
-        l.push(.{ .rrect = .{ .b = hb, .radius = 3 * s, .color = hover_bg } });
-    }
+    const hb = Bounds{ .min = r.min.add(.{ .x = s, .y = s }), .max = r.max.sub(.{ .x = s, .y = s }) };
+    l.button(st, hb, 2 * s, s, false, hovered);
     const i = settings.paddingIndex(st.padding);
     const ty = b.trackY();
     const x0 = b.notchX(0);
@@ -346,16 +362,14 @@ fn layoutPadBar(l: *Layout, st: State, b: *const PadBar) void {
 /// panel with the ghost of a dragged image.
 fn layoutBrowser(l: *Layout, st: State, g: *const browsergeo.Geo) void {
     const s = g.s;
-    l.panel(.folder_btn, g.folder, 4 * s);
+    l.panel(.folder_btn, g.folder, 2.5 * s);
     const open = st.browser != null;
     const r = Bounds{ .min = g.folder.min.add(.{ .x = 2 * s, .y = 2 * s }), .max = g.folder.max.sub(.{ .x = 2 * s, .y = 2 * s }) };
-    if (open) {
-        l.push(.{ .rrect = .{ .b = r, .radius = 3 * s, .color = accent } });
-    } else if (st.hover.folder) l.push(.{ .rrect = .{ .b = r, .radius = 3 * s, .color = hover_bg } });
+    l.button(st, r, 2 * s, s, open, st.hover.folder);
     const ink = if (open) nord.n0 else if (st.hover.folder) nord.n6 else nord.n4;
     l.push(.{ .folder = .{ .c = center(r), .size = 22 * s, .color = ink } });
     if (st.browser) |b| {
-        l.panel(.browser, g.panel, 4 * s);
+        l.panel(.browser, g.panel, 2.5 * s);
         l.push(.{ .browser = b });
         if (st.ghost) |gh| {
             l.region(.ghost, browser_draw.ghostRect(g.*, b, gh.row, gh.at).toBounds().expand(3));
@@ -546,7 +560,7 @@ fn layoutToast(ctx: Ctx, l: *Layout, msg: []const u8, w: u32, s_in: f32, top: ?f
     const x0 = @round((W - pw) / 2);
     const y0 = @round(top orelse 12 * s);
     const b = Bounds{ .min = .{ .x = x0, .y = y0 }, .max = .{ .x = x0 + pw, .y = y0 + ph } };
-    l.panel(.toast, b, 4 * s);
+    l.panel(.toast, b, 2.5 * s);
     l.push(.{ .text = .{ .pos = .{ .x = x0 + 16 * s, .y = @round(y0 + ph / 2 - @as(f32, @floatFromInt(size)) * 0.6) }, .s = msg, .px = size, .color = nord.n6 } });
 }
 

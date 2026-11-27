@@ -208,6 +208,8 @@ pub const Editor = struct {
     /// A press on the padding slider is held: moves set the step, the
     /// release asks the App to save the settings.
     slider_drag: bool = false,
+    /// The left button went down on the chrome (pressed look until release).
+    chrome_down: bool = false,
     /// Canvas padding of the last save (or of the start).
     saved_padding: u16 = 0,
     /// The user chose a padding in this session (key, slider): montage mode
@@ -296,7 +298,7 @@ pub const Editor = struct {
         const g = browsergeo.Geo.of(w, h);
         const folder = browsergeo.inside(g.folder, p);
         if (self.browser.open and browsergeo.inside(g.panel, p)) return .{}; // the panel is on top
-        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p), .folder = folder };
+        return .{ .dock = Dock.of(w, h, self.tool).hit(p), .bar = TopBar.of(w, h).hit(p), .pad = PadBar.of(w, h).contains(p), .folder = folder, .down = self.chrome_down };
     }
 
     /// The browser panel shows (open, panels not hidden).
@@ -759,7 +761,11 @@ pub const Editor = struct {
                     self.panning = null;
                     return .{ .redraw = self.hand };
                 }
-                return self.onUp(m.x, m.y, m.button);
+                const was_down = self.chrome_down;
+                if (m.button == .left) self.chrome_down = false;
+                var eff = try self.onUp(m.x, m.y, m.button);
+                eff.redraw = eff.redraw or was_down;
+                return eff;
             },
             .mouse_move => |m| {
                 const hover_before = self.chromeHover().key();
@@ -848,6 +854,7 @@ pub const Editor = struct {
         if (self.mode != .drag and self.mode != .moving and self.mode != .image_drag and self.onChrome(p)) {
             if (builtin.is_test and !self.chrome_press_ok) std.debug.panic("a test pressed at {d} {d} on the chrome (dock, top bar or padding widget): hide it (dock_visible = false), press elsewhere, or T.showChrome()", .{ x, y });
             if (button == .left) {
+                self.chrome_down = true;
                 if (Dock.of(self.view.screen_w, self.view.screen_h, self.tool).hit(p)) |h| switch (h) {
                     .tool => |t| try self.setTool(t),
                     .arrow_style => |st| self.setArrowStyle(st),
