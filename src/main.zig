@@ -9,7 +9,8 @@ const x11_capture = @import("backend/x11_capture.zig");
 const bench = @import("bench.zig");
 const config = @import("config.zig");
 
-pub fn main(init: std.process.Init.Minimal) !u8 {
+pub fn main(init: std.process.Init) !u8 {
+    core.sys.setIo(init.io);
     var start = try core.sys.Timer.start();
     var dbg: std.heap.DebugAllocator(.{}) = .init;
     defer if (builtin.mode == .debug) {
@@ -19,7 +20,7 @@ pub fn main(init: std.process.Init.Minimal) !u8 {
 
     var arena: std.heap.ArenaAllocator = .init(gpa);
     defer arena.deinit();
-    const args0 = try init.args.toSlice(arena.allocator());
+    const args0 = try init.minimal.args.toSlice(arena.allocator());
     const args = try arena.allocator().alloc([]const u8, args0.len);
     for (args0, args) |s, *d| d.* = s;
 

@@ -1,12 +1,20 @@
 //! OS shim for Zig 0.17: one process-wide `std.Io` plus thin helpers (clock,
 //! sleep, env, files, fds), so call sites keep their 0.15 shape.
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 
-/// The process-wide io (blocking, no concurrency; threads use std.Thread).
+var process_io: ?Io = null;
+
+/// Install the process-wide IO supplied by `std.process.Init` before using this shim.
+pub fn setIo(io_: Io) void {
+    process_io = io_;
+}
+
+/// The process-wide IO. Tests use their own IO implementation.
 pub fn io() Io {
-    if (@import("builtin").is_test) return std.testing.io;
-    return Io.Threaded.global_single_threaded.io();
+    if (builtin.is_test) return std.testing.io;
+    return process_io orelse @panic("core.sys.setIo must be called before core.sys.io");
 }
 
 pub fn cwd() Io.Dir {

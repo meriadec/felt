@@ -197,13 +197,25 @@ pub const App = struct {
 
     fn copyImpl(self: *App) !void {
         if (self.cfg.clipboard == .none) return error.ClipboardDisabled;
-        var out = try self.exportImage();
+        var out = self.exportImage() catch |err| {
+            std.debug.print("felt: copy export failed: {s}\n", .{@errorName(err)});
+            return err;
+        };
         defer out.deinit(self.gpa);
-        const png = try core.image_io.encodePng(self.gpa, &out);
+        const png = core.image_io.encodePng(self.gpa, &out) catch |err| {
+            std.debug.print("felt: copy PNG encoding failed for {d}x{d}: {s}\n", .{ out.width, out.height, @errorName(err) });
+            return err;
+        };
         defer self.gpa.free(png);
         switch (self.cfg.clipboard) {
-            .xclip => try clipboard.copyPng(self.gpa, png),
-            .file => |p| try core.sys.cwd().writeFile(core.sys.io(), .{ .sub_path = p, .data = png }),
+            .xclip => clipboard.copyPng(self.gpa, png) catch |err| {
+                std.debug.print("felt: copy clipboard transfer failed for {d}x{d} PNG ({d} bytes): {s}\n", .{ out.width, out.height, png.len, @errorName(err) });
+                return err;
+            },
+            .file => |p| core.sys.cwd().writeFile(core.sys.io(), .{ .sub_path = p, .data = png }) catch |err| {
+                std.debug.print("felt: copy PNG write failed for {d}x{d} to {s}: {s}\n", .{ out.width, out.height, p, @errorName(err) });
+                return err;
+            },
             .none => unreachable,
         }
     }
