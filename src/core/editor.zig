@@ -600,9 +600,9 @@ pub const Editor = struct {
         self.canvas_rev = self.doc.revision;
         self.canvas = extent.canvas(self.ctx(), self.doc);
         // A tool extended the canvas: like montage mode, a padding the user
-        // never chose becomes the 2nd step (the view does not move).
+        // never chose becomes the 2nd step above 0 (96 px; the view does not move).
         if (!self.padding_touched and self.settings.padding == settings.padding_steps[0] and
-            !std.meta.eql(self.canvas, extent.keptPad(self.ctx(), self.doc))) _ = self.applyPadding(settings.padding_steps[1]);
+            !std.meta.eql(self.canvas, extent.keptPad(self.ctx(), self.doc))) _ = self.applyPadding(settings.padding_steps[2]);
         self.kept_key = self.doc.kept();
         const crop: ?geom.Rect = if (self.doc.crop()) |c| c.rect else null;
         if (std.meta.eql(crop, self.crop_key)) return false;
