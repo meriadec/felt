@@ -104,13 +104,13 @@ pub const Dock = struct {
         d.help = .{ .min = .{ .x = x, .y = top + (slot - help_w) * s / 2 }, .max = .{ .x = x + help_w * s, .y = top + (slot + help_w) * s / 2 } };
 
         // Over the active tool's slot, centered, but not left of the dock.
-        // The switch: one two-cell square per style, on the grid, one cell
-        // above the dock.
+        // The switch: one two-cell square per style, on the grid, sitting on
+        // the dock (they share the line of the dock top edge).
         const sw_n: f32 = arrow_styles.len;
         const sw_w = sw_n * 2 * st;
         const ts = d.tools[toolIndex(tool)];
         const sx0 = @max(lx0, grid.atLeast(grid.centerX(w), st, @round((ts.min.x + ts.max.x - sw_w) / 2)));
-        const sly1 = ly1 - ph - st;
+        const sly1 = ly1 - ph;
         const sly0 = sly1 - 2 * st;
         d.switch_panel = if (hasStyleSwitch(tool)) grid.panel(sx0, sly0, sx0 + sw_w, sly1) else null;
         var sx = sx0 + 0.5 + (2 * st - slot * s) / 2;
@@ -182,7 +182,7 @@ test "the pointer style switch shows above the dock with the callout tool only" 
     try std.testing.expectEqual(@as(?Bounds, null), other.switch_panel);
     const d = Dock.of(1920, 1080, .callout);
     const sp = d.switch_panel.?;
-    try std.testing.expect(sp.max.y < d.panel.min.y);
+    try std.testing.expect(sp.max.y <= d.panel.min.y + 3 and sp.min.y < d.panel.min.y);
     try std.testing.expectEqual(d.panel.min.x, sp.min.x);
     for (d.styles, arrow_styles) |b, st| {
         const c = b.min.add(b.max).scale(0.5);
