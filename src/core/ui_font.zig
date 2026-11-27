@@ -49,6 +49,10 @@ pub const UiFont = struct {
 
 test "no path, a missing file and a file that is no font all give the embedded font" {
     const gpa = std.testing.allocator;
+    // The two failures log a warning, and the test runner fails a test that logs one.
+    const old_level = std.testing.log_level;
+    std.testing.log_level = .err;
+    defer std.testing.log_level = old_level;
     var a = UiFont.init(gpa, .{});
     defer a.deinit();
     try std.testing.expectEqual(@as(?*Font, null), a.get());
