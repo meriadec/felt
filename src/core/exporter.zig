@@ -1,11 +1,12 @@
 //! Export: render the document at full resolution. The output is the
-//! canvas (extent.zig): the kept part of the image at 1:1, `bg` (the canvas
+//! canvas (extent.zig): the kept part of the image at 1:1 (with the border and shadow of the screen when the canvas is larger), `bg` (the canvas
 //! background setting) where the annotations grew it, and every annotation shifted by the canvas origin
 //! and cut to its clip. This is what Ctrl+S and Ctrl+C produce.
 const std = @import("std");
 const draw = @import("draw.zig");
 const extent = @import("extent.zig");
 const geom = @import("geom.zig");
+const shadow = @import("shadow.zig");
 const Canvas = @import("canvas.zig").Canvas;
 const Color = @import("color.zig").Color;
 const Document = @import("document.zig").Document;
@@ -22,6 +23,11 @@ pub fn render(ctx: draw.Ctx, doc: *const Document, bg: Color) !Canvas {
     if (single) {
         const pic_out = kept.intersect(doc.base()).offset(-cr.x0, -cr.y0);
         for (out.bounds().minus(pic_out)) |b| out.fillRect(b, bg);
+        // An extended canvas: the same border and shadow as on screen.
+        if (!std.meta.eql(out.bounds(), pic_out)) {
+            const theme: shadow.Theme = if (bg.luminance() > 0.5) .light else .dark;
+            shadow.paint(&out, out.bounds(), pic_out, theme, shadow.unitFor(pic_out), .{ 0, 0 });
+        }
     } else {
         out.fill(bg);
     }
