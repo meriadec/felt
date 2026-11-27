@@ -276,6 +276,12 @@ pub const Compositor = struct {
             for (s.doc.scene.images.items) |p| try self.paintPlaced(cv, s, r, p);
         } else {
             for (r.intersect(s.canvas_dst).minus(s.pic_dst)) |b| cv.fillRect(b, s.bg);
+            // An extended canvas (padding, an annotation past the edge): the
+            // image gets the border and shadow look on the canvas background.
+            if (!std.meta.eql(s.canvas_dst, s.pic_dst)) {
+                const theme: shadow.Theme = if (s.bg.luminance() > 0.5) .light else .dark;
+                shadow.paint(cv, r.intersect(s.canvas_dst), s.pic_dst, theme, shadow.unitFor(s.pic_dst), .{ ox, oy });
+            }
             try self.paintImage(cv, s, r);
         }
         for (s.doc.items.items[0..n], 0..) |a, i| {

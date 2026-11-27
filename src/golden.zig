@@ -342,7 +342,7 @@ test "drawing past the image grows the exported PNG with the light canvas; undo 
     try std.testing.expectEqual(bg, saved.at(105, 45));
     try std.testing.expectEqual(core.color.palette[0].color.toPixel(), saved.at(130, 25)); // the arrow, past the edge
     // On screen too: the canvas background past the image edge, the screen background past the canvas.
-    try std.testing.expectEqual(bg, app.frame().at(255, 130));
+    try std.testing.expectEqual(bg, app.frame().at(290, 130)); // past the image shadow
     // (a 1 px border and a soft shadow hug the canvas: probe past their reach.)
     const far = app.frame().at(150 + canvas.x1 + 40, 130);
     try std.testing.expect(far == core.compositor.background.toPixel() or far == core.compositor.grid_color.toPixel());
