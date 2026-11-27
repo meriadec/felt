@@ -646,11 +646,9 @@ pub const Editor = struct {
             .drag => |d| self.shapeFromDrag(d),
             .typing => |t| if (t.edit) |e| self.editedPreview(e) else switch (t.kind) {
                 .text => .{ .text = .{ .pos = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .style = self.text_style } },
-                // No text yet and a pointer: it is an arrow until a character comes.
-                .callout => if (t.target != null and self.draft.items.len == 0)
-                    self.routed(.{ .arrow = .{ .tail = t.pos, .head = t.target.?, .width = self.strokeImg(), .color = c, .style = self.arrow_style } })
-                else
-                    self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
+                // No text yet: the empty box and its caret show that typing works
+                // (Enter with no text still makes an arrow).
+                .callout => self.routed(.{ .callout = .{ .target = t.target, .anchor = t.pos, .text = self.draft.items, .size = self.fontImg(), .color = c, .width = self.strokeImg(), .style = self.arrow_style } }),
             },
         };
     }
@@ -1718,7 +1716,7 @@ test "startup: the callout tool with a straight pointer; a drag with no key draw
     try std.testing.expectEqual(ann.ArrowStyle.straight, c.style);
 }
 
-test "callout press: no box before the pointer moves; a drag previews the arrow only" {
+test "callout press: no box before the pointer moves; a drag previews the arrow only; after release the empty box shows" {
     var t = T{};
     t.init();
     defer t.deinit();
@@ -1729,7 +1727,7 @@ test "callout press: no box before the pointer moves; a drag previews the arrow 
     _ = try t.ed.handle(.{ .mouse_move = .{ .x = 20, .y = 10 } });
     try std.testing.expect(t.ed.preview().? == .arrow);
     _ = try t.ed.handle(.{ .mouse_up = .{ .x = 20, .y = 10 } });
-    try std.testing.expect(t.ed.preview().? == .arrow); // typing starts, still no box
+    try std.testing.expect(t.ed.preview().? == .callout); // typing starts: the empty box and its caret
 }
 
 test "callout drag then type" {
@@ -1918,7 +1916,7 @@ test "the callout key again does nothing special; typing c is a letter; undo kee
     try std.testing.expectEqual(Tool.callout, t.ed.tool);
     t.ed.setArrowStyle(.stairs); // what the dock switch does
     try t.drag(10, 10, 120, 60);
-    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.arrow.style); // no text yet: an arrow
+    try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style); // no text yet: the empty box
     _ = try t.key("c"); // typing: a letter
     try std.testing.expectEqual(ann.ArrowStyle.stairs, t.ed.preview().?.callout.style); // a text: the callout
     _ = try t.key("enter");
