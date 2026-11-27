@@ -117,10 +117,11 @@ pub fn replayCapture(gpa: std.mem.Allocator, frozen: *const Canvas, script: *con
 
 /// Set the modification time of `path` (repo-relative) to `secs`.
 fn touch(path: []const u8, secs: i64) !void {
-    var f = try std.fs.cwd().openFile(path, .{}); // a folder opens too
-    defer f.close();
-    const t = @as(i128, secs) * std.time.ns_per_s;
-    try f.updateTimes(t, t);
+    const io = core.sys.io();
+    var f = try core.sys.cwd().openFile(io, path, .{ .allow_directory = true }); // a folder opens too
+    defer f.close(io);
+    const t = std.Io.Timestamp.fromNanoseconds(@as(i96, secs) * std.time.ns_per_s);
+    try f.setTimestamps(io, .{ .access_timestamp = .{ .new = t }, .modify_timestamp = .{ .new = t } });
 }
 
 fn mid(b: core.geom.Bounds) core.geom.Vec2 {
@@ -148,7 +149,7 @@ fn browserStep(app: *App, cmd: script_mod.BrowserCmd) !bool {
     const b = &app.editor.browser;
     switch (cmd) {
         .home => |dir| {
-            const abs = try std.fs.cwd().realpathAlloc(app.gpa, dir);
+            const abs = try core.sys.realPathAlloc(core.sys.cwd(), dir, app.gpa);
             defer app.gpa.free(abs);
             try b.setHome(abs);
         },
@@ -262,7 +263,7 @@ fn uiPoint(app: *App, t: script_mod.UiTarget, why: enum { click, hover }) !?core
 
 /// Read and parse a script file; prints `path:line: message` on errors.
 pub fn loadScript(gpa: std.mem.Allocator, path: []const u8) !script_mod.Script {
-    const src = std.fs.cwd().readFileAlloc(gpa, path, 1 << 20) catch |err| {
+    const src = core.sys.readFileAlloc(gpa, path, 1 << 20) catch |err| {
         std.debug.print("error: cannot read script {s}: {s}\n", .{ path, @errorName(err) });
         return err;
     };
@@ -345,7 +346,7 @@ const EnvSwap = struct {
     old: ?[:0]u8,
 
     fn set(gpa: std.mem.Allocator, name: [:0]const u8, value: [:0]const u8) !EnvSwap {
-        const old = if (std.posix.getenv(name)) |v| try gpa.dupeZ(u8, v) else null;
+        const old = if (core.sys.getenv(name)) |v| try gpa.dupeSentinel(u8, v, 0) else null;
         _ = setenv(name, value, 1);
         return .{ .name = name, .old = old };
     }
@@ -362,16 +363,16 @@ test "headless never reads or writes the config file" {
     const gpa = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try core.sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
-    const dir_z = try gpa.dupeZ(u8, dir);
+    const dir_z = try gpa.dupeSentinel(u8, dir, 0);
     defer gpa.free(dir_z);
     // XDG_CONFIG_HOME and HOME both point at the tmp dir, each with a dark config.
     const cfg = "canvas_bg=dark\n";
-    try tmp.dir.makePath("felt");
-    try tmp.dir.makePath(".config/felt");
-    try tmp.dir.writeFile(.{ .sub_path = "felt/config", .data = cfg });
-    try tmp.dir.writeFile(.{ .sub_path = ".config/felt/config", .data = cfg });
+    try tmp.dir.createDirPath(core.sys.io(), "felt");
+    try tmp.dir.createDirPath(core.sys.io(), ".config/felt");
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = "felt/config", .data = cfg });
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = ".config/felt/config", .data = cfg });
     const xdg = try EnvSwap.set(gpa, "XDG_CONFIG_HOME", dir_z);
     defer xdg.restore(gpa);
     const home = try EnvSwap.set(gpa, "HOME", dir_z);
@@ -391,12 +392,12 @@ test "headless never reads or writes the config file" {
     // Both files stay as they were, with no temp file next to them.
     var buf: [64]u8 = undefined;
     for ([_][]const u8{ "felt", ".config/felt" }) |sub| {
-        var d = try tmp.dir.openDir(sub, .{ .iterate = true });
-        defer d.close();
-        try std.testing.expectEqualStrings(cfg, try d.readFile("config", &buf));
+        var d = try tmp.dir.openDir(core.sys.io(), sub, .{ .iterate = true });
+        defer d.close(core.sys.io());
+        try std.testing.expectEqualStrings(cfg, try d.readFile(core.sys.io(), "config", &buf));
         var it = d.iterate();
         var n: usize = 0;
-        while (try it.next()) |_| n += 1;
+        while (try it.next(core.sys.io())) |_| n += 1;
         try std.testing.expectEqual(@as(usize, 1), n);
     }
 }

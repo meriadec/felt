@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
 
     // run: zig build run -- <args>
     const run = b.addRunArtifact(exe);
-    if (b.args) |args| run.addArgs(args);
+    run.addPassthruArgs();
     b.step("run", "Run felt (pass args after --)").dependOn(&run.step);
 
     // test: unit tests of the core and of the app, plus golden replays.
@@ -53,10 +53,12 @@ pub fn build(b: *std.Build) void {
     if (script) |s| {
         names.append(b.allocator, std.fs.path.stem(s)) catch @panic("OOM");
     } else {
-        var dir = b.build_root.handle.openDir("tests/scripts", .{ .iterate = true }) catch @panic("cannot open tests/scripts");
-        defer dir.close();
+        const io = b.graph.io;
+        b.dependOnDirectoryMetadata(b.path("tests/scripts"));
+        var dir = std.Io.Dir.cwd().openDir(io, "tests/scripts", .{ .iterate = true }) catch @panic("cannot open tests/scripts");
+        defer dir.close(io);
         var it = dir.iterate();
-        while (it.next() catch null) |e| {
+        while (it.next(io) catch null) |e| {
             if (std.mem.endsWith(u8, e.name, ".txt")) names.append(b.allocator, b.dupe(e.name[0 .. e.name.len - 4])) catch @panic("OOM");
         }
     }
@@ -87,7 +89,7 @@ pub fn build(b: *std.Build) void {
     const bench_run = b.addRunArtifact(bench_exe);
     bench_run.setCwd(b.path("."));
     bench_run.addArg("--bench");
-    if (b.args) |args| bench_run.addArgs(args);
+    bench_run.addPassthruArgs();
     b.step("bench", "Measure startup and frame times, ReleaseFast (args after --: [--size WxH] [image])").dependOn(&bench_run.step);
 
     // smoke-x11: drive the real window on $DISPLAY with xdotool.
@@ -108,11 +110,11 @@ pub fn build(b: *std.Build) void {
     const km = b.addRunArtifact(exe);
     km.addArg("--keymap-md");
     const docs = b.addUpdateSourceFiles();
-    docs.addCopyFileToSource(km.captureStdOut(), "docs/keymap.md");
+    docs.addCopyFileToSource(km.captureStdOut(.{}), "docs/keymap.md");
     b.step("docs", "Regenerate docs/keymap.md from the key map source").dependOn(&docs.step);
 
     // fmt / fmt-check
-    const fmt_paths = &.{ "build.zig", "src" };
+    const fmt_paths: []const std.Build.LazyPath = &.{ b.path("build.zig"), b.path("src") };
     b.step("fmt", "Format all Zig sources").dependOn(&b.addFmt(.{ .paths = fmt_paths }).step);
     const fmt_check = b.addFmt(.{ .paths = fmt_paths, .check = true });
     b.step("fmt-check", "Fail if a Zig source is not formatted").dependOn(&fmt_check.step);
@@ -141,6 +143,10 @@ fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
         .files = &.{ "deflate_decompress.c", "deflate_compress.c", "zlib_decompress.c", "zlib_compress.c", "adler32.c", "crc32.c", "utils.c", "x86/cpu_features.c" },
         .flags = &.{ "-O2", "-fno-sanitize=undefined" },
     });
+    const tc = b.addTranslateC(.{ .root_source_file = b.path("src/core/c.h"), .target = target, .optimize = optimize });
+    tc.addIncludePath(b.path("vendor/stb"));
+    tc.addIncludePath(b.path("vendor/libdeflate"));
+    core.addImport("c_api", tc.createModule());
     core.addAnonymousImport("font_ttf", .{ .root_source_file = b.path("vendor/fonts/DejaVuSans-Bold.ttf") });
     return core;
 }
@@ -153,6 +159,8 @@ fn addExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
         .link_libc = true,
     });
     mod.addImport("core", coreModule(b, target, optimize));
+    const xtc = b.addTranslateC(.{ .root_source_file = b.path("src/backend/xlib.h"), .target = target, .optimize = optimize });
+    mod.addImport("xlib_c", xtc.createModule());
     mod.linkSystemLibrary("X11", .{});
     mod.linkSystemLibrary("Xext", .{});
     return b.addExecutable(.{ .name = "felt", .root_module = mod });

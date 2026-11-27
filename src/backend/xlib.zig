@@ -4,16 +4,7 @@
 const std = @import("std");
 const core = @import("core");
 
-pub const c = @cImport({
-    @cInclude("X11/Xlib.h");
-    @cInclude("X11/Xutil.h");
-    @cInclude("X11/keysym.h");
-    @cInclude("X11/XKBlib.h");
-    @cInclude("X11/extensions/XShm.h");
-    @cInclude("time.h");
-    @cInclude("sys/ipc.h");
-    @cInclude("sys/shm.h");
-});
+pub const c = @import("xlib_c");
 
 pub const xc_crosshair = 34;
 pub const xa_atom = 4;

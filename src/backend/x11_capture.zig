@@ -93,7 +93,7 @@ fn ms(ns: u64) f64 {
 }
 
 pub fn run(gpa: std.mem.Allocator, opts: Options) !?Canvas {
-    var timer = try std.time.Timer.start();
+    var timer = try core.sys.Timer.start();
     const dpy = c.XOpenDisplay(null) orelse return error.NoDisplay;
     defer _ = c.XCloseDisplay(dpy);
     const scr = c.XDefaultScreen(dpy);
@@ -226,7 +226,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options) !?Canvas {
     _ = c.XDestroyWindow(dpy, win);
     overlay_alive = false;
     _ = c.XSync(dpy, c.False);
-    std.Thread.sleep(@as(u64, @max(picker.delay_ms, min_settle_ms)) * std.time.ns_per_ms);
+    core.sys.sleepNs(@as(u64, @max(picker.delay_ms, min_settle_ms)) * std.time.ns_per_ms);
     return try grabRegion(gpa, dpy, root, rect);
 }
 
@@ -240,7 +240,7 @@ fn grabInput(dpy: *c.Display, win: c.Window, cursor: c.Cursor) !void {
         if (p == c.GrabSuccess and k == c.GrabSuccess) return;
         _ = c.XUngrabPointer(dpy, c.CurrentTime);
         _ = c.XUngrabKeyboard(dpy, c.CurrentTime);
-        std.Thread.sleep(20 * std.time.ns_per_ms);
+        core.sys.sleepNs(20 * std.time.ns_per_ms);
     }
     return error.GrabFailed;
 }

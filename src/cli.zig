@@ -218,7 +218,7 @@ pub fn montageOutput(gpa: std.mem.Allocator, image: []const u8) ![]u8 {
 /// Where Ctrl+S writes in capture mode: `$HOME/<unix time>.png` (the old
 /// `maim` script's name), else the working directory. Caller frees with `gpa`.
 pub fn captureOutput(gpa: std.mem.Allocator, home: ?[]const u8, unix_time: i64) ![]u8 {
-    if (home) |h| if (h.len > 0) return std.fmt.allocPrint(gpa, "{s}/{d}.png", .{ std.mem.trimRight(u8, h, "/"), unix_time });
+    if (home) |h| if (h.len > 0) return std.fmt.allocPrint(gpa, "{s}/{d}.png", .{ std.mem.trimEnd(u8, h, "/"), unix_time });
     return std.fmt.allocPrint(gpa, "{d}.png", .{unix_time});
 }
 

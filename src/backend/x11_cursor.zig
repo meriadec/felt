@@ -25,7 +25,7 @@ pub const Cursors = struct {
 
     /// The cursor for `kind`, made on first use.
     pub fn get(self: *Cursors, kind: Kind) c.Cursor {
-        const i = @intFromEnum(kind);
+        const i = @backingInt(kind);
         if (self.cache[i] == 0) self.cache[i] = self.make(kind);
         return self.cache[i];
     }

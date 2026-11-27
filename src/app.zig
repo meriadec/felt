@@ -203,7 +203,7 @@ pub const App = struct {
         defer self.gpa.free(png);
         switch (self.cfg.clipboard) {
             .xclip => try clipboard.copyPng(self.gpa, png),
-            .file => |p| try std.fs.cwd().writeFile(.{ .sub_path = p, .data = png }),
+            .file => |p| try core.sys.cwd().writeFile(core.sys.io(), .{ .sub_path = p, .data = png }),
             .none => unreachable,
         }
     }
@@ -213,7 +213,7 @@ test "b switches the canvas, writes the config file, and is no undo step" {
     const gpa = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try core.sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
     const p = try std.fs.path.join(gpa, &.{ dir, "felt", "config" });
     defer gpa.free(p);
@@ -236,8 +236,8 @@ test "a config file that cannot be written keeps the setting and says so" {
     const gpa = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.writeFile(.{ .sub_path = "file", .data = "" });
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = "file", .data = "" });
+    const dir = try core.sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
     const p = try std.fs.path.join(gpa, &.{ dir, "file", "config" }); // under a file: fails
     defer gpa.free(p);
@@ -253,7 +253,7 @@ test "a canvas switch over a grown canvas is an unsaved change until saved or sw
     const gpa = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try core.sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
     const out = try std.fs.path.join(gpa, &.{ dir, "out.png" });
     defer gpa.free(out);

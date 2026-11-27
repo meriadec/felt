@@ -1,5 +1,5 @@
 [tools]
-zig = "0.15.2"
+zig = "0.17.1"
 
 # `mise run check`: zig build check with each output line cut to 200 columns
 # (zig prints the whole compiler command line, several KB, after an error).

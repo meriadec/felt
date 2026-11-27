@@ -188,7 +188,7 @@ const huge_page = 2 << 20;
 
 fn bigAlloc(n: usize) ![]Pixel {
     const len = std.mem.alignForward(usize, n * 4, huge_page);
-    const mem = std.posix.mmap(null, len, std.posix.PROT.READ | std.posix.PROT.WRITE, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0) catch return error.OutOfMemory;
+    const mem = std.posix.mmap(null, len, .{ .READ = true, .WRITE = true }, .{ .TYPE = .PRIVATE, .ANONYMOUS = true }, -1, 0) catch return error.OutOfMemory;
     std.posix.madvise(mem.ptr, len, std.posix.MADV.HUGEPAGE) catch {};
     const px: [*]Pixel = @ptrCast(mem.ptr);
     return px[0..n];

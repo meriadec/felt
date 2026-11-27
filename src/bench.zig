@@ -111,7 +111,7 @@ fn findOnlyOn(app: *App, idx: usize, a: core.geom.Vec2, b: core.geom.Vec2) ?core
 fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Options) !void {
     const W: f32 = @floatFromInt(opts.size[0]);
     const H: f32 = @floatFromInt(opts.size[1]);
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
     const doc = &app.doc;
     app.editor.tool = .callout; // stairs pointers: a drag, then Enter (no text: an arrow)
     app.editor.arrow_style = .stairs;
@@ -198,17 +198,17 @@ fn benchRouting(gpa: std.mem.Allocator, w: *std.Io.Writer, app: *App, opts: Opti
 /// The config file: read (startup, window mode) and atomic write (a
 /// switch), in a temp dir: the bench never touches the user's config.
 fn benchConfig(gpa: std.mem.Allocator, w: *std.Io.Writer) !void {
-    const base = std.posix.getenv("TMPDIR") orelse "/tmp";
+    const base = core.sys.getenv("TMPDIR") orelse "/tmp";
     const dir = try std.fmt.allocPrint(gpa, "{s}/felt-bench-{d}", .{ base, std.os.linux.getpid() });
     defer gpa.free(dir);
-    defer std.fs.cwd().deleteTree(dir) catch {};
+    defer core.sys.cwd().deleteTree(core.sys.io(), dir) catch {};
     const p = try std.fs.path.join(gpa, &.{ dir, "felt", "config" });
     defer gpa.free(p);
     var rd = Stats{};
     defer rd.deinit(gpa);
     var wr = Stats{};
     defer wr.deinit(gpa);
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
     for (0..startup_runs) |i| {
         t.reset();
         try config.save(p, .{ .canvas_bg = if (i % 2 == 0) .dark else .light });
@@ -228,14 +228,14 @@ fn ms(ns: u64) f64 {
 
 pub fn run(gpa: std.mem.Allocator, opts: Options) !void {
     var buf: [4096]u8 = undefined;
-    var fw = std.fs.File.stdout().writer(&buf);
+    var fw = std.Io.File.stdout().writer(core.sys.io(), &buf);
     const w = &fw.interface;
     // A failed case still shows the cases before it.
     errdefer w.flush() catch {};
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
 
     // Input: encode then decode, so decode time is real.
-    const png = if (opts.image_path) |p| try std.fs.cwd().readFileAlloc(gpa, p, 512 << 20) else blk: {
+    const png = if (opts.image_path) |p| try core.sys.readFileAlloc(gpa, p, 512 << 20) else blk: {
         var syn = try synthetic(gpa, 2560, 1440);
         defer syn.deinit(gpa);
         break :blk try core.image_io.encodePng(gpa, &syn);
@@ -633,7 +633,7 @@ fn benchMontage(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
     const app = try App.create(gpa, try synthetic(gpa, iw, ih), W, H, .{ .output_path = null });
     defer app.destroy();
     _ = try app.render();
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
     var rect = core.geom.Rect.fromSize(0, 0, @intCast(iw), @intCast(ih));
     for ([_]core.magnet.Side{ .right, .bottom, .left }) |side| {
         rect = core.magnet.slotRect(rect, side, @intCast(iw), @intCast(ih));
@@ -688,12 +688,13 @@ fn benchBrowser(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
     const W = opts.size[0];
     const H = opts.size[1];
     var dir_name: [64]u8 = undefined;
-    const rel = try std.fmt.bufPrint(&dir_name, "felt-bench-browser-{d}", .{std.time.milliTimestamp()});
-    var tmp = try std.fs.cwd().makeOpenPath("test-out", .{});
-    defer tmp.close();
-    try tmp.makePath(rel);
-    defer tmp.deleteTree(rel) catch {};
-    const dir = try tmp.realpathAlloc(gpa, rel);
+    const rel = try std.fmt.bufPrint(&dir_name, "felt-bench-browser-{d}", .{core.sys.milliTimestamp()});
+    const io = core.sys.io();
+    var tmp = try core.sys.cwd().createDirPathOpen(io, "test-out", .{});
+    defer tmp.close(io);
+    try tmp.createDirPath(io, rel);
+    defer tmp.deleteTree(io, rel) catch {};
+    const dir = try core.sys.realPathAlloc(tmp, rel, gpa);
     defer gpa.free(dir);
     var img = try synthetic(gpa, 1280, 720);
     defer img.deinit(gpa);
@@ -702,7 +703,7 @@ fn benchBrowser(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
         const p = try std.fmt.bufPrint(&path_buf, "{s}/img{d:0>2}.png", .{ dir, i });
         try core.image_io.savePng(gpa, &img, p);
     }
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
     var th = try core.thumbs.make(gpa, try std.fmt.bufPrint(&path_buf, "{s}/img00.png", .{dir}), 192, 112);
     th.canvas.deinit(gpa);
     try w.print("{s:<26} {d:.3} ms\n", .{ "thumbnail (decode, scale)", ms(t.read()) });
@@ -760,7 +761,7 @@ fn benchCapture(gpa: std.mem.Allocator, w: *std.Io.Writer, opts: Options) !void 
     const ctx = core.draw.Ctx{ .gpa = gpa, .font = &font };
     var picker = core.picker.Picker.init(W, H, &.{}, 0);
     var scene = core.picker_draw.Scene{};
-    var t = try std.time.Timer.start();
+    var t = try core.sys.Timer.start();
     _ = try scene.render(ctx, &picker, &frozen, &frame);
     try w.print("\n{s:<26} {d:>7.3} ms\n", .{ "capture: first frame", ms(t.read()) });
     const fw: f32 = @floatFromInt(W);

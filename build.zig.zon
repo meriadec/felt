@@ -2,7 +2,7 @@
     .name = .felt,
     .version = "0.1.0",
     .fingerprint = 0xef35ef86b5d32e3f,
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.17.1",
     .dependencies = .{},
     .paths = .{ "build.zig", "build.zig.zon", "src", "vendor", "tests", "docs" },
 }

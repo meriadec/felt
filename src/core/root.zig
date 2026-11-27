@@ -1,5 +1,6 @@
 //! The core module: everything that does not talk to a window system.
 //! Backends (src/backend/) import this module; this module imports no backend.
+pub const sys = @import("sys.zig");
 pub const c = @import("c.zig").c;
 pub const font_ttf = @embedFile("font_ttf");
 pub const color = @import("color.zig");

@@ -52,7 +52,7 @@ pub fn stepPadding(px: u16, delta: i32) u16 {
 
 /// A file path in a fixed buffer, so `Settings` stays a plain value.
 pub const FontPath = struct {
-    buf: [max_path]u8 = [_]u8{0} ** max_path,
+    buf: [max_path]u8 = @splat(0),
     len: u16 = 0,
 
     pub const max_path = 400;
@@ -138,7 +138,7 @@ test "parse: good, defaults, bad lines" {
     try std.testing.expectEqual(CanvasBg.light, parse("canvas_bg=DARK").canvas_bg);
     // The last good line wins.
     try std.testing.expectEqual(CanvasBg.light, parse("canvas_bg=dark\ncanvas_bg=light").canvas_bg);
-    const big = [_]u8{' '} ** (max_file + 1);
+    const big: [max_file + 1]u8 = @splat(' ');
     try std.testing.expectEqual(CanvasBg.light, parse(&big).canvas_bg);
 }
 

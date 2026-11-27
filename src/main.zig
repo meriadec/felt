@@ -9,16 +9,19 @@ const x11_capture = @import("backend/x11_capture.zig");
 const bench = @import("bench.zig");
 const config = @import("config.zig");
 
-pub fn main() !u8 {
-    var start = try std.time.Timer.start();
+pub fn main(init: std.process.Init.Minimal) !u8 {
+    var start = try core.sys.Timer.start();
     var dbg: std.heap.DebugAllocator(.{}) = .init;
-    defer if (builtin.mode == .Debug) {
+    defer if (builtin.mode == .debug) {
         _ = dbg.deinit();
     };
-    const gpa = if (builtin.mode == .Debug) dbg.allocator() else std.heap.c_allocator;
+    const gpa = if (builtin.mode == .debug) dbg.allocator() else std.heap.c_allocator;
 
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    const args0 = try init.args.toSlice(arena.allocator());
+    const args = try arena.allocator().alloc([]const u8, args0.len);
+    for (args0, args) |s, *d| d.* = s;
 
     var diag: cli.Diag = .{};
     const opts = cli.parse(args[1..], &diag) catch {
@@ -60,7 +63,7 @@ pub fn main() !u8 {
             // Pick the region first; null: cancelled (no editor, exit status 1).
             const image = (x11_capture.run(gpa, .{ .delay_ms = opts.delay_ms, .timing = opts.timing, .config_path = config_path }) catch |err| return fail(err, "(screen)")) orelse return 1;
             const out = opts.output orelse blk: {
-                default_out = try cli.captureOutput(gpa, std.posix.getenv("HOME"), std.time.timestamp());
+                default_out = try cli.captureOutput(gpa, core.sys.getenv("HOME"), core.sys.timestamp());
                 break :blk default_out.?;
             };
             x11.run(gpa, .{
@@ -99,9 +102,9 @@ pub fn main() !u8 {
 /// at a font in a shot. Never the config file.
 fn headlessUiFont() core.settings.Settings {
     var s = core.settings.Settings{};
-    const path = std.posix.getenv("FELT_UI_FONT") orelse return s;
+    const path = core.sys.getenv("FELT_UI_FONT") orelse return s;
     s.ui_font = core.settings.FontPath.of(path);
-    if (std.posix.getenv("FELT_UI_FONT_SIZE")) |v| s.ui_font_size = std.fmt.parseInt(u8, v, 10) catch s.ui_font_size;
+    if (core.sys.getenv("FELT_UI_FONT_SIZE")) |v| s.ui_font_size = std.fmt.parseInt(u8, v, 10) catch s.ui_font_size;
     return s;
 }
 
@@ -122,7 +125,7 @@ fn fail(err: anyerror, image: []const u8) u8 {
 
 fn writeStdout(s: []const u8) !void {
     var buf: [4096]u8 = undefined;
-    var w = std.fs.File.stdout().writer(&buf);
+    var w = std.Io.File.stdout().writer(core.sys.io(), &buf);
     try w.interface.writeAll(s);
     try w.interface.flush();
 }

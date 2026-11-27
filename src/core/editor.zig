@@ -2,6 +2,7 @@
 //! tool/color/size state, an in-progress preview, and commands (save, copy,
 //! quit) for the app to run. It never draws and never does IO.
 const std = @import("std");
+const sys = @import("sys.zig");
 const builtin = @import("builtin");
 const geom = @import("geom.zig");
 const input = @import("input.zig");
@@ -2597,7 +2598,7 @@ fn browserFixture(tmp: *std.testing.TmpDir, n: usize) ![]u8 {
     const Canvas = @import("canvas.zig").Canvas;
     const image_io = @import("image_io.zig");
     const gpa = std.testing.allocator;
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try sys.realPathAlloc(tmp.dir, ".", gpa);
     errdefer gpa.free(dir);
     var cv = try Canvas.init(gpa, 60, 40);
     defer cv.deinit(gpa);
@@ -2608,10 +2609,10 @@ fn browserFixture(tmp: *std.testing.TmpDir, n: usize) ![]u8 {
         const p = try std.fs.path.join(gpa, &.{ dir, name });
         defer gpa.free(p);
         try image_io.savePng(gpa, &cv, p);
-        var f = try tmp.dir.openFile(name, .{ .mode = .read_write });
-        defer f.close();
+        var f = try tmp.dir.openFile(sys.io(), name, .{ .mode = .read_write });
+        defer f.close(sys.io());
         const t: i128 = (1000 + @as(i128, @intCast(i)) * 100) * std.time.ns_per_s;
-        try f.updateTimes(t, t);
+        try sys.updateTimes(f, t, t);
     }
     return dir;
 }

@@ -2,6 +2,7 @@
 //! and encode a Canvas to PNG (file or memory, via stb_image_write).
 //! Transparent pixels are flattened over white: the pipeline is opaque.
 const std = @import("std");
+const sys = @import("sys.zig");
 const c = @import("c.zig").c;
 const Canvas = @import("canvas.zig").Canvas;
 const png = @import("png.zig");
@@ -30,14 +31,14 @@ pub fn decodeStb(gpa: std.mem.Allocator, bytes: []const u8) Error!Canvas {
 
 /// Read and decode an image file.
 pub fn load(gpa: std.mem.Allocator, path: []const u8) !Canvas {
-    const bytes = try std.fs.cwd().readFileAlloc(gpa, path, 512 * 1024 * 1024);
+    const bytes = try sys.readFileAlloc(gpa, path, 512 * 1024 * 1024);
     defer gpa.free(bytes);
     return decode(gpa, bytes);
 }
 
 /// Width and height of an image file, read from its header (no decode).
 pub fn info(gpa: std.mem.Allocator, path: []const u8) !struct { w: u32, h: u32 } {
-    const z = try gpa.dupeZ(u8, path);
+    const z = try gpa.dupeSentinel(u8, path, 0);
     defer gpa.free(z);
     var w: c_int = 0;
     var h: c_int = 0;
@@ -93,11 +94,11 @@ pub fn encodePngStb(gpa: std.mem.Allocator, cv: *const Canvas) ![]u8 {
 pub fn savePng(gpa: std.mem.Allocator, cv: *const Canvas, path: []const u8) !void {
     const bytes = try encodePng(gpa, cv);
     defer gpa.free(bytes);
-    var buf: [4096]u8 = undefined;
-    var af = try std.fs.cwd().atomicFile(path, .{ .write_buffer = &buf });
-    defer af.deinit();
-    try af.file_writer.interface.writeAll(bytes);
-    try af.finish();
+    try sys.atomicWrite(path, false, bytes, struct {
+        fn f(b: []const u8, w: *std.Io.Writer) !void {
+            try w.writeAll(b);
+        }
+    }.f);
 }
 
 const Sink = struct {
@@ -142,7 +143,7 @@ test "info reads the header of a file" {
     @memset(cv.pixels, 0xff102030);
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
     const path = try std.fs.path.join(gpa, &.{ dir, "a.png" });
     defer gpa.free(path);

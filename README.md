@@ -41,7 +41,7 @@ fits on a screenshot key.
 
 ## Install
 
-Needs Zig 0.15.2 (pinned in `mise.toml`), X11 headers (`libx11-dev`,
+Needs Zig 0.17.1 (pinned in `mise.toml`), X11 headers (`libx11-dev`,
 `libxext-dev`) and, for Ctrl+C, `xclip`.
 
 ```sh

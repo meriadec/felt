@@ -83,14 +83,14 @@ pub const State = struct {
     /// the panels whose value or rect changed: a toast that changes each
     /// frame (crop size) does not repaint the dock.
     pub fn panelSig(s: State, p: Panel) u64 {
-        var h = std.hash.Wyhash.init(@intFromEnum(p));
+        var h = std.hash.Wyhash.init(@backingInt(p));
         switch (p) {
             .dock => {
-                h.update(&.{ @intFromEnum(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible) });
+                h.update(&.{ @backingInt(s.tool), s.color_idx, s.size_idx, @intFromBool(s.help_visible) });
                 h.update(std.mem.asBytes(&(s.hover.dockKey() | @as(u32, @intFromBool(s.hover.down)) << 16)));
             },
             .style_switch => {
-                h.update(&.{ @intFromEnum(s.tool), @intFromEnum(s.arrow_style), @intFromEnum(s.text_style) });
+                h.update(&.{ @backingInt(s.tool), @backingInt(s.arrow_style), @backingInt(s.text_style) });
                 h.update(std.mem.asBytes(&(s.hover.dockKey() | @as(u32, @intFromBool(s.hover.down)) << 16)));
             },
             .top_bar => {
@@ -135,17 +135,17 @@ pub const Hover = struct {
 
     fn dockKey(h: Hover) u32 {
         return if (h.dock) |x| switch (x) {
-            .tool => |t| 1 + @as(u32, @intFromEnum(t)),
+            .tool => |t| 1 + @as(u32, @backingInt(t)),
             .color => |i| 64 + @as(u32, i),
             .size => 128,
             .help => 129,
-            .arrow_style => |st| 130 + @as(u32, @intFromEnum(st)),
-            .text_style => |st| 132 + @as(u32, @intFromEnum(st)),
+            .arrow_style => |st| 130 + @as(u32, @backingInt(st)),
+            .text_style => |st| 132 + @as(u32, @backingInt(st)),
         } else 0;
     }
 
     fn barKey(h: Hover) u32 {
-        return if (h.bar) |x| 1 + @as(u32, @intFromEnum(x)) else 0;
+        return if (h.bar) |x| 1 + @as(u32, @backingInt(x)) else 0;
     }
 };
 

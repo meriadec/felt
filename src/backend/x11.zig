@@ -45,7 +45,7 @@ const Load = struct {
     ns: u64 = 0,
 
     fn run(self: *Load, gpa: std.mem.Allocator, path: []const u8) void {
-        var t = std.time.Timer.start() catch unreachable;
+        var t = core.sys.Timer.start() catch unreachable;
         self.image = core.image_io.load(gpa, path);
         self.ns = t.read();
     }
@@ -70,7 +70,7 @@ fn clickCount(last: anytype, time: c_ulong, x: f32, y: f32) u8 {
     return last.clicks;
 }
 
-pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void {
+pub fn run(gpa: std.mem.Allocator, opts: Options, start: *core.sys.Timer) !void {
     var load = Load{};
     var loader: ?std.Thread = null;
     if (opts.image) |img| {
@@ -78,7 +78,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     } else loader = try std.Thread.spawn(.{}, Load.run, .{ &load, gpa, opts.image_path.? });
     defer if (loader) |t| t.join();
     // The config file, while the image decodes (a few µs).
-    var t_cfg = try std.time.Timer.start();
+    var t_cfg = try core.sys.Timer.start();
     const settings = config.resolve(if (opts.config_path) |p| config.load(p) else .{}, opts.canvas_bg);
     const cfg_ns = t_cfg.read();
 
@@ -104,7 +104,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     var class_hint = c.XClassHint{ .res_name = @constCast("felt"), .res_class = @constCast("felt") };
     _ = c.XSetClassHint(dpy, win, &class_hint);
     var title_buf: [512]u8 = undefined;
-    const title = std.fmt.bufPrintZ(&title_buf, "felt: {s}", .{if (opts.image_path) |p| std.fs.path.basename(p) else "capture"}) catch "felt";
+    const title = std.fmt.bufPrintSentinel(&title_buf, "felt: {s}", .{if (opts.image_path) |p| std.fs.path.basename(p) else "capture"}, 0) catch "felt";
     _ = c.XStoreName(dpy, win, title.ptr);
     var wm_hints = std.mem.zeroes(c.XWMHints);
     wm_hints.flags = c.InputHint;
@@ -139,12 +139,12 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
     const app = try app_mod.App.create(gpa, image, sw, sh, .{ .output_path = opts.output_path, .settings = settings, .settings_path = opts.config_path, .montage_output = opts.montage_output });
     defer app.destroy();
     // The file browser: background work wakes the loop through a pipe.
-    const wake = try std.posix.pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
-    defer std.posix.close(wake[0]);
-    defer std.posix.close(wake[1]);
+    const wake = try core.sys.pipe2(.{ .NONBLOCK = true, .CLOEXEC = true });
+    defer core.sys.close(wake[0]);
+    defer core.sys.close(wake[1]);
     app.editor.browser.threaded = true;
     app.editor.browser.wake_fd = wake[1];
-    try app.editor.browser.setHome(std.posix.getenv("HOME"));
+    try app.editor.browser.setHome(core.sys.getenv("HOME"));
     app.editor.browser.tz_off = localOffset();
     for (opts.extra_paths) |p| {
         app.addImageFile(.{ .path = p, .at = @as(@FieldType(@import("script.zig").AddImage, "at"), .{ .side = .right }) }) catch |err| {
@@ -271,7 +271,7 @@ pub fn run(gpa: std.mem.Allocator, opts: Options, start: *std.time.Timer) !void 
             _ = c.XDefineCursor(dpy, win, cursors.get(shown_cursor));
         }
         if (need_render and exposed) {
-            var t = try std.time.Timer.start();
+            var t = try core.sys.Timer.start();
             const dmg = try app.render();
             const t_render = t.lap();
             surf.present(dpy, win, gc, dmg.slice());

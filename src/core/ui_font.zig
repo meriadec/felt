@@ -4,6 +4,7 @@
 //! not load gives the embedded font (one stderr warning). Hold it at a
 //! stable address: the font points into the file bytes.
 const std = @import("std");
+const sys = @import("sys.zig");
 const Font = @import("font.zig").Font;
 const settings = @import("settings.zig");
 
@@ -26,7 +27,7 @@ pub const UiFont = struct {
     }
 
     fn load(u: *UiFont, path: []const u8, size: u8) !void {
-        u.bytes = try std.fs.cwd().readFileAlloc(u.gpa, path, max_file);
+        u.bytes = try sys.readFileAlloc(u.gpa, path, max_file);
         var f = try Font.init(u.gpa, u.bytes.?);
         f.size_k = @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(settings.ui_font_size_default));
         f.by_em = true;

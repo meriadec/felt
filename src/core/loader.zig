@@ -7,6 +7,7 @@
 //! so replays are deterministic.
 //! A loader must not move once the first job ran (the thread keeps its address).
 const std = @import("std");
+const sys = @import("sys.zig");
 const dirlist = @import("dirlist.zig");
 const thumbs = @import("thumbs.zig");
 
@@ -47,8 +48,8 @@ pub const Loader = struct {
     threaded: bool,
     /// Written (one byte) after each result, if set.
     wake_fd: ?std.posix.fd_t = null,
-    mutex: std.Thread.Mutex = .{},
-    cond: std.Thread.Condition = .{},
+    mutex: std.Io.Mutex = .init,
+    cond: std.Io.Condition = .init,
     jobs: std.ArrayList(Job) = .empty,
     results: std.ArrayList(Result) = .empty,
     /// A job is running on the worker.
@@ -57,10 +58,10 @@ pub const Loader = struct {
     thread: ?std.Thread = null,
 
     pub fn deinit(self: *Loader) void {
-        self.mutex.lock();
+        self.mutex.lockUncancelable(sys.io());
         self.quit = true;
-        self.cond.signal();
-        self.mutex.unlock();
+        self.cond.signal(sys.io());
+        self.mutex.unlock(sys.io());
         if (self.thread) |t| t.join();
         for (self.jobs.items) |j| freeJob(self.gpa, j);
         self.jobs.deinit(self.gpa);
@@ -78,8 +79,8 @@ pub const Loader = struct {
             try self.results.append(self.gpa, r);
             return;
         }
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(sys.io());
+        defer self.mutex.unlock(sys.io());
         if (self.thread == null) self.thread = try std.Thread.spawn(.{}, work, .{self});
         if (job == .list) {
             var i: usize = 0;
@@ -90,14 +91,14 @@ pub const Loader = struct {
             }
             try self.jobs.insert(self.gpa, 0, job);
         } else try self.jobs.append(self.gpa, job);
-        self.cond.signal();
+        self.cond.signal(sys.io());
     }
 
     /// Drop the queued thumbnail jobs (the user scrolled away). The one
     /// running finishes. Returns how many were dropped.
     pub fn dropThumbs(self: *Loader) usize {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(sys.io());
+        defer self.mutex.unlock(sys.io());
         var n: usize = 0;
         var i: usize = 0;
         while (i < self.jobs.items.len) {
@@ -111,40 +112,40 @@ pub const Loader = struct {
 
     /// The next finished result, or null. Caller owns it (`Result.deinit`).
     pub fn take(self: *Loader) ?Result {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(sys.io());
+        defer self.mutex.unlock(sys.io());
         if (self.results.items.len == 0) return null;
         return self.results.orderedRemove(0);
     }
 
     /// Jobs are queued or running, or results wait.
     pub fn busy(self: *Loader) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(sys.io());
+        defer self.mutex.unlock(sys.io());
         return self.jobs.items.len > 0 or self.running or self.results.items.len > 0;
     }
 
     fn work(self: *Loader) void {
         while (true) {
-            self.mutex.lock();
-            while (self.jobs.items.len == 0 and !self.quit) self.cond.wait(&self.mutex);
+            self.mutex.lockUncancelable(sys.io());
+            while (self.jobs.items.len == 0 and !self.quit) self.cond.waitUncancelable(sys.io(), &self.mutex);
             if (self.quit) {
-                self.mutex.unlock();
+                self.mutex.unlock(sys.io());
                 return;
             }
             const job = self.jobs.orderedRemove(0);
             self.running = true;
-            self.mutex.unlock();
+            self.mutex.unlock(sys.io());
             const r = execute(self.gpa, job);
             freeJob(self.gpa, job);
-            self.mutex.lock();
+            self.mutex.lockUncancelable(sys.io());
             self.running = false;
             self.results.append(self.gpa, r) catch {
                 var rr = r;
                 rr.deinit(self.gpa);
             };
-            self.mutex.unlock();
-            if (self.wake_fd) |fd| _ = std.posix.write(fd, "x") catch 0;
+            self.mutex.unlock(sys.io());
+            if (self.wake_fd) |fd| _ = sys.write(fd, "x") catch 0;
         }
     }
 };
@@ -171,7 +172,7 @@ fn fixture(tmp: *testing.TmpDir) ![]u8 {
     var cv = try Canvas.init(testing.allocator, 40, 20);
     defer cv.deinit(testing.allocator);
     @memset(cv.pixels, 0xff336699);
-    const dir = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    const dir = try sys.realPathAlloc(tmp.dir, ".", testing.allocator);
     errdefer testing.allocator.free(dir);
     const p = try std.fs.path.join(testing.allocator, &.{ dir, "a.png" });
     defer testing.allocator.free(p);
@@ -206,9 +207,9 @@ test "loader: a worker thread delivers, wakes, and drops queued thumbnails" {
     defer tmp.cleanup();
     const dir = try fixture(&tmp);
     defer testing.allocator.free(dir);
-    const fds = try std.posix.pipe();
-    defer std.posix.close(fds[0]);
-    defer std.posix.close(fds[1]);
+    const fds = try sys.pipe2(.{});
+    defer sys.close(fds[0]);
+    defer sys.close(fds[1]);
     var l = Loader{ .gpa = testing.allocator, .threaded = true, .wake_fd = fds[1] };
     defer l.deinit();
     try l.submit(.{ .list = .{ .gen = 1, .path = try testing.allocator.dupe(u8, dir) } });
@@ -226,6 +227,6 @@ test "loader: a worker thread delivers, wakes, and drops queued thumbnails" {
         if (l.take()) |*x| {
             var y = x.*;
             y.deinit(testing.allocator);
-        } else std.Thread.sleep(1_000_000);
+        } else sys.sleepNs(1_000_000);
     }
 }

@@ -5,6 +5,7 @@
 //! `list` does file IO (one `stat` per folder or image name); the browser
 //! runs it on the worker thread (loader.zig).
 const std = @import("std");
+const sys = @import("sys.zig");
 
 pub const Entry = struct {
     /// The file name, no path. Owned by the `Listing`.
@@ -47,28 +48,28 @@ pub fn newerFirst(_: void, a: Entry, b: Entry) bool {
 /// List `path`: folders and images, not hidden, sorted (`newerFirst`).
 /// A name that cannot be `stat`ed (a broken link) is skipped.
 pub fn list(gpa: std.mem.Allocator, path: []const u8) !Listing {
-    var dir = try std.fs.cwd().openDir(path, .{ .iterate = true });
-    defer dir.close();
+    var dir = try sys.cwd().openDir(sys.io(), path, .{ .iterate = true });
+    defer dir.close(sys.io());
     var out = Listing{ .arena = std.heap.ArenaAllocator.init(gpa), .entries = &.{} };
     errdefer out.arena.deinit();
     const a = out.arena.allocator();
     var entries: std.ArrayList(Entry) = .empty; // freed below: the arena holds only the names
     defer entries.deinit(gpa);
     var it = dir.iterate();
-    while (try it.next()) |e| {
+    while (try it.next(sys.io())) |e| {
         if (isHidden(e.name)) continue;
         switch (e.kind) {
             .directory, .sym_link, .unknown => {},
             .file => if (!isImageName(e.name)) continue,
             else => continue,
         }
-        const st = dir.statFile(e.name) catch continue; // follows links
+        const st = dir.statFile(sys.io(), e.name, .{}) catch continue; // follows links
         const is_dir = st.kind == .directory;
         if (!is_dir and !(st.kind == .file and isImageName(e.name))) continue;
         try entries.append(gpa, .{
             .name = try a.dupe(u8, e.name),
             .is_dir = is_dir,
-            .mtime = @intCast(@divFloor(st.mtime, std.time.ns_per_s)),
+            .mtime = @intCast(st.mtime.toSeconds()),
             .size = st.size,
         });
     }
@@ -100,7 +101,7 @@ pub fn tildePath(buf: []u8, path: []const u8, home: ?[]const u8) []const u8 {
     var rest = path;
     var pre: []const u8 = "";
     if (home) |h| {
-        const hh = std.mem.trimRight(u8, h, "/");
+        const hh = std.mem.trimEnd(u8, h, "/");
         if (hh.len > 0 and std.mem.startsWith(u8, path, hh) and (path.len == hh.len or path[hh.len] == '/')) {
             pre = "~";
             rest = path[hh.len..];
@@ -151,17 +152,17 @@ test "sort: newest first, folders and images mixed, ties by name" {
 test "list: filters hidden and other files, mixes by mtime" {
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.writeFile(.{ .sub_path = "a.png", .data = "x" });
-    try tmp.dir.writeFile(.{ .sub_path = ".hidden.png", .data = "x" });
-    try tmp.dir.writeFile(.{ .sub_path = "notes.txt", .data = "x" });
-    try tmp.dir.makeDir("folder");
-    try tmp.dir.makeDir(".dot");
+    try tmp.dir.writeFile(sys.io(), .{ .sub_path = "a.png", .data = "x" });
+    try tmp.dir.writeFile(sys.io(), .{ .sub_path = ".hidden.png", .data = "x" });
+    try tmp.dir.writeFile(sys.io(), .{ .sub_path = "notes.txt", .data = "x" });
+    try tmp.dir.createDir(sys.io(), "folder", .default_dir);
+    try tmp.dir.createDir(sys.io(), ".dot", .default_dir);
     {
-        var f = try tmp.dir.openFile("a.png", .{ .mode = .read_write });
-        defer f.close();
-        try f.updateTimes(1_000_000_000_000, 1_000_000_000_000); // ns: 1000 s
+        var f = try tmp.dir.openFile(sys.io(), "a.png", .{ .mode = .read_write });
+        defer f.close(sys.io());
+        try sys.updateTimes(f, 1_000_000_000_000, 1_000_000_000_000); // ns: 1000 s
     }
-    const p = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    const p = try sys.realPathAlloc(tmp.dir, ".", testing.allocator);
     defer testing.allocator.free(p);
     var l = try list(testing.allocator, p);
     defer l.deinit();

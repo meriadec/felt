@@ -6,6 +6,7 @@
 //! knows the screen size only for the geometry (browsergeo.zig). The editor
 //! owns one and routes the input; browser_draw.zig draws it.
 const std = @import("std");
+const sys = @import("sys.zig");
 const dirlist = @import("dirlist.zig");
 const thumbs = @import("thumbs.zig");
 const loader_mod = @import("loader.zig");
@@ -322,7 +323,7 @@ const testing = std.testing;
 /// A folder with 3 PNGs, a subfolder and a text file, mtimes set.
 fn fixtureDir(tmp: *testing.TmpDir) ![]u8 {
     const Canvas = @import("canvas.zig").Canvas;
-    const dir = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    const dir = try sys.realPathAlloc(tmp.dir, ".", testing.allocator);
     errdefer testing.allocator.free(dir);
     var cv = try Canvas.init(testing.allocator, 30, 20);
     defer cv.deinit(testing.allocator);
@@ -332,16 +333,16 @@ fn fixtureDir(tmp: *testing.TmpDir) ![]u8 {
         const p = try std.fs.path.join(testing.allocator, &.{ dir, n });
         defer testing.allocator.free(p);
         try image_io.savePng(testing.allocator, &cv, p);
-        var f = try tmp.dir.openFile(n, .{ .mode = .read_write });
-        defer f.close();
+        var f = try tmp.dir.openFile(sys.io(), n, .{ .mode = .read_write });
+        defer f.close(sys.io());
         const t: i128 = (1000 + @as(i128, @intCast(i)) * 100) * std.time.ns_per_s;
-        try f.updateTimes(t, t);
+        try sys.updateTimes(f, t, t);
     }
-    try tmp.dir.makeDir("sub");
-    try tmp.dir.writeFile(.{ .sub_path = "t.txt", .data = "x" });
-    var d = try tmp.dir.openDir("sub", .{});
-    defer d.close();
-    try d.writeFile(.{ .sub_path = "x.png", .data = "not an image" });
+    try tmp.dir.createDir(sys.io(), "sub", .default_dir);
+    try tmp.dir.writeFile(sys.io(), .{ .sub_path = "t.txt", .data = "x" });
+    var d = try tmp.dir.openDir(sys.io(), "sub", .{});
+    defer d.close(sys.io());
+    try d.writeFile(sys.io(), .{ .sub_path = "x.png", .data = "not an image" });
     return dir;
 }
 
@@ -394,13 +395,13 @@ test "browser: scroll clamps, hover changes bump the signature, worker thread" {
     var spins: usize = 0;
     while (b.status != .ready and spins < 5000) : (spins += 1) {
         _ = b.pump();
-        std.Thread.sleep(1_000_000);
+        sys.sleepNs(1_000_000);
     }
     try testing.expectEqual(Status.ready, b.status);
     spins = 0;
     while (b.busy() and spins < 5000) : (spins += 1) {
         _ = b.pump();
-        std.Thread.sleep(1_000_000);
+        sys.sleepNs(1_000_000);
     }
     try testing.expectEqual(thumbs.State.ready, b.thumbOf(b.entryOf(2).?).?.state);
     try testing.expect(!b.scrollBy(100)); // all rows fit

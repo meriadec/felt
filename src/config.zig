@@ -17,7 +17,7 @@ pub const Env = struct {
     home: ?[]const u8 = null,
 
     pub fn ofProcess() Env {
-        return .{ .xdg_config_home = std.posix.getenv("XDG_CONFIG_HOME"), .home = std.posix.getenv("HOME") };
+        return .{ .xdg_config_home = core.sys.getenv("XDG_CONFIG_HOME"), .home = core.sys.getenv("HOME") };
     }
 };
 
@@ -38,7 +38,7 @@ pub fn path(gpa: std.mem.Allocator, env: Env) !?[]u8 {
 /// big or unreadable (a bad line keeps its default, see settings.parse).
 pub fn load(p: []const u8) Settings {
     var buf: [settings.max_file + 1]u8 = undefined;
-    const src = std.fs.cwd().readFile(p, &buf) catch return .{};
+    const src = core.sys.cwd().readFile(core.sys.io(), p, &buf) catch return .{};
     return settings.parse(src); // a file over max_file reads as the defaults
 }
 
@@ -47,11 +47,11 @@ pub fn load(p: []const u8) Settings {
 /// Creates the directory. No fsync: after a crash the file may be old or
 /// empty, and an empty file reads as the defaults.
 pub fn save(p: []const u8, s: Settings) !void {
-    var buf: [512]u8 = undefined;
-    var af = try std.fs.cwd().atomicFile(p, .{ .make_path = true, .write_buffer = &buf });
-    defer af.deinit();
-    try settings.write(s, &af.file_writer.interface);
-    try af.finish();
+    try core.sys.atomicWrite(p, true, s, struct {
+        fn f(v: Settings, w: *std.Io.Writer) !void {
+            try settings.write(v, w);
+        }
+    }.f);
 }
 
 /// The settings for a session: the file's, with the command line flag on top.
@@ -77,7 +77,7 @@ test "path: XDG_CONFIG_HOME, else ~/.config, else none" {
 
 /// `name` inside the test's tmp dir, as an absolute path.
 fn tmpPath(gpa: std.mem.Allocator, tmp: *std.testing.TmpDir, name: []const u8) ![]u8 {
-    const dir = try tmp.dir.realpathAlloc(gpa, ".");
+    const dir = try core.sys.realPathAlloc(tmp.dir, ".", gpa);
     defer gpa.free(dir);
     return std.fs.path.join(gpa, &.{ dir, name });
 }
@@ -89,14 +89,14 @@ test "load: missing, good, bad, too big" {
     const p = try tmpPath(gpa, &tmp, "config");
     defer gpa.free(p);
     try std.testing.expectEqual(Settings{}, load(p)); // missing
-    try tmp.dir.writeFile(.{ .sub_path = "config", .data = "canvas_bg=dark\n" });
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = "config", .data = "canvas_bg=dark\n" });
     try std.testing.expectEqual(settings.CanvasBg.dark, load(p).canvas_bg);
-    try tmp.dir.writeFile(.{ .sub_path = "config", .data = "canvas_bg=\xff\x00black\n" });
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = "config", .data = "canvas_bg=\xff\x00black\n" });
     try std.testing.expectEqual(Settings{}, load(p));
-    const big = [_]u8{'#'} ** (settings.max_file + 10);
-    try tmp.dir.writeFile(.{ .sub_path = "config", .data = "canvas_bg=dark\n" ++ big });
+    const big: [settings.max_file + 10]u8 = @splat('#');
+    try tmp.dir.writeFile(core.sys.io(), .{ .sub_path = "config", .data = "canvas_bg=dark\n" ++ big });
     try std.testing.expectEqual(Settings{}, load(p));
-    try tmp.dir.makeDir("dir");
+    try tmp.dir.createDir(core.sys.io(), "dir", .default_dir);
     const d = try tmpPath(gpa, &tmp, "dir");
     defer gpa.free(d);
     try std.testing.expectEqual(Settings{}, load(d)); // not a file
@@ -112,11 +112,11 @@ test "save: creates the directory, replaces atomically, leaves no temp file" {
     try std.testing.expectEqual(settings.CanvasBg.dark, load(p).canvas_bg);
     try save(p, .{ .canvas_bg = .light });
     try std.testing.expectEqual(settings.CanvasBg.light, load(p).canvas_bg);
-    var dir = try tmp.dir.openDir("felt", .{ .iterate = true });
-    defer dir.close();
+    var dir = try tmp.dir.openDir(core.sys.io(), "felt", .{ .iterate = true });
+    defer dir.close(core.sys.io());
     var it = dir.iterate();
     var n: usize = 0;
-    while (try it.next()) |e| {
+    while (try it.next(core.sys.io())) |e| {
         try std.testing.expectEqualStrings("config", e.name);
         n += 1;
     }

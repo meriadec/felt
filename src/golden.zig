@@ -22,12 +22,12 @@ const channel_tolerance = 8;
 const max_bad_fraction = 0.0005;
 
 fn updating() bool {
-    return std.process.hasEnvVarConstant("FELT_UPDATE_GOLDENS");
+    return core.sys.hasEnv("FELT_UPDATE_GOLDENS");
 }
 
 /// No tolerance: any changed pixel fails.
 fn exact() bool {
-    return std.process.hasEnvVarConstant("FELT_EXACT_GOLDENS");
+    return core.sys.hasEnv("FELT_EXACT_GOLDENS");
 }
 
 const Diff = struct { bad: usize, max_delta: u32 };
@@ -54,7 +54,7 @@ fn compare(a: *const Canvas, b: *const Canvas, diff_img: ?*Canvas) Diff {
 }
 
 fn writeOut(gpa: std.mem.Allocator, cv: *const Canvas, name: []const u8, kind: []const u8) void {
-    std.fs.cwd().makePath(out_dir) catch {};
+    core.sys.cwd().createDirPath(core.sys.io(), out_dir) catch {};
     const p = std.fmt.allocPrint(gpa, "{s}/{s}.{s}.png", .{ out_dir, name, kind }) catch return;
     defer gpa.free(p);
     core.image_io.savePng(gpa, cv, p) catch {};
@@ -101,15 +101,15 @@ pub fn check(gpa: std.mem.Allocator, name: []const u8, actual: *const Canvas) !b
 
 /// Script names (without .txt), sorted. Caller frees.
 pub fn listScripts(gpa: std.mem.Allocator) ![][]const u8 {
-    var dir = try std.fs.cwd().openDir(scripts_dir, .{ .iterate = true });
-    defer dir.close();
+    var dir = try core.sys.cwd().openDir(core.sys.io(), scripts_dir, .{ .iterate = true });
+    defer dir.close(core.sys.io());
     var names: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (names.items) |n| gpa.free(n);
         names.deinit(gpa);
     }
     var it = dir.iterate();
-    while (try it.next()) |e| {
+    while (try it.next(core.sys.io())) |e| {
         if (e.kind != .file or !std.mem.endsWith(u8, e.name, ".txt")) continue;
         try names.append(gpa, try gpa.dupe(u8, e.name[0 .. e.name.len - 4]));
     }
@@ -213,7 +213,7 @@ fn goldenOne(gpa: std.mem.Allocator, name: []const u8) !usize {
 
 test "golden replays" {
     const gpa = std.testing.allocator;
-    std.fs.cwd().deleteTree(out_dir) catch {};
+    core.sys.cwd().deleteTree(core.sys.io(), out_dir) catch {};
     const names = try listScripts(gpa);
     defer {
         for (names) |n| gpa.free(n);
@@ -311,7 +311,7 @@ test "drawing past the image grows the exported PNG with the light canvas; undo 
     var image = try Canvas.init(gpa, 100, 50);
     image.fill(core.color.Color.rgb(0x808080));
     image.fillRect(core.geom.Rect.fromSize(0, 0, 10, 10), core.color.Color.rgb(0x102030));
-    std.fs.cwd().makePath(out_dir) catch {};
+    core.sys.cwd().createDirPath(core.sys.io(), out_dir) catch {};
     const path = out_dir ++ "/grow-test.png";
     const app = try App.create(gpa, image, 400, 300, .{ .output_path = path, .clipboard = .none });
     defer app.destroy();
@@ -413,7 +413,7 @@ test "docs/keymap.md is up to date" {
     var buf: [16 * 1024]u8 = undefined;
     var w = std.Io.Writer.fixed(&buf);
     try core.keymap.writeMarkdown(&w);
-    const on_disk = std.fs.cwd().readFileAlloc(gpa, "docs/keymap.md", 1 << 20) catch "";
+    const on_disk = core.sys.readFileAlloc(gpa, "docs/keymap.md", 1 << 20) catch "";
     defer if (on_disk.len > 0) gpa.free(on_disk);
     if (!std.mem.eql(u8, on_disk, w.buffered())) {
         std.debug.print("docs/keymap.md is stale. Run: zig build docs\n", .{});

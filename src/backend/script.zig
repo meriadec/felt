@@ -121,7 +121,7 @@ pub fn parse(gpa: std.mem.Allocator, src: []const u8, err: *ParseError) !Script 
     while (lines.next()) |raw| {
         n += 1;
         err.line = n;
-        parseLine(gpa, &s, std.mem.trimRight(u8, raw, "\r"), err) catch |e| {
+        parseLine(gpa, &s, std.mem.trimEnd(u8, raw, "\r"), err) catch |e| {
             if (e == error.OutOfMemory) return e;
             return error.BadScript;
         };
@@ -140,7 +140,7 @@ fn num(err: *ParseError, it: *std.mem.TokenIterator(u8, .scalar)) !f32 {
 }
 
 fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseError) !void {
-    const trimmed = std.mem.trimLeft(u8, line, " \t");
+    const trimmed = std.mem.trimStart(u8, line, " \t");
     if (trimmed.len == 0 or trimmed[0] == '#') return;
     var it = std.mem.tokenizeScalar(u8, trimmed, ' ');
     const cmd = it.next().?;
@@ -250,7 +250,7 @@ fn parseLine(gpa: std.mem.Allocator, s: *Script, line: []const u8, err: *ParseEr
         }
     } else if (std.mem.eql(u8, cmd, "type")) {
         // Everything after "type " is literal text; "\n" types Shift+Enter.
-        const rest = std.mem.trimLeft(u8, trimmed["type".len..], " ");
+        const rest = std.mem.trimStart(u8, trimmed["type".len..], " ");
         const text = if (rest.len > 0 and rest[0] == '"' and rest[rest.len - 1] == '"' and rest.len >= 2) rest[1 .. rest.len - 1] else rest;
         var i: usize = 0;
         while (i < text.len) {

@@ -6,6 +6,7 @@
 //! `frame` = scene + canvas background the shape in progress adds + crop dimming +
 //! chrome + preview, repainted only in damaged rects.
 const std = @import("std");
+const sys = @import("sys.zig");
 const geom = @import("geom.zig");
 const color = @import("color.zig");
 const draw = @import("draw.zig");
@@ -155,10 +156,10 @@ pub const Prof = struct {
 
 /// A timer that reads 0 where the OS has none.
 const Clock = struct {
-    t: ?std.time.Timer,
+    t: ?sys.Timer,
 
     fn start() Clock {
-        return .{ .t = std.time.Timer.start() catch null };
+        return .{ .t = sys.Timer.start() catch null };
     }
     fn read(c: *Clock) u64 {
         return if (c.t) |*t| t.read() else 0;

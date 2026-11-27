@@ -196,9 +196,9 @@ test "every icon draws inside its box" {
     const gpa = std.testing.allocator;
     var cv = try Canvas.init(gpa, 40, 40);
     defer cv.deinit(gpa);
-    inline for (std.meta.fields(Tool)) |f| {
+    inline for (std.enums.values(Tool)) |tool| {
         cv.fill(.{ .r = 0, .g = 0, .b = 0 });
-        draw(&cv, cv.bounds(), @enumFromInt(f.value), .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
+        draw(&cv, cv.bounds(), tool, .{ .x = 20, .y = 20 }, 24, .{ .r = 255, .g = 255, .b = 255 });
         var ink: usize = 0;
         for (cv.pixels, 0..) |px, i| if (px != 0xff000000) {
             ink += 1;
