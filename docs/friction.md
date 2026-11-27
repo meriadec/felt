@@ -15,3 +15,4 @@ manual step, a missing doc.
 
 - A 16-bit PNG (ImageMagick `gradient:` default) opens as a blank scene with no toast, in the montage CLI path (seen with `felt A.png B.png C.png`; 8-bit PNG24 works). Find out why and show an error or convert.
 - `zig build bench` aborts at HEAD with `BenchNoStairsStyle` (then `BenchNoStairsCallout`) in the drag-stairs cases (bench.zig ~317, ~411), also with an empty config. The callout setup there no longer leaves the stairs style on; fix the setup and let the bench run to the end. (2026-11, found during the Zig 0.17 port)
+- `zig build smoke-x11` fails on this desktop (also on Zig 0.15.2): "saved 1655x942, expected wider than 1200x750". i3 sizes the window, so the size check of scripts/x11-smoke.sh does not hold. Make the check independent of the window manager. (2026-11)
