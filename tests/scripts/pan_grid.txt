@@ -1,0 +1,7 @@
+# A pan scrolls the image but not the screen grid: the grid lines stay on the
+# lines the panels sit on (no sheared or doubled lines at the strip seams).
+size 900 500
+wheel down 3 at 450 250 ctrl
+key left
+key left
+key up

@@ -420,7 +420,10 @@ pub const Compositor = struct {
                 self.scene.?.scroll(dx, dy);
                 var old = s;
                 old.canvas_dst = v.rect(self.scene_canvas);
-                for (full_rect.minus(full_rect.offset(dx, dy))) |strip| try self.paintScene(&old, strip, self.scene_count);
+                // The screen grid does not pan: repaint everything outside the
+                // canvas, and inside it only the uncovered strips.
+                for (full_rect.minus(old.canvas_dst)) |band| try self.paintScene(&old, band, self.scene_count);
+                for (full_rect.minus(full_rect.offset(dx, dy))) |strip| try self.paintScene(&old, strip.intersect(old.canvas_dst), self.scene_count);
                 full = true;
             } else {
                 try self.ensureCanvas(&self.scene, w, h);
