@@ -1355,12 +1355,12 @@ pub const Editor = struct {
     }
 
     /// Montage mode starts (the scene goes from 1 to 2 images): a padding the
-    /// user never chose becomes the 2nd step of `padding_steps`. Same path as
+    /// user never chose becomes the 3rd entry of `padding_steps` (96 px). Same path as
     /// `setPadding` (canvas, toast), so the view does not move. Undo of the
     /// image keeps the padding: it is a setting, not a document step.
     pub fn montageStarted(self: *Editor) void {
         if (self.padding_touched or self.settings.padding != settings.padding_steps[0]) return;
-        _ = self.applyPadding(settings.padding_steps[1]);
+        _ = self.applyPadding(settings.padding_steps[2]);
     }
 
     fn applyPadding(self: *Editor, px: u16) bool {

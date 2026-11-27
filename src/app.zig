@@ -290,7 +290,7 @@ fn addTile(app: *App) !void {
     try app.addImageFile(.{ .path = "tests/fixtures/tile_a.png", .at = Placement{ .side = .right } });
 }
 
-test "montage start: an untouched padding becomes the 2nd step, once, view unchanged" {
+test "montage start: an untouched padding becomes the 3rd entry (96 px), once, view unchanged" {
     const gpa = std.testing.allocator;
     const app = try montageApp(gpa);
     defer app.destroy();
@@ -299,13 +299,14 @@ test "montage start: an untouched padding becomes the 2nd step, once, view uncha
     app.editor.fit();
     const view = app.editor.view.xf;
     try addTile(app);
-    try std.testing.expectEqual(core.settings.padding_steps[1], app.editor.settings.padding);
+    try std.testing.expectEqual(core.settings.padding_steps[2], app.editor.settings.padding);
     try std.testing.expect(std.meta.eql(view, app.editor.view.xf));
     // The padding is no document step: undo of the image keeps it.
     try std.testing.expect(app.editor.canUndo());
     _ = try app.handle(.{ .key = .{ .key = .{ .char = 'z' }, .mods = .{ .ctrl = true } } });
-    try std.testing.expectEqual(core.settings.padding_steps[1], app.editor.settings.padding);
+    try std.testing.expectEqual(core.settings.padding_steps[2], app.editor.settings.padding);
     // The user lowers it to 0: a third image does not bring it back.
+    _ = try app.handle(.{ .key = .{ .key = .{ .char = ',' } } });
     _ = try app.handle(.{ .key = .{ .key = .{ .char = ',' } } });
     try std.testing.expectEqual(@as(u16, 0), app.editor.settings.padding);
     try addTile(app);
