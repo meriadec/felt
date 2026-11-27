@@ -40,21 +40,25 @@ pub const TopBar = struct {
         var s = style.uiScale(h);
         const nat = 2 * pad + n_buttons * slot + (n_buttons - 2) * slot_gap + sep_w;
         const avail = 2 * grid.step(h) * @floor(W / (2 * grid.step(h)));
-        if (nat * s > avail) s = avail / nat;
+        if ((nat - 2 * pad) * s + 2 * grid.step(h) - 40 * s > avail) s = @max(0.2, (avail - 2 * grid.step(h)) / (nat - 2 * pad - 40));
         const st = grid.step(h);
-        const pw = grid.evenCells(nat * s, st);
         const ph = 2 * st;
+        // The same padding as the style switch; the room the grid adds goes to the separator.
+        const gap = (ph - slot * s) / 2;
+        const need = (nat - 2 * pad) * s + 2 * gap;
+        const pw = grid.evenCells(need, st);
+        const sep = sep_w * s + (pw - need);
         const lx0 = grid.centerX(w) - pw / 2;
         const ly0 = grid.atLeast(grid.centerY(h), st, margin * s);
         var b: TopBar = .{ .s = s, .panel = grid.panel(lx0, ly0, lx0 + pw, ly0 + ph), .slots = undefined, .sep = 0 };
         const x0 = lx0 + 0.5;
         const y0 = ly0 + 0.5 + (ph - slot * s) / 2 - pad * s;
-        var x = x0 + (pw - nat * s) / 2 + pad * s;
+        var x = x0 + gap;
         for (&b.slots, buttons) |*r, btn| {
             if (btn == .canvas_bg) { // after the separator, not a gap
                 x -= slot_gap * s;
-                b.sep = x + sep_w * s / 2;
-                x += sep_w * s;
+                b.sep = x + sep / 2;
+                x += sep;
             }
             r.* = .{ .min = .{ .x = x, .y = y0 + pad * s }, .max = .{ .x = x + slot * s, .y = y0 + (pad + slot) * s } };
             x += (slot + slot_gap) * s;

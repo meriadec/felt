@@ -69,7 +69,7 @@ pub const Dock = struct {
         const H: f32 = @floatFromInt(h);
         var s = style.uiScale(h);
         const avail = 2 * grid.step(h) * @floor(W / (2 * grid.step(h)));
-        if (naturalWidth() * s > avail) s = avail / naturalWidth();
+        if ((naturalWidth() - 2 * pad) * s + 2 * grid.step(h) - 40 * s > avail) s = @max(0.2, (avail - 2 * grid.step(h)) / (naturalWidth() - 2 * pad - 40));
 
         var d: Dock = undefined;
         d.s = s;
@@ -77,8 +77,13 @@ pub const Dock = struct {
         // The panel sits on the grid: two cells high, an even number wide,
         // centered, its bottom edge on the last line above the margin.
         const st = grid.step(h);
-        const pw = grid.evenCells(naturalWidth() * s, st);
         const ph = 2 * st;
+        // The same padding on every side as the style switch: the room the
+        // grid adds goes to the two gaps between the groups.
+        const gap = (ph - slot * s) / 2;
+        const need = (naturalWidth() - 2 * pad) * s + 2 * gap;
+        const pw = grid.evenCells(need, st);
+        const sep = sep_w * s + (pw - need) / 2;
         const lx0 = grid.centerX(w) - pw / 2;
         const ly1 = grid.atMost(grid.centerY(h), st, H - margin * s);
         d.panel = grid.panel(lx0, ly1 - ph, lx0 + pw, ly1);
@@ -86,19 +91,19 @@ pub const Dock = struct {
         const y0 = ly1 - ph + 0.5;
         const top = y0 + (ph - slot * s) / 2;
         const cy = top + slot * s / 2;
-        var x = x0 + (pw - naturalWidth() * s) / 2 + pad * s;
+        var x = x0 + gap;
         for (&d.tools) |*b| {
             b.* = .{ .min = .{ .x = x, .y = top }, .max = .{ .x = x + slot * s, .y = top + slot * s } };
             x += (slot + slot_gap) * s;
         }
         x -= slot_gap * s;
-        x += sep_w * s;
+        x += sep;
         d.swatch_r = 7 * s;
         for (&d.swatches) |*c| {
             c.* = .{ .x = x + swatch_pitch * s / 2, .y = cy };
             x += swatch_pitch * s;
         }
-        x += sep_w * s;
+        x += sep;
         d.size = .{ .min = .{ .x = x, .y = top }, .max = .{ .x = x + slot * s, .y = top + slot * s } };
         x += (slot + slot_gap) * s;
         d.help = .{ .min = .{ .x = x, .y = top + (slot - help_w) * s / 2 }, .max = .{ .x = x + help_w * s, .y = top + (slot + help_w) * s / 2 } };

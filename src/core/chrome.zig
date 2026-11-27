@@ -363,7 +363,8 @@ fn layoutBrowser(l: *Layout, st: State, g: *const browsergeo.Geo) void {
     const s = g.s;
     l.panel(.folder_btn, g.folder, 0);
     const open = st.browser != null;
-    const r = Bounds{ .min = g.folder.min.add(.{ .x = 2 * s, .y = 2 * s }), .max = g.folder.max.sub(.{ .x = 2 * s, .y = 2 * s }) };
+    const fc = center(g.folder);
+    const r = Bounds{ .min = fc.sub(.{ .x = 20 * s, .y = 20 * s }), .max = fc.add(.{ .x = 20 * s, .y = 20 * s }) };
     l.button(st, r, 0, s, open, st.hover.folder);
     const ink = if (open) nord.n0 else if (st.hover.folder) nord.n6 else nord.n4;
     l.push(.{ .folder = .{ .c = center(r), .size = 22 * s, .color = ink } });

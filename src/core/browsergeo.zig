@@ -22,7 +22,7 @@ const header_h = 44.0;
 const row_h_1 = 64.0;
 const thumb_w_1 = 96.0;
 const thumb_h_1 = 56.0;
-const inner = 6.0;
+const inner = 12.0;
 
 pub const Hit = union(enum) {
     /// The folder button (opens and closes the panel).
