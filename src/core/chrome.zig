@@ -149,10 +149,10 @@ pub const Hover = struct {
     }
 };
 
-/// Panels: the exact screen background (compositor.background) with a 1 px
-/// border in the grid line color (compositor.grid_color).
-const panel_bg = Color.rgb(0x15181E);
-const panel_border = Color.rgb(0x1B1F26);
+/// Panels: the screen background color (compositor.background) a little
+/// transparent, with an opaque 3 px border, brighter than the grid lines.
+const panel_bg = Color.rgb(0x15181E).withAlpha(232);
+const panel_border = Color.rgb(0x2C323E);
 /// Buttons: a faint wash on hover with a hairline, a stronger one while pressed.
 const hover_bg = nord.n6.withAlpha(24);
 const hover_line = nord.n4.withAlpha(56);
