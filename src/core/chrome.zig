@@ -3,8 +3,8 @@
 //! redo, canvas background; geometry in topbar.zig), the padding widget at the
 //! bottom right (a slider; geometry in padbar.zig), the help overlay with
 //! every shortcut (from keymap.zig, behind `?`/F1), and the toast pill at the
-//! top. Everything scales with style.uiScale. Crisp frost-glass look:
-//! translucent Nord surfaces, 1 px hairline borders and a top sheen, square
+//! top. Everything scales with style.uiScale. Crisp flat look:
+//! panels with the screen background color and a grid-colored 1 px border, square
 //! corners, no glow, blur, shadow or gradient. Layout is
 //! computed into a list of draw ops, so `rects` (for damage) and `draw` share
 //! one code path.
@@ -149,11 +149,10 @@ pub const Hover = struct {
     }
 };
 
-/// Frost glass: a translucent dark fill (the image shows through a little),
-/// a fine light border and a 1 px sheen along the top edge.
-const panel_bg = nord.n0.withAlpha(240);
-const panel_border = nord.n4.withAlpha(52);
-const panel_sheen = nord.n6.withAlpha(34);
+/// Panels: the exact screen background (compositor.background) with a 1 px
+/// border in the grid line color (compositor.grid_color).
+const panel_bg = Color.rgb(0x15181E);
+const panel_border = Color.rgb(0x1B1F26);
 /// Buttons: a faint wash on hover with a hairline, a stronger one while pressed.
 const hover_bg = nord.n6.withAlpha(24);
 const hover_line = nord.n4.withAlpha(56);
@@ -227,8 +226,6 @@ pub const Layout = struct {
         l.push(.{ .rrect = .{ .b = b, .radius = radius, .color = panel_bg } });
         // Centered half a pixel inside the edge: one crisp pixel wide.
         l.push(.{ .ring = .{ .b = b.expand(-0.5), .radius = @max(0, radius - 0.5), .w = 1, .color = panel_border } });
-        const inset = radius + 1;
-        l.push(.{ .rrect = .{ .b = .{ .min = .{ .x = b.min.x + inset, .y = b.min.y + 1 }, .max = .{ .x = b.max.x - inset, .y = b.min.y + 2 } }, .radius = 0, .color = panel_sheen } });
         l.panels[l.n_panels] = b.expand(2).toRect();
         l.kinds[l.n_panels] = kind;
         l.n_panels += 1;
