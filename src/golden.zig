@@ -317,6 +317,7 @@ test "drawing past the image grows the exported PNG with the light canvas; undo 
     defer app.destroy();
     app.editor.tool = .callout; // a straight arrow: a drag, then Enter (set here, not the startup defaults)
     app.editor.arrow_style = .straight;
+    app.editor.padding_touched = true; // no automatic padding: this test is about the plain grow
     // Image at 1:1 in (150, 125)..(250, 175). Arrow from inside to 60 px past the right edge.
     _ = try app.handle(.{ .mouse_down = .{ .x = 200, .y = 150 } });
     _ = try app.handle(.{ .mouse_move = .{ .x = 310, .y = 150 } });
@@ -428,6 +429,7 @@ test "an annotation changed in place repaints only its old and new area, like a 
     for (image.pixels) |*px| px.* = 0xff000000 | @as(u32, rng.random().int(u24));
     const app = try App.create(gpa, image, 600, 400, .{ .output_path = null, .clipboard = .none });
     defer app.destroy();
+    app.editor.padding_touched = true; // no automatic padding: the canvas must shrink back
     const red = core.color.palette[0].color;
     try app.doc.add(gpa, .{ .rect = .{ .a = .{ .x = 100, .y = 100 }, .b = .{ .x = 300, .y = 250 }, .width = 6, .color = red } });
     try app.doc.add(gpa, .{ .pixelate = .{ .a = .{ .x = 250, .y = 200 }, .b = .{ .x = 500, .y = 400 }, .block = 12 } });
