@@ -275,6 +275,10 @@ pipe only while the loader is busy.
 - Zig std inflate (0.15): 2.5x slower than libdeflate.
 - stb_image_write at lower zlib levels: at most 30% faster; libdeflate level 1
   is 5x faster with smaller files.
+- Zig 0.17 PNG unfilter (2026-11, 1440p): the Up filter loop lost auto-vectorization
+  (0.7 -> 8 ms per 7 runs); `addRows` in png.zig fixes it. Paeth in i16 lanes
+  (+40%) or scalar per channel: slower than the i32 vectors. Decode is still
+  about 15% slower than on 0.15 (7.0 -> 8.05 ms), all in the Paeth rows.
 
 ## Open leads
 

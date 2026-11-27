@@ -108,9 +108,7 @@ fn unfilter(comptime bpp: usize, raw: []u8, cv: *Canvas) DecodeError!void {
                     cur[i..][0..bpp].* = a;
                 }
             },
-            2 => if (!first) for (cur, prev) |*x, p| {
-                x.* +%= p;
-            },
+            2 => if (!first) addRows(cur, prev),
             3 => {
                 var a: W = @splat(0);
                 var i: usize = 0;
@@ -192,6 +190,19 @@ fn paethRows(comptime bpp: usize, comptime k: usize, rows: *const [k][]u8, above
             }
         }
     }
+}
+
+/// cur += prev, bytewise. Explicit 32-byte vectors: with Zig 0.17 (LLVM 21+)
+/// the plain loop is no longer auto-vectorized here (12x slower).
+fn addRows(cur: []u8, prev: []const u8) void {
+    const L = 32;
+    var i: usize = 0;
+    while (i + L <= cur.len) : (i += L) {
+        const a: @Vector(L, u8) = cur[i..][0..L].*;
+        const b: @Vector(L, u8) = prev[i..][0..L].*;
+        cur[i..][0..L].* = a +% b;
+    }
+    while (i < cur.len) : (i += 1) cur[i] +%= prev[i];
 }
 
 inline fn paethPixel(comptime bpp: usize, a: @Vector(bpp, i32), b: @Vector(bpp, i32), ul: @Vector(bpp, i32), x: @Vector(bpp, i32)) @Vector(bpp, i32) {
